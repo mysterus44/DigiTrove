@@ -1,0 +1,50 @@
+[
+    {
+        "id": "6925ef31debc1",
+        "nom": "Seydou Ouedraaogo",
+        "profession": "Vendeur de produits digitaux",
+        "note": 5,
+        "commentaire": "Wahou le pack +1 millions de produits m'a bcp aidé car elle très complète et c'est vraiment une banque de produits digitaux ... je suis vraiment satisfait",
+        "date": "2025-11-25 19:02:25"
+    },
+    {
+        "id": "6925e25bb91ad",
+        "nom": "Kadidja Soro",
+        "profession": "Étudiante",
+        "note": 5,
+        "commentaire": "La formation en développement web full stack est très complète et pour ce prix c'est vraiment gratuit. Merci DigiTrove!!",
+        "date": "2025-11-25 18:07:39"
+    },
+    {
+        "id": "legacy_alice_01",
+        "nom": "Alice",
+        "profession": "Freelance",
+        "note": 5,
+        "commentaire": "Super produit, très satisfait ! J'ai pu installer le logiciel sans problème.",
+        "date": "2025-11-24 14:30:00"
+    },
+    {
+        "id": "legacy_marc_02",
+        "nom": "Marc",
+        "profession": "Entrepreneur",
+        "note": 4,
+        "commentaire": "Bon produit, utile pour mon business au quotidien. Support réactif.",
+        "date": "2025-11-23 09:15:00"
+    },
+    {
+        "id": "demo_sophie_03",
+        "nom": "Sophie T.",
+        "profession": "Graphiste",
+        "note": 5,
+        "commentaire": "J'ai reçu mon logiciel instantanément. Très satisfaite du service.",
+        "date": "2025-11-22 11:20:00"
+    },
+    {
+        "id": "demo_jy_04",
+        "nom": "Jean-Yves",
+        "profession": "Consultant Client Chez BoostFast",
+        "note": 5,
+        "commentaire": "Le pack formation est très complet. Merci DigiTrove pour ces ressources.",
+        "date": "2025-11-20 16:45:00"
+    }
+]

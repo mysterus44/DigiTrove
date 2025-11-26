@@ -1,0 +1,62 @@
+[
+    {
+        "id": 1,
+        "nom": "Pack Livres",
+        "prix_original": "7700",
+        "prix_reduit": "3500",
+        "ventes": "201",
+        "image": "..\/uploads\/pack-livres.png",
+        "disponible": true,
+        "type": "livre",
+        "usb": false,
+        "url": "https:\/\/digitrove.mychariow.com\/pd1"
+    },
+    {
+        "id": 2,
+        "nom": "Pack De Formation Bureautique",
+        "prix_original": "21000",
+        "prix_reduit": "9000",
+        "ventes": "239",
+        "image": "..\/uploads\/pack_ms_office.png",
+        "disponible": true,
+        "type": "formation",
+        "usb": true,
+        "url": "https:\/\/digitrove.mychariow.com\/pd2"
+    },
+    {
+        "id": 4,
+        "nom": "Pack +200 logiciels Pro + Bonus",
+        "prix_original": "16500",
+        "prix_reduit": "4900",
+        "ventes": "192",
+        "image": "..\/uploads\/pack_Logiciels_Premium.png",
+        "disponible": true,
+        "type": "logiciel",
+        "usb": false,
+        "url": "https:\/\/digitrove.mychariow.com\/pd4"
+    },
+    {
+        "id": 5,
+        "nom": "Syst\u00e8me de Gestion StarCode Pro avec Droits de Revente (G\u00e9n\u00e9rateur de Cl\u00e9s)",
+        "prix_original": "27500",
+        "prix_reduit": "9900",
+        "ventes": 307,
+        "image": "..\/uploads\/688f97f769011-starcode.png",
+        "disponible": true,
+        "type": "ressource",
+        "usb": false,
+        "url": "https:\/\/digitrove.mychariow.com\/pd5"
+    },
+    {
+        "id": 6,
+        "nom": "Pack De Formation Developpement Web FullStack",
+        "prix_original": 49900,
+        "prix_reduit": 9900,
+        "ventes": 88,
+        "image": "..\/uploads\/6921f01235942-pack_de_formation_dev_fullstack.png",
+        "disponible": true,
+        "type": "formation",
+        "usb": false,
+        "url": "https:\/\/digitrove.mychariow.com\/pd6"
+    }
+]

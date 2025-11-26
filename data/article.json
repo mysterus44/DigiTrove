@@ -1,0 +1,23 @@
+{
+    "article": {
+        "id": "cart-management",
+        "title": "Cart Management",
+        "sections": [
+        {
+            "id": "add-to-cart",
+            "title": "Add to Cart",
+            "file": "cart/add-to-cart.php"
+        },
+        {
+            "id": "remove-from-cart",
+            "title": "Remove from Cart",
+            "file": "cart/remove-from-cart.php"
+        },
+        {
+            "id": "update-cart",
+            "title": "Update Cart",
+            "file": "cart/update-cart.php"
+        }
+        ]
+    }
+}
