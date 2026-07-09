@@ -8,7 +8,7 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-09
-- **Branche git** : `p0-foundations-laravel13`
+- **Branche git** : `site-00-static-preview`
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
@@ -16,6 +16,9 @@
   - `php artisan test` OK → 2 tests, 2 assertions
   - `./vendor/bin/pint --test` OK → 25 fichiers Laravel
   - `git fsck --full` OK après récupération de l'objet legacy manquant
+  - SITE-00 : `php artisan test` OK via `digitrove-php:dev` → 5 tests, 20 assertions
+  - SITE-00 : `./vendor/bin/pint --test` OK via `digitrove-php:dev` → 26 fichiers
+  - SITE-00 : `npm run build` OK
 
 ---
 
@@ -48,14 +51,25 @@
     suggéré mais non obligatoire, affiliation future avec compte obligatoire et
     tables dédiées hors P1
   - aucune migration P1, aucune table métier, aucune logique métier ajoutée
+- **SITE-00 Vitrine statique de prévisualisation terminé techniquement** :
+  - page d'accueil Laravel remplacée par une vitrine/boutique statique premium
+  - produits, prix XOF, catégories, avis et aperçus blog issus du contenu legacy
+    figés dans la vue
+  - images marketing sûres copiées vers `public/images/digitrove/`
+  - CTA limités à des ancres ou boutons désactivés, sans route transactionnelle
+  - tests HTTP ajoutés : homepage 200, produits/prix visibles, absence de `/checkout`,
+    `legacy/`, uploads, liens de livraison, `.zip`, `.pdf`, `download_grants`,
+    `product_files`
+  - aucune migration, aucune table, aucun modèle métier, aucun contrôleur métier,
+    aucun panier, aucun paiement, aucun téléchargement public
 
 ---
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Action recommandée immédiate : validation humaine finale du schéma corrigé
-`DigiTrove_Schema_BDD_v1.md`, incluant multi-devises, checkout invité et affiliation
-future, puis revue de la branche `p0-foundations-laravel13`.**
+**Action recommandée immédiate : revue de `site-00-static-preview`, puis validation
+humaine finale du schéma corrigé `DigiTrove_Schema_BDD_v1.md`, incluant
+multi-devises, checkout invité et affiliation future.**
 
 Ensuite seulement, passer à **P1 — Identité & CRM**. Le PRD à lire sera
 `.context/prompts/PRD_01_IDENTITE.md`.
@@ -107,6 +121,19 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-09 — Codex
+- Fait : SITE-00 vitrine statique de prévisualisation, avec landing/boutique
+  mobile-first, catalogue legacy figé, catégories, avis, FAQ, aperçu blog SEO,
+  CTA non transactionnels et images marketing copiées dans `public/images/digitrove/`.
+- État build/tests : `php artisan test` OK via `digitrove-php:dev` (5 tests,
+  20 assertions), `./vendor/bin/pint --test` OK via `digitrove-php:dev`
+  (26 fichiers), `npm run build` OK.
+- Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-015, SITE-00 reste une
+  prévisualisation statique sans backend métier, sans checkout, sans paiement,
+  sans panier et sans téléchargement.
+- Laisse à : revue de `site-00-static-preview`, puis validation humaine finale du
+  schéma BDD v1. P1 reste bloqué.
 
 ### 2026-07-09 — Codex
 - Fait : décisions humaines finales pré-P1 documentées : multi-devises, checkout

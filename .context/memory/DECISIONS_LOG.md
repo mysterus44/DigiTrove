@@ -152,6 +152,19 @@ IMPACT : `DigiTrove_Schema_BDD_v1.md`, futures phases P2/P3 pour la stratégie d
 prix multi-devises, futures phases CRM/marketing pour l'affiliation. P1 reste
 strictement limité à `users`, `customer_profiles`, `visitors` + extension `citext`.
 
+### D-015 : SITE-00 reste une vitrine statique non transactionnelle ✅
+CONTEXTE : KingKouda a validé une version limitée `SITE-00 — Vitrine statique de
+prévisualisation`, avant validation finale du schéma BDD v1 et avant P1.
+CHOIX : livrer uniquement une expérience front-office statique dans Laravel, nourrie
+par le contenu marketing legacy figé dans la vue et par des images publiques sûres
+copiées sous `public/images/digitrove/`. Tous les CTA restent non transactionnels.
+ALTERNATIVES REJETÉES : créer un checkout, un panier, des routes commerce, des
+modèles métier, des migrations, lire `legacy/` au runtime, ou exposer un fichier
+digital public.
+IMPACT : `resources/views/welcome.blade.php`, `resources/css/app.css`, tests HTTP
+de garde-fou, assets marketing publics. P1 reste bloqué jusqu'à validation humaine
+du schéma BDD v1.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA

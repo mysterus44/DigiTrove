@@ -8,6 +8,7 @@
 ```
 P0 FONDATIONS       : ██████████  100%
 P0.5 ASSAINISSEMENT : ██████████  100%
+SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ░░░░░░░░░░  0%
 P2 CATALOGUE        : ░░░░░░░░░░  0%
 P3 COMMERCE         : ░░░░░░░░░░  0%
@@ -67,6 +68,31 @@ Vérifications P0.5 passées :
 
 Schéma BDD v1 : prêt pour validation humaine finale après logging des décisions
 multi-devises, checkout invité et affiliation future. P1 reste non démarré.
+
+## SITE-00 — VITRINE STATIQUE DE PRÉVISUALISATION
+Statut : ✅ terminé techniquement sur `site-00-static-preview`.
+
+Objectif : prévisualiser l'expérience front-office DigiTrove avec contenu marketing
+legacy, sans backend métier et sans flux transactionnel.
+
+| Tâche | Statut |
+|-------|--------|
+| Landing/boutique statique mobile-first | ✅ DONE |
+| Produits legacy affichés avec prix XOF | ✅ DONE |
+| Sections hero, bénéfices, catalogue, catégories, avis, FAQ, blog, CTA | ✅ DONE |
+| Images marketing sûres copiées vers `public/images/digitrove/` | ✅ DONE |
+| CTA non transactionnels uniquement | ✅ DONE |
+| Tests HTTP et garde-fous anti checkout/legacy/fichiers publics | ✅ DONE |
+
+Vérifications SITE-00 passées :
+- `php artisan test` via `digitrove-php:dev` : 5 tests passés, 20 assertions
+- `./vendor/bin/pint --test` via `digitrove-php:dev` : PASS, 26 fichiers
+- `npm run build` : PASS
+
+Limites confirmées : aucune migration, aucune table, aucun modèle métier, aucun
+contrôleur métier, aucun checkout, aucun panier, aucun paiement, aucun lien de
+livraison ou fichier digital public. P1 reste bloqué jusqu'à validation humaine du
+schéma BDD v1.
 
 ## P1 — IDENTITÉ
 Statut : ⬜ non démarré. Bloqué jusqu'à validation humaine finale du schéma BDD v1.
