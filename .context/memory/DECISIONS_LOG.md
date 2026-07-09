@@ -18,15 +18,16 @@ IMPACT : ce que ça touche
 
 ### D-001 : Réécriture complète, pas refactor ✅
 CONTEXTE : l'ancien DigiTrove est du PHP procédural, données en JSON + SQLite.
-CHOIX : réécriture complète sur Laravel 11. On migre le **contenu** (produits,
-articles, avis), on jette l'architecture.
+CHOIX : réécriture complète sur Laravel. On migre le **contenu** (produits,
+articles, avis), on jette l'architecture. La version active est Laravel 13.19
+suite à D-012.
 ALTERNATIVES REJETÉES : refactor progressif → le code legacy n'a ni couches, ni tests,
 ni modèle de données exploitable. Le refactor coûterait plus cher que la réécriture.
 IMPACT : tout.
 
-### D-002 : Laravel 11, pas « architecture type Laravel » ✅
+### D-002 : Laravel, pas « architecture type Laravel » ✅
 CONTEXTE : la demande initiale disait « PHP, architecture type Laravel ».
-CHOIX : du vrai Laravel 11.
+CHOIX : du vrai Laravel. La version active est Laravel 13.19 suite à D-012.
 RAISON : l'indépendance de DigiTrove vient de l'absence de **plateforme commerciale
 tierce** (Shopify, Gumroad), pas de l'absence de framework. « Type Laravel » revient à
 réécrire mal ce que Laravel fait bien (routing, ORM, queues, validation, auth).
@@ -42,7 +43,7 @@ IMPACT : toutes les migrations.
 
 ### D-004 : Filament, pas Nova ✅
 CONTEXTE : besoin d'un back-office CRM/ERP.
-CHOIX : Filament v3.
+CHOIX : Filament. La version active est Filament 5 suite à D-012.
 RAISON : gratuit, plus moderne, couvre le besoin. Nova est payant et n'apporte rien ici.
 IMPACT : tout le back-office.
 
@@ -95,16 +96,17 @@ IMPACT : PaymentGateway, webhooks, Event OrderPaid.
 ### D-011 : Tests Pest + style Pint, pas de feature sans test ✅
 IMPACT : CI, définition de « terminé ».
 
-### D-012 : Laravel/Filament — version supportée et non bloquée par advisories ✅
-CONTEXTE : P0 prévoyait Laravel 11 + Filament v3, mais Composer bloque
-`laravel/framework` 11.x à cause d'avis de sécurité Packagist. Le contournement via
-un ancien Composer a été refusé par l'auto-review car il installerait volontairement
+### D-012 : Laravel 13.19 + Filament 5, aucun contournement Composer ✅
+CONTEXTE : P0 prévoyait Laravel 11 + Filament v3, mais Composer/Packagist bloque
+`laravel/framework` 11.x à cause d'advisories de sécurité. Le contournement via un
+ancien Composer a été refusé par l'auto-review car il installerait volontairement
 des dépendances signalées vulnérables.
-CHOIX : utiliser la version Laravel actuellement supportée par la documentation
-officielle (Laravel 13 au 2026-07-08) et le Filament compatible courant (Filament 5),
-au lieu de forcer Laravel 11.
-ALTERNATIVES REJETÉES : forcer Composer à ignorer les advisories ou utiliser un
-Composer plus ancien → incompatible avec la règle sécurité tolérance zéro.
+CHOIX : abandonner Laravel 11 pour P0, adopter Laravel 13.19 comme version sécurisée
+et supportée au moment de l'installation, et adopter Filament 5 pour rester cohérent
+avec l'écosystème Laravel actuel.
+ALTERNATIVES REJETÉES : forcer Composer à ignorer les advisories, utiliser un
+Composer plus ancien, ou désactiver la politique Packagist → incompatible avec la
+règle sécurité tolérance zéro.
 IMPACT : P0, composer.json, CI, documentation projet. Les décisions métier
 PostgreSQL, Filament, Argon2id, BIGINT, disque privé, Pest/Pint restent inchangées.
 

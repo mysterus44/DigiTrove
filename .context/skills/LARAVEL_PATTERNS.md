@@ -1,5 +1,5 @@
 # LARAVEL_PATTERNS.md — Conventions & Architecture Laravel
-# Niveau : God-tier | Laravel 13 · PHP 8.3+ · orienté objet
+# Niveau : God-tier | Laravel 13.19 · PHP 8.3+ · orienté objet
 
 ---
 

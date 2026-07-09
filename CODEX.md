@@ -81,7 +81,7 @@ Une seule feature à la fois.
 
 ## 🏗️ STACK — DÉCISIONS VALIDÉES
 
-- **Laravel 13**, PHP 8.3+, orienté objet. Du vrai Laravel, pas du « type Laravel » (voir D-012).
+- **Laravel 13.19**, PHP 8.3+, orienté objet. Du vrai Laravel, pas du « type Laravel » (voir D-012).
 - **PostgreSQL 16** (pas MySQL). **Filament 5** pour l'admin (pas Nova ; voir D-012). **Argon2id**.
 - **Argent en `BIGINT`** (unités mineures) — jamais `FLOAT`.
 - **Snapshot du prix et du nom dans `order_items`** — non négociable.

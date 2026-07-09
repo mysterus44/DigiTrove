@@ -8,7 +8,8 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-09
-- **Branche git** : `main`
+- **Branche git** : `p0-foundations-laravel13`
+- **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
   - `php artisan --version` OK via `digitrove-php:dev` → Laravel Framework 13.19.0
@@ -22,8 +23,8 @@
 - Schéma relationnel v1 conçu → `.context/architecture/SCHEMA_BDD.md`
 - Décisions de stack figées → `.context/memory/DECISIONS_LOG.md`
 - Audit du legacy réalisé (failles trouvées) → `.context/context/AUDIT_LEGACY.md`
-- **P0 Fondations terminé** :
-  - Laravel 13 installé (D-012 : Laravel 11 bloqué par advisories Composer)
+- **P0 Fondations terminé techniquement** :
+  - Laravel 13.19 installé (D-012 : Laravel 11 abandonné car bloqué par advisories Composer/Packagist)
   - Filament 5 installé, panneau admin vide créé
   - PostgreSQL 16 + Redis 7 via `docker-compose.yml`
   - Image PHP dev `digitrove-php:dev` avec `intl`, `pdo_pgsql`, `redis`, `zip`, Composer
@@ -40,14 +41,16 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**P1 — Identité & CRM.**
-Lis `.context/prompts/PRD_01_IDENTITE.md` et exécute-le.
+**Action recommandée immédiate : revue humaine de la branche `p0-foundations-laravel13`.**
 
-Résumé : créer `users`, `customer_profiles`, `visitors`, les modèles/casts/enums,
+Ensuite seulement, passer à **P1 — Identité & CRM**, après validation humaine du schéma
+BDD v1. Le PRD à lire sera `.context/prompts/PRD_01_IDENTITE.md`.
+
+Résumé P1 : créer `users`, `customer_profiles`, `visitors`, les modèles/casts/enums,
 le middleware `visitor_id`, le stitching visitor → user, et le seeder admin qui lit
 `ADMIN_EMAIL` / `ADMIN_PASSWORD` depuis `.env`.
 
-Critère de fin : migrations PostgreSQL vertes, extension `citext`, tests Argon2id,
+Critère de fin P1 : migrations PostgreSQL vertes, extension `citext`, tests Argon2id,
 relations, cookie visiteur, stitching, et aucun mot de passe en dur.
 
 ⚠️ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la fois.
@@ -65,19 +68,31 @@ relations, cookie visiteur, stitching, et aucun mot de passe en dur.
   `docker build -f docker/php/Dockerfile -t digitrove-php:dev .`
 - Redis DigiTrove est exposé sur le port hôte `6380` pour éviter le conflit avec un
   conteneur existant `8fi-redis` sur `6379`.
-- Le schéma BDD v1 attend la validation finale de KingKouda avant migration massive.
+- Le schéma BDD v1 attend la validation finale de KingKouda avant P1.
 - La question ouverte du champ `usb` (produits legacy) n'est pas tranchée — voir
   `AUDIT_LEGACY.md`.
+- Blocage précédent résolu : pas de push direct sur `origin/main`; la suite passe par
+  la branche dédiée `p0-foundations-laravel13`.
 
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
 
 ### 2026-07-09 — Codex
+- Fait : finalisation documentaire P0, alignement Laravel 13.19 + Filament 5, branche dédiée.
+- État build/tests : `docker compose up -d` OK, `php artisan --version` OK,
+  `php artisan test` OK, `./vendor/bin/pint --test` OK.
+- Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-012, abandon de Laravel 11
+  bloqué par advisories Composer/Packagist ; adoption Laravel 13.19 + Filament 5 ;
+  aucun contournement Composer.
+- Laisse à : revue humaine de `p0-foundations-laravel13`, puis P1 après validation
+  humaine du schéma BDD.
+
+### 2026-07-09 — Codex
 - Fait : P0 fondations Laravel/Filament/PostgreSQL/Redis/Pest/Pint/CI terminé.
 - État build/tests : `docker compose up -d` OK, `php artisan --version` OK,
   `php artisan test` OK, `./vendor/bin/pint --test` OK.
-- Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-012, passage à Laravel 13
+- Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-012, passage à Laravel 13.19
   + Filament 5 pour éviter d'installer Laravel 11 bloqué par advisories Composer.
 - Sécurité : `.gitignore` ajouté, `.env` ignoré, `data/users.sqlite` sorti de
   l'index Git, scripts legacy à mots de passe neutralisés.

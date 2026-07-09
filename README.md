@@ -8,15 +8,17 @@ at this stage.
 
 ## Stack
 
-- Laravel 13, PHP 8.3+
+- Laravel 13.19, PHP 8.3+
 - PostgreSQL 16
 - Redis 7
 - Filament 5
 - Pest and Pint
 - Private storage disk for digital deliverables
 
-Laravel 11 / Filament 3 were originally planned, but Composer blocked Laravel 11
-because of security advisories. See `.context/memory/DECISIONS_LOG.md` decision D-012.
+Laravel 11 / Filament 3 were originally planned, but Composer/Packagist blocked
+Laravel 11 because of security advisories. Laravel 13.19 and Filament 5 were adopted
+without bypassing Composer security checks. See `.context/memory/DECISIONS_LOG.md`
+decision D-012.
 
 ## Local Setup
 

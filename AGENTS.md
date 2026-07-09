@@ -42,7 +42,7 @@ On garde le contenu (produits, articles, avis), on jette l'architecture.
 
 ## 🏗️ STACK — DÉCISIONS VALIDÉES (ne pas changer sans justifier)
 
-- **Laravel 13**, PHP 8.3+, orienté objet, moderne. Du vrai Laravel, pas du « type Laravel » (voir D-012).
+- **Laravel 13.19**, PHP 8.3+, orienté objet, moderne. Du vrai Laravel, pas du « type Laravel » (voir D-012).
 - **PostgreSQL 16** (pas MySQL) : partitionnement natif, JSONB indexable, window functions.
 - **Filament 5** pour l'admin (pas Nova : gratuit, moderne, suffisant ; voir D-012).
 - **Argon2id** pour les mots de passe.

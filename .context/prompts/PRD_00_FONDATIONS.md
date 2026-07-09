@@ -16,12 +16,13 @@ CONTEXTE : projet vierge. L'ancien DigiTrove (PHP procédural, JSON + SQLite) es
 abandonné (voir .context/context/AUDIT_LEGACY.md). On repart proprement.
 
 OBJECTIF :
-- Laravel 11 (PHP 8.3+), TypeScript non requis, Blade + Tailwind + Alpine
+- Laravel 13.19 (PHP 8.3+), TypeScript non requis, Blade + Tailwind + Alpine
+  (remplace Laravel 11 suite aux advisories Composer/Packagist, voir D-012)
 - PostgreSQL 16 branché (JAMAIS MySQL)
 - docker-compose.yml : PostgreSQL 16 + Redis 7
 - .env.example complet ; .env dans .gitignore ; storage et bases ignorés aussi
 - Argon2id activé (config/hashing.php)
-- Filament v3 installé (panneau admin vide pour l'instant)
+- Filament 5 installé (panneau admin vide pour l'instant, voir D-012)
 - Pest + Pint configurés
 - Disque de stockage `private` déclaré (config/filesystems.php), hors public/
 - CI GitHub Actions : type-check, pint, tests
@@ -40,7 +41,7 @@ CONTRAINTES :
 - Pas de logique métier.
 
 LIVRABLES :
-- Projet Laravel 11 fonctionnel
+- Projet Laravel 13.19 fonctionnel
 - docker-compose.yml
 - .env.example (copié depuis celui fourni à la racine du système de contexte)
 - config/hashing.php (argon2id), config/filesystems.php (disque private)

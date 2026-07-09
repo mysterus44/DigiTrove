@@ -47,7 +47,7 @@ Détail de l'existant et failles trouvées : `.context/context/AUDIT_LEGACY.md`.
 
 | Couche | Choix |
 |--------|-------|
-| Framework | **Laravel 13** (PHP 8.3+), orienté objet — voir D-012 |
+| Framework | **Laravel 13.19** (PHP 8.3+), orienté objet — voir D-012 |
 | Base de données | **PostgreSQL 16** (partitionnement, JSONB, window functions) |
 | Admin / ERP | **Filament 5** (gratuit, moderne — pas Nova) — voir D-012 |
 | Front | Blade + Tailwind + Alpine.js (ou Livewire) |

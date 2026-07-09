@@ -1,5 +1,5 @@
 # DigiTrove — Architecture Relationnelle v1
-# Cible : PostgreSQL 16 · Laravel 13 · Argon2id · Money en entiers
+# Cible : PostgreSQL 16 · Laravel 13.19 · Argon2id · Money en entiers
 # Auteur : proposé par ARIA-DEV pour KingKouda — à challenger avant migration
 
 ---

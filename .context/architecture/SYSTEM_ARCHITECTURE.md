@@ -1,5 +1,5 @@
 # SYSTEM_ARCHITECTURE.md — Architecture globale DigiTrove
-# Laravel 13 monolithique · PostgreSQL 16 · Redis · Filament 5
+# Laravel 13.19 monolithique · PostgreSQL 16 · Redis · Filament 5
 
 ---
 

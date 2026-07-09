@@ -14,7 +14,7 @@ produits digitaux, sans aucune plateforme tierce.
 
 | Couche | Choix | Statut |
 |--------|-------|--------|
-| Framework | Laravel 13 (PHP 8.3+) | ✅ décidé (D-012) |
+| Framework | Laravel 13.19 (PHP 8.3+) | ✅ décidé (D-012) |
 | Base de données | PostgreSQL 16 | ✅ décidé |
 | Admin | Filament 5 | ✅ décidé (D-012) |
 | Front | Blade + Tailwind + Alpine.js | ✅ décidé |

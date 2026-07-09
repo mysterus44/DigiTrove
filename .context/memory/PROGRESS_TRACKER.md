@@ -21,9 +21,12 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ---
 
 ## P0 — FONDATIONS
+Statut : ✅ terminé techniquement sur la branche dédiée `p0-foundations-laravel13`.
+Validation humaine encore attendue avant P1 : schéma BDD v1.
+
 | Tâche | Statut |
 |-------|--------|
-| Laravel 13 installé (PHP 8.3+) — D-012 | ✅ DONE |
+| Laravel 13.19 installé (PHP 8.3+) — D-012 | ✅ DONE |
 | PostgreSQL 16 branché | ✅ DONE |
 | docker-compose (Postgres + Redis) | ✅ DONE |
 | .env.example complet · .env ignoré par git | ✅ DONE |
@@ -31,6 +34,14 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 | Filament 5 installé — D-012 | ✅ DONE |
 | Pest + Pint configurés | ✅ DONE |
 | CI (GitHub Actions) | ✅ DONE |
+
+Vérifications P0 passées :
+- `docker compose up -d` : PostgreSQL 16 + Redis 7 healthy
+- `php artisan --version` : Laravel Framework 13.19.0
+- `php artisan test` : 2 tests passés, 2 assertions
+- `./vendor/bin/pint --test` : PASS, 25 fichiers Laravel
+
+Prochaine phase : P1 Identité, seulement après validation humaine du schéma BDD.
 
 ## P1 — IDENTITÉ
 | Tâche | Statut |
