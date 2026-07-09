@@ -44,14 +44,18 @@
   - `.codex/` ignoré comme outillage local non destiné au commit
   - `DigiTrove_Schema_BDD_v1.md` corrigé : Laravel 13.19, extension `citext`,
     `users.deleted_at`, `status` business sans `deleted`, ordre futur des migrations
+  - décisions finales pré-P1 loggées : multi-devises, checkout invité, compte client
+    suggéré mais non obligatoire, affiliation future avec compte obligatoire et
+    tables dédiées hors P1
   - aucune migration P1, aucune table métier, aucune logique métier ajoutée
 
 ---
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Action recommandée immédiate : validation humaine du schéma corrigé
-`DigiTrove_Schema_BDD_v1.md`, puis revue de la branche `p0-foundations-laravel13`.**
+**Action recommandée immédiate : validation humaine finale du schéma corrigé
+`DigiTrove_Schema_BDD_v1.md`, incluant multi-devises, checkout invité et affiliation
+future, puis revue de la branche `p0-foundations-laravel13`.**
 
 Ensuite seulement, passer à **P1 — Identité & CRM**. Le PRD à lire sera
 `.context/prompts/PRD_01_IDENTITE.md`.
@@ -82,6 +86,17 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 - Redis DigiTrove est exposé sur le port hôte `6380` pour éviter le conflit avec un
   conteneur existant `8fi-redis` sur `6379`.
 - Le schéma BDD v1 attend la validation finale de KingKouda avant P1.
+- Multi-devises validé : `currency` obligatoire sur les montants, montants en
+  `BIGINT` unités mineures. Avant P2/P3, trancher prix fixes par devise
+  (recommandé) ou conversion automatique.
+- Checkout invité validé : un visiteur peut acheter via `visitors` + e-mail sans
+  créer de compte. Le compte reste fortement suggéré pour historique d'achat,
+  promotions, annonces, avantages CRM et future affiliation.
+- Affiliation future validée : compte obligatoire, rattachement à `users`, tables
+  dédiées à prévoir plus tard (`affiliate_profiles`, `affiliate_links`,
+  `referrals`, `affiliate_commissions`, `affiliate_payouts`). Ne pas migrer en P1.
+- P1 reste strictement limité à `users`, `customer_profiles`, `visitors` + extension
+  PostgreSQL `citext`.
 - `git fsck --full` ne signale plus de `missing blob`; les `dangling tree` restants
   sont des objets non référencés et ne bloquent pas P1.
 - La question ouverte du champ `usb` (produits legacy) n'est pas tranchée — voir
@@ -92,6 +107,19 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-09 — Codex
+- Fait : décisions humaines finales pré-P1 documentées : multi-devises, checkout
+  invité, compte client suggéré mais non obligatoire, affiliation future avec compte
+  obligatoire et tables dédiées hors P1.
+- État build/tests : `php artisan test` OK via `digitrove-php:dev` (2 tests,
+  2 assertions), `./vendor/bin/pint --test` OK (25 fichiers).
+- Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-014, `currency` obligatoire,
+  montants en `BIGINT`, prix fixes par devise recommandés avant P2/P3, achat invité
+  via `visitors` + e-mail, affiliation rattachée à `users` sans rôle simple.
+- Laisse à : validation humaine finale du schéma corrigé `DigiTrove_Schema_BDD_v1.md`,
+  puis P1 Identité strictement limité à `users`, `customer_profiles`, `visitors`
+  + extension PostgreSQL `citext`.
 
 ### 2026-07-09 — Codex
 - Fait : P0.5 assainissement pré-P1, récupération de l'objet Git manquant, isolation

@@ -129,17 +129,41 @@ IMPACT : `DigiTrove_Schema_BDD_v1.md`, futur ordre de migrations
 phase P1 strictement limitée à `users`, `customer_profiles`, `visitors` après
 validation humaine du schéma corrigé.
 
+### D-014 : Multi-devises, checkout invité et affiliation future ✅
+CONTEXTE : avant P1, KingKouda a validé les règles produit structurantes pour
+ne pas forcer la création de compte et pour préparer la vente internationale et
+l'affiliation sans polluer le modèle identité.
+CHOIX : DigiTrove supporte le multi-devises. `currency` reste obligatoire sur les
+montants, et les montants restent en `BIGINT` unités mineures. Avant P2/P3, il
+faudra trancher entre prix fixes par devise et conversion automatique ; la
+recommandation actuelle est de privilégier les prix fixes par devise pour garder
+le contrôle commercial. Le compte client n'est pas obligatoire pour acheter :
+un visiteur peut acheter en checkout invité via `visitors` + e-mail. Le compte
+est fortement suggéré pour l'historique d'achat, les promotions, les annonces,
+les avantages CRM et l'accès futur à l'affiliation. L'affiliation exige un compte,
+doit être rattachée à un `user`, et ne doit pas être modélisée comme un simple
+rôle utilisateur. Elle utilisera plus tard des tables dédiées, par exemple
+`affiliate_profiles`, `affiliate_links`, `referrals`, `affiliate_commissions`,
+`affiliate_payouts`.
+ALTERNATIVES REJETÉES : XOF seul comme contrainte produit définitive, compte
+obligatoire pour tout achat, affiliation portée uniquement par `users.role`, ou
+implémentation de l'affiliation en P1.
+IMPACT : `DigiTrove_Schema_BDD_v1.md`, futures phases P2/P3 pour la stratégie de
+prix multi-devises, futures phases CRM/marketing pour l'affiliation. P1 reste
+strictement limité à `users`, `customer_profiles`, `visitors` + extension `citext`.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
 
-- **Le schéma `SCHEMA_BDD.md` dans son ensemble** (v1). Tant qu'il n'est pas validé,
-  ne pas générer de logique métier au-delà des migrations P1.
+- **Le schéma `DigiTrove_Schema_BDD_v1.md` dans son ensemble** (v1). Après D-014,
+  il est prêt pour validation humaine finale. Tant qu'il n'est pas validé, ne pas
+  générer de logique métier ni démarrer P1.
 - **Le champ `usb` du legacy** : les produits avaient un champ `usb`. Livraison
   physique sur clé USB ? Si oui, il faut un modèle de commande hybride
   (digital + physique) avec adresse de livraison. À trancher. Voir AUDIT_LEGACY.md.
-- **Devise(s)** : XOF seul, ou multi-devises (ventes internationales) ? Le schéma
-  porte déjà une colonne `currency`, mais la conversion et l'affichage restent à décider.
+- **Prix multi-devises avant P2/P3** : multi-devises validé, mais il faudra choisir
+  entre prix fixes par devise (recommandé) et conversion automatique.
 
 ---
 

@@ -16,6 +16,23 @@ modèle casse dès la première analyse sérieuse. Voici la carte :
 | **Commandes** | `orders` · `order_items` · `payments` · `download_grants` |
 | **Données Analytiques** | `events` (partitionnée) · `analytics_sessions` · `campaigns` · rollups |
 
+### Décisions humaines finales avant P1
+
+- **Multi-devises confirmé** : chaque montant doit porter une `currency` obligatoire.
+  Les montants restent en `BIGINT` unités mineures, jamais en `FLOAT`.
+- **Prix multi-devises à trancher avant P2/P3** : prix fixes par devise ou conversion
+  automatique. Recommandation actuelle : prix fixes par devise pour garder le contrôle
+  commercial.
+- **Checkout invité autorisé** : un visiteur peut acheter sans compte via `visitors`
+  + e-mail. Le compte client est fortement suggéré, mais non imposé.
+- **Modèle `visitor → user` confirmé** : un visiteur peut devenir utilisateur plus
+  tard pour récupérer historique, promotions, annonces, avantages CRM et accès futur
+  à l'affiliation.
+- **Affiliation future** : elle exige un compte et sera rattachée à `users`, mais ne
+  doit pas être modélisée comme un simple rôle utilisateur. Prévoir plus tard des
+  tables dédiées (`affiliate_profiles`, `affiliate_links`, `referrals`,
+  `affiliate_commissions`, `affiliate_payouts`). Ces tables ne font pas partie de P1.
+
 ---
 
 ## 🅰️ BLOC IDENTITÉ & CRM
@@ -75,6 +92,8 @@ CREATE INDEX ON customer_profiles (last_order_at DESC);
 -- 🔑 LA TABLE QUE 90% DES SCHÉMAS E-COMMERCE OUBLIENT.
 -- Sans elle, tu ne sauras JAMAIS d'où vient un client : il visite 5 fois
 -- anonymement, puis achète. Sans visitor_id, ces 5 visites sont perdues.
+-- Le lien visitor -> user est optionnel et progressif : l'achat invité reste autorisé,
+-- puis le compte peut être créé plus tard pour rattacher historique et avantages CRM.
 CREATE TABLE visitors (
     id                  UUID PRIMARY KEY,            -- posé en cookie 1re partie
     user_id             BIGINT REFERENCES users(id) ON DELETE SET NULL, -- rattaché au login
@@ -87,6 +106,10 @@ CREATE TABLE visitors (
     country_code        CHAR(2)
 );
 CREATE INDEX ON visitors (user_id);
+
+-- P1 s'arrête strictement ici : extension `citext`, `users`,
+-- `customer_profiles`, `visitors`. Aucun catalogue, commerce, affiliation ou
+-- événement analytique ne doit être migré en P1.
 
 -- Segmentation CRM. Définition stockée en JSONB = segments dynamiques.
 CREATE TABLE customer_segments (
@@ -134,6 +157,8 @@ CREATE TABLE products (
     long_description      TEXT,
     cover_image_path      TEXT,
     -- 💰 ENTIERS. Jamais FLOAT sur de l'argent. XOF : minor = 1.
+    -- Multi-devises confirmé : `currency` reste obligatoire.
+    -- Avant P2/P3, trancher prix fixes par devise (recommandé) vs conversion automatique.
     price_minor           BIGINT NOT NULL CHECK (price_minor >= 0),
     compare_at_price_minor BIGINT CHECK (compare_at_price_minor >= 0), -- prix barré
     currency              CHAR(3) NOT NULL DEFAULT 'XOF',
@@ -258,6 +283,9 @@ CREATE TABLE coupons (
     is_active      BOOLEAN NOT NULL DEFAULT true
 );
 
+-- Checkout invité autorisé : `user_id` nullable, `visitor_id` + `email`
+-- permettent d'acheter sans compte. Le compte reste suggéré pour historique,
+-- promotions, annonces, avantages CRM et future affiliation.
 CREATE TABLE orders (
     id              BIGSERIAL PRIMARY KEY,
     order_number    TEXT NOT NULL UNIQUE,          -- DGT-2026-000123, jamais l'id
@@ -285,6 +313,9 @@ CREATE TABLE orders (
 CREATE INDEX ON orders (user_id, placed_at DESC);
 CREATE INDEX ON orders (status, placed_at DESC);
 CREATE INDEX ON orders (email);
+
+-- Multi-devises : les totaux d'une commande portent leur `currency`; les lignes
+-- restent en BIGINT unités mineures et héritent de la devise de la commande.
 
 -- 🔴 LE POINT LE PLUS IMPORTANT DU SCHÉMA :
 -- on SNAPSHOT le nom et le prix. Si tu changes le prix d'un produit demain,
@@ -435,6 +466,11 @@ CREATE TABLE campaigns (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Affiliation future (post-P1) :
+-- tables dédiées à prévoir plus tard, par exemple `affiliate_profiles`,
+-- `affiliate_links`, `referrals`, `affiliate_commissions`, `affiliate_payouts`.
+-- Un affilié doit être rattaché à un `user`; ce n'est pas un simple rôle.
+
 -- 📊 ROLLUPS : le dashboard lit CES tables, jamais `events` directement.
 -- Rafraîchis par un job planifié (Laravel Scheduler, toutes les heures).
 -- Pas de FK volontairement : snapshots analytiques recalculables et découplés.
@@ -529,7 +565,7 @@ Ordre technique des migrations à respecter avant P1 :
 
 0. Extensions PostgreSQL (`citext`) avant toute table utilisant `CITEXT`.
 1. Types/enums/checks partagés avant usage.
-2. P1 strictement limité à `users`, `customer_profiles`, `visitors`.
+2. P1 strictement limité à `users`, `customer_profiles`, `visitors` + extension `citext`.
 3. `coupons` avant `orders` si `orders.coupon_id` reste une FK.
 4. `orders` avant `order_items`.
 5. `licenses` après `order_items`.
@@ -540,5 +576,7 @@ Ordre technique des migrations à respecter avant P1 :
 4. `download_grants` + `download_logs` (livraison sécurisée)
 5. `events` partitionnée + rollups (analytique)
 6. `campaigns` + `customer_segments` (marketing)
+7. Affiliation dédiée (`affiliate_profiles`, `affiliate_links`, `referrals`,
+   `affiliate_commissions`, `affiliate_payouts`) après validation produit ultérieure
 
 Ne code aucune logique métier avant que 1→4 soient migrés et testés.

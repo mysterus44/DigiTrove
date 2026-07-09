@@ -18,6 +18,7 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
 > Rappel : **aucune logique métier avant que P1→P4 soient migrés et testés.**
+> P1 est non démarré et reste bloqué jusqu'à validation humaine finale du schéma BDD v1.
 
 ---
 
@@ -56,6 +57,7 @@ Statut : ✅ terminé techniquement sur `p0-foundations-laravel13`.
 | Legacy isolé sous `legacy/` sans suppression volontaire | ✅ DONE |
 | `.codex/` ignoré comme outillage local | ✅ DONE |
 | P1 maintenu bloqué jusqu'à validation humaine du schéma corrigé | ✅ DONE |
+| Décisions finales multi-devises, checkout invité et affiliation future loggées — D-014 | ✅ DONE |
 
 Vérifications P0.5 passées :
 - `docker run ... php artisan test` : 2 tests passés, 2 assertions
@@ -63,7 +65,13 @@ Vérifications P0.5 passées :
 - `docker run ... php artisan --version` : Laravel Framework 13.19.0
 - `git fsck --full` : OK, aucun `missing blob` ; seulement des `dangling tree`
 
+Schéma BDD v1 : prêt pour validation humaine finale après logging des décisions
+multi-devises, checkout invité et affiliation future. P1 reste non démarré.
+
 ## P1 — IDENTITÉ
+Statut : ⬜ non démarré. Bloqué jusqu'à validation humaine finale du schéma BDD v1.
+Périmètre strict : extension `citext`, `users`, `customer_profiles`, `visitors`.
+
 | Tâche | Statut |
 |-------|--------|
 | Migration `users` | ⬜ TODO |
