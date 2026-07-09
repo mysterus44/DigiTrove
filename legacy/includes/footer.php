@@ -3,17 +3,17 @@
             <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center pb-8 border-b border-gray-300 dark:border-gray-700">
                 <div class="text-center md:text-left">
                     <a href="<?php echo url('page/index.php'); ?>" class="inline-block">
-                        <img src="<?php echo asset('images/logos/digitrove-2.0-bgR.svg'); ?>" alt="DigiTrove" class="h-12 mx-auto md:mx-0 mb-4 grayscale hover:grayscale-0 transition duration-500">
+                        <img src="<?php echo asset('images/logos/lg.svg'); ?>" alt="DigiTrove" class="h-12 mx-auto md:mx-0 mb-4 grayscale hover:grayscale-0 transition duration-500">
                     </a>
                     <p class="text-sm text-gray-500">"Votre Trésor Numérique."</p>
                 </div>
                 <div class="text-center">
                     <h4 class="font-bold text-gray-900 dark:text-white mb-4 uppercase tracking-wider text-sm">Informations</h4>
                     <ul class="space-y-2">
-                        <li><a href="<?php echo url('page/politique-confidentialite.php'); ?>" class="text-gray-500 hover:text-brand-orange transition-colors">Politique DeConfidentialité</a></li>
-                        <li><a href="<?php echo url('page/return-refund.php'); ?>" class="text-gray-500 hover:text-brand-orange transition-colors">Retours et remboursement</a></li>
+                        <li><a href="<?php echo url('page/politique-confidentialite.php'); ?>" class="text-gray-500 hover:text-brand-orange transition-colors">Politique De Confidentialité</a></li>
+                        <li><a href="<?php echo url('page/return-refund.php'); ?>" class="text-gray-500 hover:text-brand-orange transition-colors">Retours Et Remboursement</a></li>
                         <li><a href="<?php echo url('page/politique-livraison.php'); ?>" class="text-gray-500 hover:text-brand-orange transition-colors">Politique De Livraison</a></li>
-                        <li><a href="<?php echo url('page/a-propos.php'); ?>" class="text-gray-500 hover:text-brand-orange transition-colors">À propos</a></li>
+                        <li><a href="<?php echo url('page/a-propos.php'); ?>" class="text-gray-500 hover:text-brand-orange transition-colors">À Propos</a></li>
                         <li><a href="<?php echo url('page/faqs.php'); ?>" class="text-gray-500 hover:text-brand-orange transition-colors">FAQs</a></li>
                         <li><a href="<?php echo url('page/cgv.php'); ?>" class="text-gray-500  hover:text-brand-orange transition-colors">CGV</a></li>
                     </ul>

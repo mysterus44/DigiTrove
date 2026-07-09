@@ -72,8 +72,8 @@ function nav_class2($page_name, $current_page) {
             </div>
 
             <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 transform hover:scale-105 transition-transform duration-300">
-                <a href="<?php echo url('page/index.php'); ?>" class="flex items-center space-x-2">
-                    <img src="<?php echo asset('images/logos/digitrove-2.0-bgR.svg'); ?>" alt="DigiTrove" class="h-14 w-auto" onerror="this.src='https://placehold.co/120x60?text=DigiTrove'">
+                <a href="<?php echo url('index.php'); ?>" class="flex items-center space-x-2">
+                    <img src="<?php echo asset('images/logos/lg.svg'); ?>" alt="DigiTrove" class="h-14 w-auto" onerror="this.src='https://placehold.co/120x60?text=DigiTrove'">
                 </a>
             </div>
 

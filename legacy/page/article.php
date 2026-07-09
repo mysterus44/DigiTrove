@@ -43,8 +43,8 @@ include INCLUDES_PATH . '/navbar.php';
         <img src="<?php echo get_img_src($article['image']); ?>" class="w-full h-full object-cover" alt="<?php echo e($article['title']); ?>">
         <div class="absolute bottom-0 left-0 w-full z-20 p-6 md:p-12">
             <div class="container mx-auto">
-                <a href="blog.php" class="inline-flex items-center text-white/80 hover:text-brand-orange mb-4 transition font-medium">
-                    <i data-lucide="arrow-left" class="w-4 h-4 mr-2"></i> Retour au blog
+                <a href="blog.php" class="inline-flex items-center text-white/80 hover:text-brand-orange mb-4 transition font-medium bg-white/10 border border-white/50 hover:bg-white/20 text-white font-bold py-3 px-8 rounded-lg text-lg transition-colors duration-300 backdrop-blur-sm">
+                    <i data-lucide="arrow-left" class="w-4 h-4 mr-2 "></i> Retour au blog
                 </a>
                 <span class="block text-brand-orange font-bold uppercase tracking-widest mb-2 text-sm"><?php echo e($article['category']); ?></span>
                 <h1 class="text-3xl md:text-5xl font-extrabold text-white leading-tight mb-4 max-w-4xl"><?php echo e($article['title']); ?></h1>

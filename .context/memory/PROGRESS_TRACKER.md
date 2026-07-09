@@ -7,6 +7,7 @@
 
 ```
 P0 FONDATIONS       : ██████████  100%
+P0.5 ASSAINISSEMENT : ██████████  100%
 P1 IDENTITÉ         : ░░░░░░░░░░  0%
 P2 CATALOGUE        : ░░░░░░░░░░  0%
 P3 COMMERCE         : ░░░░░░░░░░  0%
@@ -42,6 +43,25 @@ Vérifications P0 passées :
 - `./vendor/bin/pint --test` : PASS, 25 fichiers Laravel
 
 Prochaine phase : P1 Identité, seulement après validation humaine du schéma BDD.
+
+## P0.5 — ASSAINISSEMENT PRÉ-P1
+Statut : ✅ terminé techniquement sur `p0-foundations-laravel13`.
+
+| Tâche | Statut |
+|-------|--------|
+| Diagnostic Git initial + `git fsck --full` | ✅ DONE |
+| Récupération de l'objet manquant `images/offres/tools.png` via `git fetch --refetch origin` | ✅ DONE |
+| Schéma BDD v1 aligné Laravel 13.19 + `citext` + SoftDeletes | ✅ DONE |
+| Ordre futur des migrations documenté | ✅ DONE |
+| Legacy isolé sous `legacy/` sans suppression volontaire | ✅ DONE |
+| `.codex/` ignoré comme outillage local | ✅ DONE |
+| P1 maintenu bloqué jusqu'à validation humaine du schéma corrigé | ✅ DONE |
+
+Vérifications P0.5 passées :
+- `docker run ... php artisan test` : 2 tests passés, 2 assertions
+- `docker run ... ./vendor/bin/pint --test` : PASS, 25 fichiers Laravel
+- `docker run ... php artisan --version` : Laravel Framework 13.19.0
+- `git fsck --full` : OK, aucun `missing blob` ; seulement des `dangling tree`
 
 ## P1 — IDENTITÉ
 | Tâche | Statut |

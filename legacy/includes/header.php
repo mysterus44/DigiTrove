@@ -14,7 +14,7 @@ $current_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https"
     <meta name="description" content="<?php echo e($page_desc); ?>">
 
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5254433934223993"
-     crossorigin="anonymous"></script>
+    crossorigin="anonymous"></script>
     <link rel="icon" type="image/svg+xml" href="<?php echo asset('images/logos/logo.svg'); ?>">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -22,7 +22,7 @@ $current_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https"
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
     <link rel="stylesheet" href="https://unpkg.com/swiper/swiper-bundle.min.css" />
-    <script src="https://unpkg.com/lucide-react@0.292.0/dist/lucide.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     
     <script>
         tailwind.config = {

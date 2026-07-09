@@ -57,10 +57,9 @@ $meilleures_ventes = array_slice($produits, 0, 4);
                                 </div>
                                 
                                 <a href="<?php echo htmlspecialchars($produit['url'] ?? '#'); ?>" target="_blank" 
-                                    class="track-click block w-full py-3 px-4 bg-brand-blue hover:bg-brand-orange text-white text-center font-semibold rounded-xl transition-colors duration-300 flex items-center justify-center gap-2"
+                                    class="track-click block w-full py-1.5 px-2 bg-brand-blue hover:bg-brand-orange text-white text-center font-semibold rounded-xl transition-colors duration-300 flex items-center justify-center gap-2"
                                     data-id="<?php echo $produit['id']; ?>">
                                     <span>Profiter de l'offre</span>
-                                    <i data-lucide="external-link" class="w-4 h-4"></i>
                                 </a>
                             </div>
                         </div>

@@ -13,7 +13,7 @@ include INCLUDES_PATH . '/navbar.php';
 
 <main class="dark:bg-dark-bg overflow-hidden">
     
-    <section class="relative bg-gray-900 py-20 text-center text-white overflow-hidden">
+    <section class="relative py-20 text-center text-white overflow-hidden">
         <div class="anime-bg animated-gradient-bg absolute inset-0 opacity-90"></div>
         <div class="container mx-auto px-1 relative z-10">
             <span class="inline-block py-1 px-3 rounded-full bg-white/20 backdrop-blur text-sm font-semibold mb-6">Notre Histoire</span>

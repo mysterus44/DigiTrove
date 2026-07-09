@@ -15,6 +15,7 @@
   - `php artisan --version` OK via `digitrove-php:dev` → Laravel Framework 13.19.0
   - `php artisan test` OK → 2 tests, 2 assertions
   - `./vendor/bin/pint --test` OK → 25 fichiers Laravel
+  - `git fsck --full` OK après récupération de l'objet legacy manquant
 
 ---
 
@@ -36,15 +37,24 @@
   - aucune migration P0 : `database/migrations` est vide
   - `data/users.sqlite` retiré de l'index Git et ignoré
   - scripts legacy avec mots de passe (`data/setup_database.php`, `admin/admin-blog.php`) neutralisés
+- **P0.5 Assainissement pré-P1 terminé techniquement** :
+  - objet Git manquant `images/offres/tools.png` récupéré via `git fetch --refetch origin`
+  - legacy isolé sous `legacy/` sans suppression volontaire
+  - `legacy/README.md` ajouté : archive non exécutable, source de migration uniquement
+  - `.codex/` ignoré comme outillage local non destiné au commit
+  - `DigiTrove_Schema_BDD_v1.md` corrigé : Laravel 13.19, extension `citext`,
+    `users.deleted_at`, `status` business sans `deleted`, ordre futur des migrations
+  - aucune migration P1, aucune table métier, aucune logique métier ajoutée
 
 ---
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Action recommandée immédiate : revue humaine de la branche `p0-foundations-laravel13`.**
+**Action recommandée immédiate : validation humaine du schéma corrigé
+`DigiTrove_Schema_BDD_v1.md`, puis revue de la branche `p0-foundations-laravel13`.**
 
-Ensuite seulement, passer à **P1 — Identité & CRM**, après validation humaine du schéma
-BDD v1. Le PRD à lire sera `.context/prompts/PRD_01_IDENTITE.md`.
+Ensuite seulement, passer à **P1 — Identité & CRM**. Le PRD à lire sera
+`.context/prompts/PRD_01_IDENTITE.md`.
 
 Résumé P1 : créer `users`, `customer_profiles`, `visitors`, les modèles/casts/enums,
 le middleware `visitor_id`, le stitching visitor → user, et le seeder admin qui lit
@@ -53,7 +63,8 @@ le middleware `visitor_id`, le stitching visitor → user, et le seeder admin qu
 Critère de fin P1 : migrations PostgreSQL vertes, extension `citext`, tests Argon2id,
 relations, cookie visiteur, stitching, et aucun mot de passe en dur.
 
-⚠️ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la fois.
+⚠️ P1 reste bloqué tant que KingKouda n'a pas validé le schéma corrigé.
+Toujours respecter : BDD avant logique, plan avant code, une seule feature à la fois.
 
 ---
 
@@ -62,13 +73,17 @@ relations, cookie visiteur, stitching, et aucun mot de passe en dur.
 - 🚨 **Legacy** : deux mots de passe en clair étaient dans l'historique git de l'ancien
   dépôt. Les scripts concernés sont neutralisés, mais les valeurs historiques doivent
   rester considérées compromises.
-- `data/users.sqlite` existe encore localement pour audit/migration, mais n'est plus
-  suivi par Git.
+- Le legacy est archivé sous `legacy/` pour migration de contenu uniquement. Ne pas
+  exécuter ce code PHP et ne pas servir ce dossier publiquement.
+- `legacy/data/users.sqlite` peut exister localement pour audit/migration, mais reste
+  ignoré par Git (`*.sqlite`).
 - PHP/Composer ne sont pas installés sur le host Windows. Utiliser l'image :
   `docker build -f docker/php/Dockerfile -t digitrove-php:dev .`
 - Redis DigiTrove est exposé sur le port hôte `6380` pour éviter le conflit avec un
   conteneur existant `8fi-redis` sur `6379`.
 - Le schéma BDD v1 attend la validation finale de KingKouda avant P1.
+- `git fsck --full` ne signale plus de `missing blob`; les `dangling tree` restants
+  sont des objets non référencés et ne bloquent pas P1.
 - La question ouverte du champ `usb` (produits legacy) n'est pas tranchée — voir
   `AUDIT_LEGACY.md`.
 - Blocage précédent résolu : pas de push direct sur `origin/main`; la suite passe par
@@ -77,6 +92,18 @@ relations, cookie visiteur, stitching, et aucun mot de passe en dur.
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-09 — Codex
+- Fait : P0.5 assainissement pré-P1, récupération de l'objet Git manquant, isolation
+  du legacy sous `legacy/`, correction documentaire du schéma BDD v1.
+- État build/tests : `php artisan test` OK via `digitrove-php:dev` (2 tests),
+  `./vendor/bin/pint --test` OK (25 fichiers), `php artisan --version` OK
+  (Laravel Framework 13.19.0), `git fsck --full` OK sans `missing blob`.
+- Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-013, P0.5 avant P1,
+  `citext` avant tables, `users.deleted_at` pour SoftDeletes, `status` sans
+  `deleted`, analytics/rollups sans FK intentionnels, ordre futur des migrations.
+- Laisse à : validation humaine du schéma corrigé `DigiTrove_Schema_BDD_v1.md`,
+  puis P1 Identité strictement limité à `users`, `customer_profiles`, `visitors`.
 
 ### 2026-07-09 — Codex
 - Fait : finalisation documentaire P0, alignement Laravel 13.19 + Filament 5, branche dédiée.

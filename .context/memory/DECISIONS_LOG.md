@@ -110,6 +110,25 @@ règle sécurité tolérance zéro.
 IMPACT : P0, composer.json, CI, documentation projet. Les décisions métier
 PostgreSQL, Filament, Argon2id, BIGINT, disque privé, Pest/Pint restent inchangées.
 
+### D-013 : P0.5 — assainissement pré-P1 et schéma corrigé ✅
+CONTEXTE : P0 est terminé, mais P1 ne peut pas commencer avec un worktree legacy
+polluant l'application Laravel, un schéma racine encore marqué Laravel 11, et un
+objet Git manquant sur un asset legacy.
+CHOIX : lancer une phase P0.5 dédiée avant P1. Le schéma racine est aligné sur
+Laravel 13.19, `citext` est déclaré explicitement avant les colonnes `CITEXT`,
+`users.deleted_at TIMESTAMPTZ NULL` devient la stratégie Laravel SoftDeletes, et
+`users.status` reste limité aux états business `active`, `suspended`, `blocked`.
+Les rollups et tables analytics sans FK sont confirmés comme intentionnels pour
+découpler l'analytique des tables transactionnelles chaudes.
+ALTERNATIVES REJETÉES : commencer P1 malgré le worktree sale, garder
+`status = deleted`, laisser l'ordre futur des migrations implicite, ou supprimer
+des fichiers legacy sans validation humaine.
+IMPACT : `DigiTrove_Schema_BDD_v1.md`, futur ordre de migrations
+(extensions PostgreSQL avant tables, types/enums avant usage, `coupons` avant
+`orders`, `orders` avant `order_items`, `licenses` après `order_items`), et
+phase P1 strictement limitée à `users`, `customer_profiles`, `visitors` après
+validation humaine du schéma corrigé.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA

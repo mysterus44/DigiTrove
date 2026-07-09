@@ -1,5 +1,5 @@
 # DigiTrove — Architecture Relationnelle v1
-# Cible : PostgreSQL 16 · Laravel 11 · Argon2id · Money en entiers
+# Cible : PostgreSQL 16 · Laravel 13.19 · Argon2id · Money en entiers
 # Auteur : proposé par ARIA-DEV pour KingKouda — à challenger avant migration
 
 ---
@@ -24,6 +24,10 @@ Séparation volontaire : **l'authentification n'est pas le CRM.** Un `users` mai
 et rapide, un `customer_profiles` gras pour le marketing.
 
 ```sql
+-- Extension PostgreSQL obligatoire avant toute colonne CITEXT.
+-- À exécuter dans une migration dédiée avant les tables P1.
+CREATE EXTENSION IF NOT EXISTS citext;
+
 -- Authentification uniquement. Table chaude, lue à chaque requête.
 CREATE TABLE users (
     id                BIGSERIAL PRIMARY KEY,
@@ -32,9 +36,10 @@ CREATE TABLE users (
     role              TEXT   NOT NULL DEFAULT 'customer'
                       CHECK (role IN ('customer','admin','staff')),
     status            TEXT   NOT NULL DEFAULT 'active'
-                      CHECK (status IN ('active','suspended','deleted')),
+                      CHECK (status IN ('active','suspended','blocked')),
     email_verified_at TIMESTAMPTZ,
     last_login_at     TIMESTAMPTZ,
+    deleted_at        TIMESTAMPTZ NULL,            -- Laravel SoftDeletes
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -186,6 +191,7 @@ CREATE TABLE product_bundles (
 );
 
 -- Licences (logiciels). Optionnel selon ton catalogue.
+-- Note migration : cette table se crée après `order_items`, car elle y référence.
 CREATE TABLE licenses (
     id               BIGSERIAL PRIMARY KEY,
     product_id       BIGINT NOT NULL REFERENCES products(id),
@@ -237,6 +243,19 @@ CREATE TABLE cart_items (
     product_id BIGINT NOT NULL REFERENCES products(id),
     quantity   INT NOT NULL DEFAULT 1 CHECK (quantity > 0),
     UNIQUE (cart_id, product_id)
+);
+
+-- Note migration : créer `coupons` avant `orders` si `orders.coupon_id` reste une FK.
+CREATE TABLE coupons (
+    id             BIGSERIAL PRIMARY KEY,
+    code           TEXT NOT NULL UNIQUE,
+    discount_type  TEXT NOT NULL CHECK (discount_type IN ('percent','fixed')),
+    discount_value BIGINT NOT NULL,
+    max_redemptions INT,
+    redemptions_count INT NOT NULL DEFAULT 0,
+    starts_at      TIMESTAMPTZ,
+    ends_at        TIMESTAMPTZ,
+    is_active      BOOLEAN NOT NULL DEFAULT true
 );
 
 CREATE TABLE orders (
@@ -312,18 +331,6 @@ CREATE TABLE refunds (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE coupons (
-    id             BIGSERIAL PRIMARY KEY,
-    code           TEXT NOT NULL UNIQUE,
-    discount_type  TEXT NOT NULL CHECK (discount_type IN ('percent','fixed')),
-    discount_value BIGINT NOT NULL,
-    max_redemptions INT,
-    redemptions_count INT NOT NULL DEFAULT 0,
-    starts_at      TIMESTAMPTZ,
-    ends_at        TIMESTAMPTZ,
-    is_active      BOOLEAN NOT NULL DEFAULT true
-);
-
 -- 🔐 LIVRAISON SÉCURISÉE : le cœur de ton business digital.
 -- On ne donne JAMAIS l'URL du fichier. On donne un token, dont on ne stocke
 -- que le HASH (exactement comme un mot de passe).
@@ -397,6 +404,7 @@ CREATE INDEX ON events (visitor_id, occurred_at DESC);
 CREATE INDEX ON events USING GIN (properties);   -- requêtes sur le JSONB
 
 -- Sessions analytiques (pour taux de rebond, durée, parcours)
+-- Pas de FK volontairement : découplage analytique des tables chaudes.
 CREATE TABLE analytics_sessions (
     id           UUID PRIMARY KEY,
     visitor_id   UUID NOT NULL,
@@ -429,6 +437,7 @@ CREATE TABLE campaigns (
 
 -- 📊 ROLLUPS : le dashboard lit CES tables, jamais `events` directement.
 -- Rafraîchis par un job planifié (Laravel Scheduler, toutes les heures).
+-- Pas de FK volontairement : snapshots analytiques recalculables et découplés.
 CREATE TABLE daily_sales_stats (
     day               DATE PRIMARY KEY,
     orders_count      INT NOT NULL DEFAULT 0,
@@ -515,6 +524,15 @@ clair. On stocke `token_hash`, on compare, on incrémente, on révoque.
 ---
 
 ## ▶️ ORDRE D'IMPLÉMENTATION SUGGÉRÉ
+
+Ordre technique des migrations à respecter avant P1 :
+
+0. Extensions PostgreSQL (`citext`) avant toute table utilisant `CITEXT`.
+1. Types/enums/checks partagés avant usage.
+2. P1 strictement limité à `users`, `customer_profiles`, `visitors`.
+3. `coupons` avant `orders` si `orders.coupon_id` reste une FK.
+4. `orders` avant `order_items`.
+5. `licenses` après `order_items`.
 
 1. `users` + `customer_profiles` + `visitors` (fondation identité)
 2. `products` + `product_files` + `categories` (catalogue)

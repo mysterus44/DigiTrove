@@ -93,15 +93,18 @@ include INCLUDES_PATH . '/navbar.php';
             <h1 class="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight mb-4 h-24 md:h-36 flex items-center justify-center">
                 <span id="typewriter-text"></span>
             </h1>
-            <div class="flex flex-col sm:flex-row justify-center gap-5 mt-8">
-                <a href="<?php echo url('page/boutique.php'); ?>" class="bg-brand-orange hover:opacity-90 text-white font-bold py-3 px-8 rounded-lg text-lg transform hover:scale-105 duration-300 shadow-lg">
-                    Explorer la Boutique
-                </a>
-                <a href="<?php echo url('page/a-propos.php'); ?>" class="bg-white/10 border border-white/50 hover:bg-white/20 text-white font-bold py-3 px-8 rounded-lg text-lg transition-colors duration-300 backdrop-blur-sm">
-                    Qui sommes-nous ?
-                </a>
-            </div>
         </div>
+        <div class="relative z-20">
+                <div class="flex flex-col sm:flex-row justify-center gap-5 mt-8">
+                    <a href="<?php echo url('page/boutique.php'); ?>" class="bg-brand-orange hover:opacity-90 text-white font-bold py-3 px-8 rounded-lg text-lg transform hover:scale-105 duration-300 shadow-lg">
+                        Explorer la Boutique
+                    </a>
+                    <a href="<?php echo url('page/a-propos.php'); ?>" class="bg-white/10 border border-white/50 hover:bg-white/20 text-white font-bold py-3 px-8 rounded-lg text-lg transition-colors duration-300 backdrop-blur-sm">
+                        Qui sommes-nous ?
+                    </a>
+                </div>
+            </div>
+
     </section>
 
     <section id="offres" class="py-20 sm:py-28 bg-light-bg dark:bg-dark-bg">
@@ -176,10 +179,9 @@ include INCLUDES_PATH . '/navbar.php';
                                 </div>
                                 
                                 <a href="<?php echo htmlspecialchars($produit['url'] ?? '#'); ?>" target="_blank" 
-                                    class="track-click block w-full py-3 px-4 bg-brand-blue hover:bg-brand-orange text-white text-center font-semibold rounded-xl transition-colors duration-300 flex items-center justify-center gap-2"
+                                    class="track-click block w-full py-1.5 px-2 bg-brand-blue hover:bg-brand-orange text-white text-center font-semibold rounded-xl transition-colors duration-300 flex items-center justify-center gap-2"
                                     data-id="<?php echo $produit['id']; ?>">
                                     <span>Profiter de l'offre</span>
-                                    <i data-lucide="external-link" class="w-4 h-4"></i>
                                 </a>
                             </div>
                         </div>
