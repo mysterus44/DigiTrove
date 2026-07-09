@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  tests:
+    name: Pint and tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: digitrove
+          POSTGRES_USER: digitrove
+          POSTGRES_PASSWORD: digitrove_local
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U digitrove -d digitrove"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: intl, pdo_pgsql, redis, zip
+          coverage: none
+
+      - name: Validate Composer
+        run: composer validate --strict
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --ansi
+
+      - name: Syntax check
+        run: git ls-files '*.php' | xargs -n 1 php -l
+
+      - name: Pint
+        run: ./vendor/bin/pint --test
+
+      - name: Tests
+        run: php artisan test

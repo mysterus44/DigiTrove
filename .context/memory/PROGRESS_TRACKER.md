@@ -1,0 +1,115 @@
+# PROGRESS_TRACKER.md — Tableau de Bord Développement
+# Mis à jour par l'agent codeur après CHAQUE tâche.
+
+---
+
+## 📊 ÉTAT GLOBAL
+
+```
+P0 FONDATIONS       : ██████████  100%
+P1 IDENTITÉ         : ░░░░░░░░░░  0%
+P2 CATALOGUE        : ░░░░░░░░░░  0%
+P3 COMMERCE         : ░░░░░░░░░░  0%
+P4 LIVRAISON        : ░░░░░░░░░░  0%
+P5 ANALYTIQUE       : ░░░░░░░░░░  0%
+P6 CRM & MARKETING  : ░░░░░░░░░░  0%
+P7 BLOG & SEO       : ░░░░░░░░░░  0%
+```
+
+> Rappel : **aucune logique métier avant que P1→P4 soient migrés et testés.**
+
+---
+
+## P0 — FONDATIONS
+| Tâche | Statut |
+|-------|--------|
+| Laravel 13 installé (PHP 8.3+) — D-012 | ✅ DONE |
+| PostgreSQL 16 branché | ✅ DONE |
+| docker-compose (Postgres + Redis) | ✅ DONE |
+| .env.example complet · .env ignoré par git | ✅ DONE |
+| Argon2id activé (config/hashing.php) | ✅ DONE |
+| Filament 5 installé — D-012 | ✅ DONE |
+| Pest + Pint configurés | ✅ DONE |
+| CI (GitHub Actions) | ✅ DONE |
+
+## P1 — IDENTITÉ
+| Tâche | Statut |
+|-------|--------|
+| Migration `users` | ⬜ TODO |
+| Migration `customer_profiles` | ⬜ TODO |
+| Migration `visitors` | ⬜ TODO |
+| Modèles + relations + casts (enums) | ⬜ TODO |
+| Middleware de tracking visiteur (cookie UUID) | ⬜ TODO |
+| Stitching visitor → user au login | ⬜ TODO |
+| Seeder admin (lit .env, jamais de mot de passe en dur) | ⬜ TODO |
+| Tests Pest (hash Argon2id, relations, stitching) | ⬜ TODO |
+
+## P2 — CATALOGUE
+| Tâche | Statut |
+|-------|--------|
+| Migrations products / product_files / categories / bundles | ⬜ TODO |
+| product_price_history | ⬜ TODO |
+| Upload fichiers sur disque **privé** | ⬜ TODO |
+| checksum_sha256 calculé à l'upload | ⬜ TODO |
+| Reviews + modération + verified_purchase | ⬜ TODO |
+| Filament ProductResource | ⬜ TODO |
+| Tests | ⬜ TODO |
+
+## P3 — COMMERCE
+| Tâche | Statut |
+|-------|--------|
+| Migrations carts / orders / order_items / payments / coupons / refunds | ⬜ TODO |
+| OrderService (snapshot prix + nom) | ⬜ TODO |
+| PaymentGateway (interface) + 1 provider | ⬜ TODO |
+| Webhook : signature + getStatus + montant + idempotence | ⬜ TODO |
+| Event OrderPaid | ⬜ TODO |
+| Checkout invité (sans compte) | ⬜ TODO |
+| Job expiration commandes pending (30 min) | ⬜ TODO |
+| Tests (snapshot, idempotence, montant falsifié) | ⬜ TODO |
+
+## P4 — LIVRAISON (⚠️ cœur sécurité)
+| Tâche | Statut |
+|-------|--------|
+| Migrations download_grants / download_logs | ⬜ TODO |
+| Listener IssueDownloadGrants (sur OrderPaid) | ⬜ TODO |
+| DownloadService (token haché, expiration, quota atomique) | ⬜ TODO |
+| DownloadController + rate limiting | ⬜ TODO |
+| Stratégie gros fichiers (X-Accel-Redirect ou URL S3 pré-signée) | ⬜ TODO |
+| E-mail de livraison (double canal : écran + e-mail) | ⬜ TODO |
+| Révocation sur remboursement | ⬜ TODO |
+| Détection de partage de lien (> 3 IP / 24h) | ⬜ TODO |
+| Tests sécurité (lien expiré, quota, révoqué, 404 générique) | ⬜ TODO |
+
+## P5 — ANALYTIQUE
+| Tâche | Statut |
+|-------|--------|
+| Migration `events` PARTITIONNÉE + index GIN | ⬜ TODO |
+| Job de création des partitions à l'avance | ⬜ TODO |
+| AnalyticsService + job d'écriture asynchrone | ⬜ TODO |
+| analytics_sessions | ⬜ TODO |
+| Rollups (daily_sales / daily_product / daily_funnel) | ⬜ TODO |
+| Campaigns + attribution (first touch / last touch) | ⬜ TODO |
+| Tests | ⬜ TODO |
+
+## P6 — CRM & MARKETING
+| Tâche | Statut |
+|-------|--------|
+| customer_segments + membres (définition JSONB) | ⬜ TODO |
+| Rollups CRM maintenus par événement (orders_count, LTV) | ⬜ TODO |
+| Paniers abandonnés + relance | ⬜ TODO |
+| Widgets Filament (CA, tunnel, top produits) | ⬜ TODO |
+| Export CSV des segments | ⬜ TODO |
+
+## P7 — BLOG & SEO
+| Tâche | Statut |
+|-------|--------|
+| Migrations articles / tags / article_product | ⬜ TODO |
+| Rendu article + maillage interne | ⬜ TODO |
+| sitemap.xml + robots.txt | ⬜ TODO |
+| Données structurées (Product, Article) | ⬜ TODO |
+| Core Web Vitals vérifiés | ⬜ TODO |
+
+---
+
+## LÉGENDE
+`⬜ TODO` · `🔄 IN_PROGRESS` · `✅ DONE` · `❌ BLOCKED` · `⏸️ PAUSED`

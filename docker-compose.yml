@@ -1,0 +1,35 @@
+name: digitrove
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-digitrove}
+      POSTGRES_USER: ${DB_USERNAME:-digitrove}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-digitrove_local}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - digitrove-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-digitrove} -d ${DB_DATABASE:-digitrove}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - digitrove-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  digitrove-postgres-data:
+  digitrove-redis-data:

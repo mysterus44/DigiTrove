@@ -1,0 +1,12 @@
+{
+    "preset": "laravel",
+    "exclude": [
+        "admin",
+        "data",
+        "includes",
+        "page"
+    ],
+    "notPath": [
+        "index.php"
+    ]
+}
