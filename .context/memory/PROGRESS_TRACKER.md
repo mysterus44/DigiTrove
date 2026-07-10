@@ -70,7 +70,7 @@ Schéma BDD v1 : prêt pour validation humaine finale après logging des décisi
 multi-devises, checkout invité et affiliation future. P1 reste non démarré.
 
 ## SITE-00 — VITRINE STATIQUE DE PRÉVISUALISATION
-Statut : ✅ terminé techniquement sur `site-00-static-preview`.
+Statut : ✅ terminé techniquement et mergé dans `p0-foundations-laravel13`.
 
 Objectif : prévisualiser l'expérience front-office DigiTrove avec contenu marketing
 legacy, sans backend métier et sans flux transactionnel.
@@ -83,11 +83,20 @@ legacy, sans backend métier et sans flux transactionnel.
 | Images marketing sûres copiées vers `public/images/digitrove/` | ✅ DONE |
 | CTA non transactionnels uniquement | ✅ DONE |
 | Tests HTTP et garde-fous anti checkout/legacy/fichiers publics | ✅ DONE |
+| PR #1 mergée dans `p0-foundations-laravel13` (`83b6b0c`) | ✅ DONE |
+| Branche locale `site-00-static-preview` supprimée après merge confirmé | ✅ DONE |
+| Branche distante `origin/site-00-static-preview` conservée | ✅ DONE |
+| `origin/main` confirmé intact, sans SITE-00 | ✅ DONE |
 
 Vérifications SITE-00 passées :
 - `php artisan test` via `digitrove-php:dev` : 5 tests passés, 20 assertions
 - `./vendor/bin/pint --test` via `digitrove-php:dev` : PASS, 26 fichiers
 - `npm run build` : PASS
+
+Vérifications post-merge sur `p0-foundations-laravel13` :
+- `npm run build` : PASS
+- `php artisan test` via `digitrove-php:dev` : 5 tests passés, 20 assertions
+- `./vendor/bin/pint --test` via `digitrove-php:dev` : PASS, 26 fichiers
 
 Limites confirmées : aucune migration, aucune table, aucun modèle métier, aucun
 contrôleur métier, aucun checkout, aucun panier, aucun paiement, aucun lien de

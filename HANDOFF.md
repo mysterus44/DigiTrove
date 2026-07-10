@@ -7,9 +7,10 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Codex
-- **Date** : 2026-07-09
-- **Branche git** : `site-00-static-preview`
+- **Date** : 2026-07-10
+- **Branche git** : `p0-foundations-laravel13`
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
+- **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
   - `php artisan --version` OK via `digitrove-php:dev` → Laravel Framework 13.19.0
@@ -19,6 +20,9 @@
   - SITE-00 : `php artisan test` OK via `digitrove-php:dev` → 5 tests, 20 assertions
   - SITE-00 : `./vendor/bin/pint --test` OK via `digitrove-php:dev` → 26 fichiers
   - SITE-00 : `npm run build` OK
+  - Post-merge SITE-00 : `npm run build` OK, `php artisan test` OK via
+    `digitrove-php:dev` → 5 tests, 20 assertions, `./vendor/bin/pint --test` OK
+    via `digitrove-php:dev` → 26 fichiers
 
 ---
 
@@ -51,7 +55,13 @@
     suggéré mais non obligatoire, affiliation future avec compte obligatoire et
     tables dédiées hors P1
   - aucune migration P1, aucune table métier, aucune logique métier ajoutée
-- **SITE-00 Vitrine statique de prévisualisation terminé techniquement** :
+- **SITE-00 Vitrine statique de prévisualisation terminé techniquement et mergé** :
+  - PR #1 mergée correctement dans `p0-foundations-laravel13`
+  - commit de merge : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
+  - branche locale `site-00-static-preview` supprimée après vérification qu'elle
+    était mergée
+  - branche distante `origin/site-00-static-preview` conservée
+  - `origin/main` ne contient pas SITE-00
   - page d'accueil Laravel remplacée par une vitrine/boutique statique premium
   - produits, prix XOF, catégories, avis et aperçus blog issus du contenu legacy
     figés dans la vue
@@ -67,9 +77,9 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Action recommandée immédiate : revue de `site-00-static-preview`, puis validation
-humaine finale du schéma corrigé `DigiTrove_Schema_BDD_v1.md`, incluant
-multi-devises, checkout invité et affiliation future.**
+**Action recommandée immédiate : validation humaine finale du schéma corrigé
+`DigiTrove_Schema_BDD_v1.md`, incluant multi-devises, checkout invité et
+affiliation future.**
 
 Ensuite seulement, passer à **P1 — Identité & CRM**. Le PRD à lire sera
 `.context/prompts/PRD_01_IDENTITE.md`.
@@ -121,6 +131,19 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-10 — Codex
+- Fait : audit post-merge SITE-00 confirmé. La PR #1 a été mergée dans
+  `p0-foundations-laravel13` via `83b6b0c`, `origin/main` ne contient pas SITE-00,
+  la branche locale `site-00-static-preview` a été supprimée et la branche distante
+  `origin/site-00-static-preview` est conservée.
+- État build/tests : post-merge sur `p0-foundations-laravel13`, `npm run build` OK,
+  `php artisan test` OK via `digitrove-php:dev` (5 tests, 20 assertions),
+  `./vendor/bin/pint --test` OK via `digitrove-php:dev` (26 fichiers).
+- Décisions prises (→ aussi dans DECISIONS_LOG.md) : aucune nouvelle décision ;
+  confirmation que SITE-00 reste statique et que P1 reste bloqué.
+- Laisse à : validation humaine finale de `DigiTrove_Schema_BDD_v1.md`, puis P1
+  Identité seulement si KingKouda valide explicitement le schéma.
 
 ### 2026-07-09 — Codex
 - Fait : SITE-00 vitrine statique de prévisualisation, avec landing/boutique
