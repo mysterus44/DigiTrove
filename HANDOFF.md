@@ -8,7 +8,7 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-10
-- **Branche git** : `p0-foundations-laravel13`
+- **Branche git** : `p1-identity`
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Build/tests** :
@@ -23,6 +23,11 @@
   - Post-merge SITE-00 : `npm run build` OK, `php artisan test` OK via
     `digitrove-php:dev` → 5 tests, 20 assertions, `./vendor/bin/pint --test` OK
     via `digitrove-php:dev` → 26 fichiers
+  - P1 Identité : `php artisan migrate:fresh --env=testing` OK via PostgreSQL réel
+    (`digitrove_testing`) → 4 migrations P1
+  - P1 Identité : `php artisan test` OK via PostgreSQL réel → 17 tests,
+    57 assertions
+  - P1 Identité : `./vendor/bin/pint --test` OK → 38 fichiers
 
 ---
 
@@ -72,17 +77,28 @@
     `product_files`
   - aucune migration, aucune table, aucun modèle métier, aucun contrôleur métier,
     aucun panier, aucun paiement, aucun téléchargement public
+- **P1 Identité implémenté sur branche de review `p1-identity`** :
+  - schéma BDD v1 officiellement validé par KingKouda
+  - extension PostgreSQL `citext`
+  - tables strictement P1 : `users`, `customer_profiles`, `visitors`
+  - modèles : `User`, `CustomerProfile`, `Visitor`
+  - enums : `UserRole`, `UserStatus`, `LifecycleStage`
+  - factories : `UserFactory`, `CustomerProfileFactory`, `VisitorFactory`
+  - tests PostgreSQL : extension, tables, colonnes, email CITEXT unique,
+    `password_hash` Argon2id, contraintes SQL, relations, SoftDeletes,
+    visiteurs anonymes et garde-fou anti tables hors périmètre
+  - aucun catalogue, panier, commande, paiement, téléchargement, affiliation,
+    analytics, checkout invité ou front métier ajouté
 
 ---
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Action recommandée immédiate : validation humaine finale du schéma corrigé
-`DigiTrove_Schema_BDD_v1.md`, incluant multi-devises, checkout invité et
-affiliation future.**
+**Action recommandée immédiate : review humaine de la branche `p1-identity`, puis
+Pull Request vers `p0-foundations-laravel13` si les garde-fous P1 sont acceptés.**
 
-Ensuite seulement, passer à **P1 — Identité & CRM**. Le PRD à lire sera
-`.context/prompts/PRD_01_IDENTITE.md`.
+Après merge de P1 seulement, préparer P2 Catalogue. Ne pas démarrer P2 tant que
+P1 n'est pas reviewé et mergé.
 
 Résumé P1 : créer `users`, `customer_profiles`, `visitors`, les modèles/casts/enums,
 le middleware `visitor_id`, le stitching visitor → user, et le seeder admin qui lit
@@ -91,7 +107,6 @@ le middleware `visitor_id`, le stitching visitor → user, et le seeder admin qu
 Critère de fin P1 : migrations PostgreSQL vertes, extension `citext`, tests Argon2id,
 relations, cookie visiteur, stitching, et aucun mot de passe en dur.
 
-⚠️ P1 reste bloqué tant que KingKouda n'a pas validé le schéma corrigé.
 Toujours respecter : BDD avant logique, plan avant code, une seule feature à la fois.
 
 ---
@@ -131,6 +146,18 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-10 — Codex
+- Fait : P1 Identité implémenté sur `p1-identity` après validation officielle du
+  schéma BDD v1. Ajout strict de l'extension `citext`, des tables `users`,
+  `customer_profiles`, `visitors`, des modèles, enums, factories et tests P1.
+- État build/tests : `php artisan migrate:fresh --env=testing` OK via PostgreSQL
+  réel (`digitrove_testing`), `php artisan test` OK via PostgreSQL réel (17 tests,
+  57 assertions), `./vendor/bin/pint --test` OK (38 fichiers).
+- Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-016, P1 se limite au socle
+  identité et au futur rattachement optionnel `visitor -> user`; aucun middleware
+  avancé ni checkout invité n'est livré en P1.
+- Laisse à : review humaine de `p1-identity`, puis PR vers `p0-foundations-laravel13`.
 
 ### 2026-07-10 — Codex
 - Fait : audit post-merge SITE-00 confirmé. La PR #1 a été mergée dans

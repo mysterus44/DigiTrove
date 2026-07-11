@@ -165,13 +165,26 @@ IMPACT : `resources/views/welcome.blade.php`, `resources/css/app.css`, tests HTT
 de garde-fou, assets marketing publics. P1 reste bloqué jusqu'à validation humaine
 du schéma BDD v1.
 
+### D-016 : P1 Identité démarre après validation officielle BDD v1 ✅
+CONTEXTE : KingKouda a validé officiellement `DigiTrove_Schema_BDD_v1.md` avant
+implémentation de P1.
+CHOIX : P1 implémente uniquement le socle identité : extension PostgreSQL `citext`,
+`users`, `customer_profiles`, `visitors`, enums, modèles, factories et tests
+PostgreSQL. `users.email` est en `CITEXT`, `users.password_hash` est compatible
+Laravel Auth et Argon2id, `users.deleted_at` porte SoftDeletes, `visitors.user_id`
+reste nullable pour préparer un rattachement futur sans forcer le compte.
+ALTERNATIVES REJETÉES : ajouter le middleware visitor, le stitching login, un
+checkout invité, un seeder admin, des segments CRM avancés, des tables analytics,
+ou toute table catalogue/commerce/livraison en P1.
+IMPACT : migrations P1, modèles identité, tests PostgreSQL. P2 ne doit pas démarrer
+tant que P1 n'est pas reviewé et mergé.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
 
-- **Le schéma `DigiTrove_Schema_BDD_v1.md` dans son ensemble** (v1). Après D-014,
-  il est prêt pour validation humaine finale. Tant qu'il n'est pas validé, ne pas
-  générer de logique métier ni démarrer P1.
+- **Le schéma `DigiTrove_Schema_BDD_v1.md` dans son ensemble** (v1) : validé
+  officiellement par KingKouda avant P1.
 - **Le champ `usb` du legacy** : les produits avaient un champ `usb`. Livraison
   physique sur clé USB ? Si oui, il faut un modèle de commande hybride
   (digital + physique) avec adresse de livraison. À trancher. Voir AUDIT_LEGACY.md.

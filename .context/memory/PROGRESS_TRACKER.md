@@ -9,7 +9,7 @@
 P0 FONDATIONS       : ██████████  100%
 P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
-P1 IDENTITÉ         : ░░░░░░░░░░  0%
+P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ░░░░░░░░░░  0%
 P3 COMMERCE         : ░░░░░░░░░░  0%
 P4 LIVRAISON        : ░░░░░░░░░░  0%
@@ -19,13 +19,13 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
 > Rappel : **aucune logique métier avant que P1→P4 soient migrés et testés.**
-> P1 est non démarré et reste bloqué jusqu'à validation humaine finale du schéma BDD v1.
+> P1 est implémenté sur la branche `p1-identity` et reste à reviewer avant merge.
 
 ---
 
 ## P0 — FONDATIONS
 Statut : ✅ terminé techniquement sur la branche dédiée `p0-foundations-laravel13`.
-Validation humaine encore attendue avant P1 : schéma BDD v1.
+Schéma BDD v1 validé officiellement avant P1.
 
 | Tâche | Statut |
 |-------|--------|
@@ -44,7 +44,7 @@ Vérifications P0 passées :
 - `php artisan test` : 2 tests passés, 2 assertions
 - `./vendor/bin/pint --test` : PASS, 25 fichiers Laravel
 
-Prochaine phase : P1 Identité, seulement après validation humaine du schéma BDD.
+Prochaine phase : review humaine de P1 Identité sur `p1-identity`.
 
 ## P0.5 — ASSAINISSEMENT PRÉ-P1
 Statut : ✅ terminé techniquement sur `p0-foundations-laravel13`.
@@ -66,8 +66,8 @@ Vérifications P0.5 passées :
 - `docker run ... php artisan --version` : Laravel Framework 13.19.0
 - `git fsck --full` : OK, aucun `missing blob` ; seulement des `dangling tree`
 
-Schéma BDD v1 : prêt pour validation humaine finale après logging des décisions
-multi-devises, checkout invité et affiliation future. P1 reste non démarré.
+Schéma BDD v1 : validé officiellement avant P1 après logging des décisions
+multi-devises, checkout invité et affiliation future.
 
 ## SITE-00 — VITRINE STATIQUE DE PRÉVISUALISATION
 Statut : ✅ terminé techniquement et mergé dans `p0-foundations-laravel13`.
@@ -104,19 +104,32 @@ livraison ou fichier digital public. P1 reste bloqué jusqu'à validation humain
 schéma BDD v1.
 
 ## P1 — IDENTITÉ
-Statut : ⬜ non démarré. Bloqué jusqu'à validation humaine finale du schéma BDD v1.
+Statut : ✅ implémenté sur `p1-identity`, à reviewer avant merge.
 Périmètre strict : extension `citext`, `users`, `customer_profiles`, `visitors`.
 
 | Tâche | Statut |
 |-------|--------|
-| Migration `users` | ⬜ TODO |
-| Migration `customer_profiles` | ⬜ TODO |
-| Migration `visitors` | ⬜ TODO |
-| Modèles + relations + casts (enums) | ⬜ TODO |
-| Middleware de tracking visiteur (cookie UUID) | ⬜ TODO |
-| Stitching visitor → user au login | ⬜ TODO |
-| Seeder admin (lit .env, jamais de mot de passe en dur) | ⬜ TODO |
-| Tests Pest (hash Argon2id, relations, stitching) | ⬜ TODO |
+| Migration extension PostgreSQL `citext` | ✅ DONE |
+| Migration `users` | ✅ DONE |
+| Migration `customer_profiles` | ✅ DONE |
+| Migration `visitors` | ✅ DONE |
+| Modèles + relations + casts (enums) | ✅ DONE |
+| Factories P1 | ✅ DONE |
+| Tests Pest/PostgreSQL : extension, contraintes, relations, SoftDeletes, visiteurs | ✅ DONE |
+| Middleware de tracking visiteur (cookie UUID) | ⏸️ PAUSED — hors première livraison P1 |
+| Stitching visitor → user au login | ⏸️ PAUSED — préparé par FK nullable, logique hors P1 |
+| Seeder admin (lit .env, jamais de mot de passe en dur) | ⏸️ PAUSED — non livré en P1 |
+
+Vérifications P1 passées :
+- `php artisan migrate:fresh --env=testing` via `digitrove-php:dev` + PostgreSQL
+  réel `digitrove_testing` : PASS, 4 migrations P1
+- `php artisan test` via `digitrove-php:dev` + PostgreSQL réel : PASS,
+  17 tests, 57 assertions
+- `./vendor/bin/pint --test` via `digitrove-php:dev` : PASS, 38 fichiers
+
+Limites confirmées : aucune table catalogue, produit, panier, commande, paiement,
+téléchargement, affiliation, segment marketing avancé ou analytics. Aucun checkout
+invité, aucun middleware/stitching avancé, aucun front métier.
 
 ## P2 — CATALOGUE
 | Tâche | Statut |
