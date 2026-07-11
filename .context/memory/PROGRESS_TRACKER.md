@@ -19,7 +19,8 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
 > Rappel : **aucune logique métier avant que P1→P4 soient migrés et testés.**
-> P1 est implémenté sur la branche `p1-identity` et reste à reviewer avant merge.
+> P1 est mergé dans `p0-foundations-laravel13`. P2 ne démarre pas en code avant
+> validation humaine du plan BDD catalogue.
 
 ---
 
@@ -44,7 +45,7 @@ Vérifications P0 passées :
 - `php artisan test` : 2 tests passés, 2 assertions
 - `./vendor/bin/pint --test` : PASS, 25 fichiers Laravel
 
-Prochaine phase : review humaine de P1 Identité sur `p1-identity`.
+Prochaine phase : validation humaine du plan P2 Catalogue.
 
 ## P0.5 — ASSAINISSEMENT PRÉ-P1
 Statut : ✅ terminé techniquement sur `p0-foundations-laravel13`.
@@ -104,7 +105,7 @@ livraison ou fichier digital public. P1 reste bloqué jusqu'à validation humain
 schéma BDD v1.
 
 ## P1 — IDENTITÉ
-Statut : ✅ implémenté sur `p1-identity`, à reviewer avant merge.
+Statut : ✅ implémenté et mergé dans `p0-foundations-laravel13`.
 Périmètre strict : extension `citext`, `users`, `customer_profiles`, `visitors`.
 
 | Tâche | Statut |
@@ -127,20 +128,35 @@ Vérifications P1 passées :
   17 tests, 57 assertions
 - `./vendor/bin/pint --test` via `digitrove-php:dev` : PASS, 38 fichiers
 
+Vérifications post-merge P1 sur `p0-foundations-laravel13` :
+- Merge GitHub : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
+- `origin/main` confirmé intact à `1e41b92 DigiTrove V2`
+- Branche locale `p1-identity` supprimée après merge confirmé
+- Branche distante `origin/p1-identity` conservée
+- `php artisan migrate:fresh --env=testing` via `digitrove-php:dev` + PostgreSQL
+  réel : PASS, tables applicatives uniquement `users`, `customer_profiles`,
+  `visitors`
+- `php artisan test` via `digitrove-php:dev` + PostgreSQL réel : PASS,
+  17 tests, 57 assertions
+- `./vendor/bin/pint --test` via `digitrove-php:dev` : PASS, 38 fichiers
+
 Limites confirmées : aucune table catalogue, produit, panier, commande, paiement,
 téléchargement, affiliation, segment marketing avancé ou analytics. Aucun checkout
 invité, aucun middleware/stitching avancé, aucun front métier.
 
 ## P2 — CATALOGUE
+Statut : ⬜ non démarré. Plan BDD à valider avant tout code.
+
 | Tâche | Statut |
 |-------|--------|
-| Migrations products / product_files / categories / bundles | ⬜ TODO |
-| product_price_history | ⬜ TODO |
-| Upload fichiers sur disque **privé** | ⬜ TODO |
+| Plan BDD P2 Catalogue | 🔄 IN_PROGRESS — à valider humainement |
+| Migrations categories / products / product_files / product_category / product_bundles | ⬜ TODO |
+| product_price_history | ⬜ TODO — à confirmer dans le plan P2 |
+| Upload fichiers sur disque **privé** | ⬜ TODO — aucune URL publique |
 | checksum_sha256 calculé à l'upload | ⬜ TODO |
-| Reviews + modération + verified_purchase | ⬜ TODO |
-| Filament ProductResource | ⬜ TODO |
-| Tests | ⬜ TODO |
+| Reviews + modération + verified_purchase | ⬜ TODO — probablement hors première livraison P2 |
+| Filament ProductResource | ⬜ TODO — après validation BDD |
+| Tests catalogue et garde-fous sécurité | ⬜ TODO |
 
 ## P3 — COMMERCE
 | Tâche | Statut |

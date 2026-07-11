@@ -179,6 +179,19 @@ ou toute table catalogue/commerce/livraison en P1.
 IMPACT : migrations P1, modèles identité, tests PostgreSQL. P2 ne doit pas démarrer
 tant que P1 n'est pas reviewé et mergé.
 
+### D-017 : P1 mergé, P2 Catalogue reste derrière un plan BDD validé ✅
+CONTEXTE : la PR #2 P1 Identité a été mergée dans `p0-foundations-laravel13` via
+`3f9d132`, avec tests PostgreSQL et Pint verts. `main` reste intact à `1e41b92`.
+CHOIX : clôturer P1 comme terminé et mergé, puis préparer uniquement le plan BDD
+P2 Catalogue avant toute migration ou logique. P2 devra rester limité au catalogue :
+`categories`, `products`, `product_files`, pivots/liaisons nécessaires et bundles.
+Les fichiers digitaux restent sur disque privé, les montants en `BIGINT` avec
+devise explicite, et aucun checkout/paiement/download grant ne doit apparaître.
+ALTERNATIVES REJETÉES : démarrer directement les migrations P2, ajouter du checkout,
+ajouter des paiements, exposer des fichiers digitaux, créer des grants de
+téléchargement, ou viser `main`.
+IMPACT : mémoire projet, plan P2 à valider, future implémentation catalogue.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
@@ -190,6 +203,8 @@ tant que P1 n'est pas reviewé et mergé.
   (digital + physique) avec adresse de livraison. À trancher. Voir AUDIT_LEGACY.md.
 - **Prix multi-devises avant P2/P3** : multi-devises validé, mais il faudra choisir
   entre prix fixes par devise (recommandé) et conversion automatique.
+- **Plan BDD P2 Catalogue** : à valider avant toute migration catalogue. Inclure
+  la décision prix fixes par devise vs conversion automatique.
 
 ---
 

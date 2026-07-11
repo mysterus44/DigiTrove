@@ -7,10 +7,11 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Codex
-- **Date** : 2026-07-10
-- **Branche git** : `p1-identity`
+- **Date** : 2026-07-11
+- **Branche git** : `p0-foundations-laravel13`
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
+- **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
   - `php artisan --version` OK via `digitrove-php:dev` → Laravel Framework 13.19.0
@@ -28,6 +29,12 @@
   - P1 Identité : `php artisan test` OK via PostgreSQL réel → 17 tests,
     57 assertions
   - P1 Identité : `./vendor/bin/pint --test` OK → 38 fichiers
+  - Post-merge P1 : `php artisan migrate:fresh --env=testing` OK via PostgreSQL
+    réel → tables applicatives créées uniquement `users`, `customer_profiles`,
+    `visitors`
+  - Post-merge P1 : `php artisan test` OK via PostgreSQL réel → 17 tests,
+    57 assertions
+  - Post-merge P1 : `./vendor/bin/pint --test` OK → 38 fichiers
 
 ---
 
@@ -77,7 +84,12 @@
     `product_files`
   - aucune migration, aucune table, aucun modèle métier, aucun contrôleur métier,
     aucun panier, aucun paiement, aucun téléchargement public
-- **P1 Identité implémenté sur branche de review `p1-identity`** :
+- **P1 Identité implémenté et mergé dans `p0-foundations-laravel13`** :
+  - PR #2 mergée correctement via
+    `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
+  - branche locale `p1-identity` supprimée après vérification qu'elle était mergée
+  - branche distante `origin/p1-identity` conservée
+  - `origin/main` reste intact à `1e41b92 DigiTrove V2`
   - schéma BDD v1 officiellement validé par KingKouda
   - extension PostgreSQL `citext`
   - tables strictement P1 : `users`, `customer_profiles`, `visitors`
@@ -94,18 +106,17 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Action recommandée immédiate : review humaine de la branche `p1-identity`, puis
-Pull Request vers `p0-foundations-laravel13` si les garde-fous P1 sont acceptés.**
+**Action recommandée immédiate : validation humaine du plan BDD `P2 — Catalogue`.**
 
-Après merge de P1 seulement, préparer P2 Catalogue. Ne pas démarrer P2 tant que
-P1 n'est pas reviewé et mergé.
+Ne pas démarrer P2 en code tant que le plan BDD catalogue n'est pas validé.
 
-Résumé P1 : créer `users`, `customer_profiles`, `visitors`, les modèles/casts/enums,
-le middleware `visitor_id`, le stitching visitor → user, et le seeder admin qui lit
-`ADMIN_EMAIL` / `ADMIN_PASSWORD` depuis `.env`.
+Résumé P2 pressenti : créer le socle catalogue `categories`, `products`,
+`product_files`, `product_category`, `product_bundles` avec fichiers digitaux sur
+disque privé uniquement, montants en `BIGINT`, devise explicite, slugs uniques,
+statuts contrôlés et tests de garde-fou. Aucun checkout, paiement ni grant de
+téléchargement en P2.
 
-Critère de fin P1 : migrations PostgreSQL vertes, extension `citext`, tests Argon2id,
-relations, cookie visiteur, stitching, et aucun mot de passe en dur.
+Critère d'entrée P2 : plan BDD catalogue validé explicitement par KingKouda.
 
 Toujours respecter : BDD avant logique, plan avant code, une seule feature à la fois.
 
@@ -146,6 +157,20 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-11 — Codex
+- Fait : audit post-merge P1 confirmé. La PR #2 a été mergée dans
+  `p0-foundations-laravel13` via `3f9d132`, `origin/main` reste intact à
+  `1e41b92`, la branche locale `p1-identity` a été supprimée et la branche distante
+  `origin/p1-identity` est conservée.
+- État build/tests : post-merge P1 sur `p0-foundations-laravel13`,
+  `php artisan migrate:fresh --env=testing` OK via PostgreSQL réel avec uniquement
+  `users`, `customer_profiles`, `visitors`, `php artisan test` OK (17 tests,
+  57 assertions), `./vendor/bin/pint --test` OK (38 fichiers).
+- Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-017, P1 est clos après
+  merge ; P2 Catalogue nécessite validation humaine du plan BDD avant tout code.
+- Laisse à : validation humaine du plan `P2 — Catalogue`, puis implémentation P2
+  uniquement si le plan est validé.
 
 ### 2026-07-10 — Codex
 - Fait : P1 Identité implémenté sur `p1-identity` après validation officielle du
