@@ -7,8 +7,8 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Codex
-- **Date** : 2026-07-11
-- **Branche git** : `p0-foundations-laravel13`
+- **Date** : 2026-07-12
+- **Branche git** : `p2-catalog`
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -35,6 +35,12 @@
   - Post-merge P1 : `php artisan test` OK via PostgreSQL réel → 17 tests,
     57 assertions
   - Post-merge P1 : `./vendor/bin/pint --test` OK → 38 fichiers
+  - P2 Catalogue : `php artisan migrate:fresh --env=testing` OK via PostgreSQL
+    réel → P1 + 6 migrations P2
+  - P2 Catalogue : `php artisan test` OK via PostgreSQL réel → 28 tests,
+    158 assertions
+  - P2 Catalogue : `./vendor/bin/pint --test` OK → 55 fichiers
+  - P2 Catalogue : `git diff --check` OK
 
 ---
 
@@ -101,25 +107,30 @@
     visiteurs anonymes et garde-fou anti tables hors périmètre
   - aucun catalogue, panier, commande, paiement, téléchargement, affiliation,
     analytics, checkout invité ou front métier ajouté
+- **P2 Catalogue implémenté sur `p2-catalog`, non mergé** :
+  - branche créée depuis `origin/p0-foundations-laravel13` à `9a11791`
+  - migrations strictement P2 : `categories`, `products`, `product_prices`,
+    `product_files`, `product_category`, `product_bundles`
+  - modèles : `Category`, `Product`, `ProductPrice`, `ProductFile`
+  - enums : `ProductType`, `ProductStatus`
+  - factories P2 sans création de vrai fichier digital
+  - tests PostgreSQL : tables P2, contraintes, prix multi-devises en `BIGINT`,
+    fichiers privés, relations, bundles, SoftDeletes, garde-fous hors périmètre
+  - aucune donnée legacy importée, aucun fichier digital copié, aucun Filament/admin,
+    aucune route/API, aucun checkout, paiement, panier, commande, livraison,
+    analytics ou affiliation ajouté
+  - cycles indirects de bundles toujours non exposés et à traiter avant toute
+    écriture métier/admin/API
 
 ---
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Action recommandée immédiate : validation humaine du plan BDD `P2 — Catalogue`.**
+**Action recommandée immédiate : review humaine de la branche `p2-catalog`, puis PR
+vers `p0-foundations-laravel13` si l'audit est OK.**
 
-Ne pas démarrer P2 en code tant que le plan BDD catalogue n'est pas validé.
-
-Résumé P2 pressenti : créer le socle catalogue `categories`, `products`,
-`product_prices`, `product_files`, `product_category`, `product_bundles` avec
-fichiers digitaux sur disque privé uniquement, prix fixes par devise en `BIGINT`,
-devise explicite via `product_prices.currency VARCHAR(3)` contraint longueur 3
-et majuscules, slugs uniques, statuts contrôlés et tests de garde-fou.
-`products` ne porte aucun montant. Les bundles ont leur propre prix commercial
-dans `product_prices`, indépendant de la somme de leurs enfants. Aucun checkout,
-paiement ni grant de téléchargement en P2.
-
-Critère d'entrée P2 : plan BDD catalogue validé explicitement par KingKouda.
+Ne pas commencer P3. Ne pas ajouter Filament/admin, import legacy, routes catalogue,
+upload réel, checkout, paiement, livraison ou `download_grants` pendant la review P2.
 
 Toujours respecter : BDD avant logique, plan avant code, une seule feature à la fois.
 
@@ -161,6 +172,20 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-12 — Codex
+- Fait : P2 Catalogue implémenté sur `p2-catalog` conformément à la baseline
+  publiée. Ajout strict des migrations, modèles, enums, factories et tests pour
+  `categories`, `products`, `product_prices`, `product_files`, `product_category`
+  et `product_bundles`.
+- État build/tests : `php artisan migrate:fresh --env=testing` OK via PostgreSQL
+  réel, `php artisan test` OK (28 tests, 158 assertions),
+  `./vendor/bin/pint --test` OK (55 fichiers), `git diff --check` OK.
+- Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-020, P2 reste un socle
+  schéma sans exposition métier ; cycles indirects de bundles non exposés et à
+  traiter avant toute écriture métier.
+- Laisse à : review humaine de `p2-catalog`, puis PR vers
+  `p0-foundations-laravel13` si validations finales vertes. Ne pas démarrer P3.
 
 ### 2026-07-11 — Codex
 - Fait : décisions humaines P2 enregistrées. Le schéma catalogue est révisé :

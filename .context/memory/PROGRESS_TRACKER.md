@@ -10,7 +10,7 @@ P0 FONDATIONS       : ██████████  100%
 P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
-P2 CATALOGUE        : ░░░░░░░░░░  0%
+P2 CATALOGUE        : ██████████  100% (branche, non mergé)
 P3 COMMERCE         : ░░░░░░░░░░  0%
 P4 LIVRAISON        : ░░░░░░░░░░  0%
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
@@ -19,8 +19,8 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
 > Rappel : **aucune logique métier avant que P1→P4 soient migrés et testés.**
-> P1 est mergé dans `p0-foundations-laravel13`. P2 ne démarre pas en code avant
-> validation humaine du plan BDD catalogue.
+> P1 est mergé dans `p0-foundations-laravel13`. P2 est implémenté sur
+> `p2-catalog`, non mergé, et reste limité au schéma Catalogue.
 
 ---
 
@@ -145,20 +145,20 @@ téléchargement, affiliation, segment marketing avancé ou analytics. Aucun che
 invité, aucun middleware/stitching avancé, aucun front métier.
 
 ## P2 — CATALOGUE
-Statut : ⬜ non démarré. Plan BDD à valider avant tout code.
+Statut : ✅ implémenté techniquement sur `p2-catalog`, en attente de review/merge.
 
 | Tâche | Statut |
 |-------|--------|
-| Plan BDD P2 Catalogue | 🔄 IN_PROGRESS — à valider humainement |
-| Migrations categories / products / product_prices / product_files / product_category / product_bundles | ⬜ TODO |
+| Plan BDD P2 Catalogue | ✅ DONE — baseline publiée |
+| Migrations categories / products / product_prices / product_files / product_category / product_bundles | ✅ DONE |
 | Prix fixes par devise via `product_prices` | ✅ DECIDED — D-018 |
 | Bundles avec prix commercial propre via `product_prices` | ✅ DECIDED — D-018 |
 | product_price_history | ⏸️ PAUSED — reporté hors P2 |
-| Upload fichiers sur disque **privé** | ⬜ TODO — aucune URL publique |
-| checksum_sha256 calculé à l'upload | ⬜ TODO |
+| Références fichiers sur disque **privé** | ✅ DONE — aucune URL publique, aucun upload réel |
+| checksum_sha256 contraint | ✅ DONE |
 | Reviews + modération + verified_purchase | ⬜ TODO — probablement hors première livraison P2 |
-| Filament ProductResource | ⬜ TODO — après validation BDD |
-| Tests catalogue et garde-fous sécurité | ⬜ TODO |
+| Filament ProductResource | ⏸️ PAUSED — hors P2 |
+| Tests catalogue et garde-fous sécurité | ✅ DONE |
 
 Décisions P2 validées :
 - `products` ne porte pas de montant ni devise.
@@ -168,6 +168,18 @@ Décisions P2 validées :
   `product_prices`, indépendant de la somme des produits enfants.
 - Hors P2 : `product_price_history`, conversion automatique, taux de change,
   promotions avancées, checkout, commandes, paiements, download grants.
+- Aucune donnée legacy importée, aucun fichier digital copié, aucun Filament/admin,
+  aucune route/API et aucune logique transactionnelle ajoutés.
+- Les cycles indirects de bundles ne sont pas bloqués par la BDD et restent à
+  traiter avant toute exposition d'écriture métier.
+
+Vérifications P2 passées :
+- `php artisan migrate:fresh --env=testing` via `digitrove-php:dev` + PostgreSQL
+  réel : PASS, migrations P1 + 6 migrations P2
+- `php artisan test` via `digitrove-php:dev` + PostgreSQL réel : PASS,
+  28 tests, 158 assertions
+- `./vendor/bin/pint --test` via `digitrove-php:dev` : PASS, 55 fichiers
+- `git diff --check` : PASS
 
 ## P3 — COMMERCE
 | Tâche | Statut |

@@ -221,6 +221,19 @@ de longueur.
 IMPACT : documentation BDD P2 et futures migrations catalogue. Aucun `FLOAT`,
 `REAL`, `DOUBLE PRECISION` ou `DECIMAL` ne doit être utilisé pour l'argent.
 
+### D-020 : P2 Catalogue reste un socle schéma sans exposition métier ✅
+CONTEXTE : P2 implémente le catalogue après validation de la baseline, mais ne doit
+pas ouvrir d'écriture métier tant que les cycles indirects de bundles ne sont pas
+traités côté service/tests.
+CHOIX : P2 ajoute uniquement les migrations, modèles, enums, factories et tests
+pour `categories`, `products`, `product_prices`, `product_files`,
+`product_category` et `product_bundles`. Aucun import legacy, aucun Filament/admin,
+aucune route/API, aucun upload réel, aucun checkout/paiement/livraison.
+ALTERNATIVES REJETÉES : exposer une création de bundle avant la détection des
+cycles indirects, importer le catalogue legacy dans la même phase, ou copier des
+fichiers digitaux dans `public/`.
+IMPACT : branche `p2-catalog`, tests PostgreSQL catalogue, garde-fous sécurité.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
@@ -232,8 +245,8 @@ IMPACT : documentation BDD P2 et futures migrations catalogue. Aucun `FLOAT`,
   (digital + physique) avec adresse de livraison. À trancher. Voir AUDIT_LEGACY.md.
 - **Prix multi-devises avant P2/P3** : prix fixes par devise validés pour P2.
   Conversion automatique et taux de change reportés.
-- **Plan BDD P2 Catalogue** : à valider avant toute migration catalogue, avec
-  `product_prices` et bundles tarifés indépendamment.
+- **P2 Catalogue** : implémenté sur branche `p2-catalog`, non mergé, en attente de
+  review humaine.
 
 ---
 
