@@ -15,6 +15,7 @@ return new class extends Migration
             $table->integer('position')->default(0);
 
             $table->primary(['bundle_id', 'child_product_id']);
+            $table->index('child_product_id', 'product_bundles_child_product_id_index');
         });
 
         DB::statement('ALTER TABLE product_bundles ADD CONSTRAINT product_bundles_no_self_inclusion_check CHECK (bundle_id <> child_product_id)');

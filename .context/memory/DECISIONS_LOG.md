@@ -234,6 +234,22 @@ cycles indirects, importer le catalogue legacy dans la même phase, ou copier de
 fichiers digitaux dans `public/`.
 IMPACT : branche `p2-catalog`, tests PostgreSQL catalogue, garde-fous sécurité.
 
+### D-021 : P2 — index relationnels, timestamps catégories et chemins privés durcis ✅
+CONTEXTE : l'audit P2 a demandé de supprimer les ambiguïtés restantes avant PR :
+PostgreSQL n'indexe pas automatiquement les FK, les timestamps des catégories
+doivent être officiels, et les chemins de fichiers doivent refuser les variantes
+Windows/Unix dangereuses au niveau BDD.
+CHOIX : conserver officiellement `categories.created_at` et `categories.updated_at`.
+Ajouter les index `categories_parent_id_index`,
+`product_category_category_id_index` et `product_bundles_child_product_id_index`.
+Durcir `product_files.storage_path` pour accepter uniquement un chemin relatif
+privé non vide, sans URL, chemin absolu Unix/Windows, segment `public` ni
+traversée `..`.
+ALTERNATIVES REJETÉES : s'appuyer seulement sur les clés primaires composites,
+laisser les timestamps catégories implicites, ou repousser la sécurité
+`storage_path` à une validation Laravel.
+IMPACT : migrations P2 existantes, tests PostgreSQL catalogue, documentation BDD.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA

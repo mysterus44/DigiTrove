@@ -37,8 +37,8 @@
   - Post-merge P1 : `./vendor/bin/pint --test` OK → 38 fichiers
   - P2 Catalogue : `php artisan migrate:fresh --env=testing` OK via PostgreSQL
     réel → P1 + 6 migrations P2
-  - P2 Catalogue : `php artisan test` OK via PostgreSQL réel → 28 tests,
-    158 assertions
+  - P2 Catalogue : `php artisan test` OK via PostgreSQL réel → 29 tests,
+    173 assertions
   - P2 Catalogue : `./vendor/bin/pint --test` OK → 55 fichiers
   - P2 Catalogue : `git diff --check` OK
 
@@ -116,6 +116,8 @@
   - factories P2 sans création de vrai fichier digital
   - tests PostgreSQL : tables P2, contraintes, prix multi-devises en `BIGINT`,
     fichiers privés, relations, bundles, SoftDeletes, garde-fous hors périmètre
+  - corrections d'audit P2 : index FK inverses explicites, timestamps catégories
+    officialisés, `storage_path` durci pour chemins privés relatifs uniquement
   - aucune donnée legacy importée, aucun fichier digital copié, aucun Filament/admin,
     aucune route/API, aucun checkout, paiement, panier, commande, livraison,
     analytics ou affiliation ajouté
@@ -174,12 +176,25 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
 
 ### 2026-07-12 — Codex
+- Fait : corrections d'audit P2 appliquées sur `p2-catalog` sans élargir le
+  périmètre. Ajout des index FK inverses `categories_parent_id_index`,
+  `product_category_category_id_index`, `product_bundles_child_product_id_index`,
+  officialisation des timestamps catégories et durcissement BDD de
+  `product_files.storage_path`.
+- État build/tests : `php artisan migrate:fresh --env=testing` OK via PostgreSQL
+  réel, `php artisan test` OK (29 tests, 173 assertions),
+  `./vendor/bin/pint --test` OK (55 fichiers), `git diff --check` OK.
+- Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-021, index relationnels,
+  timestamps catégories et chemins privés durcis.
+- Laisse à : nouvel audit P2 après validations finales et push de la correction.
+
+### 2026-07-12 — Codex
 - Fait : P2 Catalogue implémenté sur `p2-catalog` conformément à la baseline
   publiée. Ajout strict des migrations, modèles, enums, factories et tests pour
   `categories`, `products`, `product_prices`, `product_files`, `product_category`
   et `product_bundles`.
 - État build/tests : `php artisan migrate:fresh --env=testing` OK via PostgreSQL
-  réel, `php artisan test` OK (28 tests, 158 assertions),
+  réel, `php artisan test` OK (29 tests, 173 assertions),
   `./vendor/bin/pint --test` OK (55 fichiers), `git diff --check` OK.
 - Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-020, P2 reste un socle
   schéma sans exposition métier ; cycles indirects de bundles non exposés et à

@@ -29,7 +29,16 @@ return new class extends Migration
         DB::statement("ALTER TABLE product_files ADD CONSTRAINT product_files_storage_disk_private_check CHECK (storage_disk = 'private')");
         DB::statement('ALTER TABLE product_files ADD CONSTRAINT product_files_size_bytes_non_negative_check CHECK (size_bytes >= 0)');
         DB::statement("ALTER TABLE product_files ADD CONSTRAINT product_files_checksum_sha256_check CHECK (checksum_sha256 ~* '^[0-9a-f]{64}$')");
-        DB::statement("ALTER TABLE product_files ADD CONSTRAINT product_files_storage_path_private_check CHECK (storage_path !~* '^[a-z][a-z0-9+.-]*://' AND left(storage_path, 1) <> '/' AND storage_path NOT LIKE 'public/%')");
+        DB::statement(<<<'SQL'
+            ALTER TABLE product_files ADD CONSTRAINT product_files_storage_path_private_check CHECK (
+                length(btrim(storage_path)) > 0
+                AND storage_path !~* '^[a-z][a-z0-9+.-]*://'
+                AND storage_path !~ '^[A-Za-z]:[\\/]'
+                AND storage_path !~ '^[\\/]'
+                AND storage_path !~ '(^|[\\/])public([\\/]|$)'
+                AND storage_path !~ '(^|[\\/])\.\.([\\/]|$)'
+            )
+        SQL);
     }
 
     public function down(): void

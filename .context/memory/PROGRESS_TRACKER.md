@@ -151,6 +151,7 @@ Statut : ✅ implémenté techniquement sur `p2-catalog`, en attente de review/m
 |-------|--------|
 | Plan BDD P2 Catalogue | ✅ DONE — baseline publiée |
 | Migrations categories / products / product_prices / product_files / product_category / product_bundles | ✅ DONE |
+| Index FK inverses categories / product_category / product_bundles | ✅ DONE — D-021 |
 | Prix fixes par devise via `product_prices` | ✅ DECIDED — D-018 |
 | Bundles avec prix commercial propre via `product_prices` | ✅ DECIDED — D-018 |
 | product_price_history | ⏸️ PAUSED — reporté hors P2 |
@@ -172,12 +173,16 @@ Décisions P2 validées :
   aucune route/API et aucune logique transactionnelle ajoutés.
 - Les cycles indirects de bundles ne sont pas bloqués par la BDD et restent à
   traiter avant toute exposition d'écriture métier.
+- `categories.created_at` et `categories.updated_at` sont conservés officiellement
+  pour audit, imports legacy futurs, Filament ultérieur et cohérence Eloquent.
+- `product_files.storage_path` est durci en BDD : chemin relatif privé non vide,
+  sans URL, chemin absolu Unix/Windows, segment `public` ou traversée `..`.
 
 Vérifications P2 passées :
 - `php artisan migrate:fresh --env=testing` via `digitrove-php:dev` + PostgreSQL
   réel : PASS, migrations P1 + 6 migrations P2
 - `php artisan test` via `digitrove-php:dev` + PostgreSQL réel : PASS,
-  28 tests, 158 assertions
+  29 tests, 173 assertions
 - `./vendor/bin/pint --test` via `digitrove-php:dev` : PASS, 55 fichiers
 - `git diff --check` : PASS
 

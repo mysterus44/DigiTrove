@@ -83,6 +83,18 @@ it('has the six P2 catalog tables and expected columns', function () {
         ->and(Schema::hasColumn('products', 'currency'))->toBeFalse();
 });
 
+it('has explicit indexes for reverse catalog lookups', function () {
+    $indexNames = DB::table('pg_indexes')
+        ->where('schemaname', 'public')
+        ->whereIn('tablename', ['categories', 'product_category', 'product_bundles'])
+        ->pluck('indexname');
+
+    expect($indexNames)
+        ->toContain('categories_parent_id_index')
+        ->toContain('product_category_category_id_index')
+        ->toContain('product_bundles_child_product_id_index');
+});
+
 it('does not create commerce, payment, delivery, analytics, or affiliation tables in P2', function () {
     $forbiddenTables = [
         'carts',
@@ -255,7 +267,7 @@ it('enforces product file private storage, private path, checksum, and non-negat
     ProductFile::factory()->create([
         'product_id' => $product->id,
         'storage_disk' => 'private',
-        'storage_path' => 'products/'.$product->id.'/readme.txt',
+        'storage_path' => 'products/'.fake()->uuid().'/version-1/file.zip',
         'checksum_sha256' => hash('sha256', 'safe-placeholder'),
         'size_bytes' => 0,
     ]);
@@ -270,11 +282,59 @@ it('enforces product file private storage, private path, checksum, and non-negat
     ]));
     expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
         'product_id' => $product->id,
+        'storage_path' => 's3://bucket/file.zip',
+    ]));
+    expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
+        'product_id' => $product->id,
         'storage_path' => '/absolute/file.zip',
     ]));
     expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
         'product_id' => $product->id,
+        'storage_path' => '\\absolute\\file.zip',
+    ]));
+    expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
+        'product_id' => $product->id,
+        'storage_path' => 'C:\\absolute\\file.zip',
+    ]));
+    expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
+        'product_id' => $product->id,
+        'storage_path' => 'D:/absolute/file.zip',
+    ]));
+    expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
+        'product_id' => $product->id,
         'storage_path' => 'public/file.zip',
+    ]));
+    expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
+        'product_id' => $product->id,
+        'storage_path' => 'public\\file.zip',
+    ]));
+    expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
+        'product_id' => $product->id,
+        'storage_path' => 'folder/public/file.zip',
+    ]));
+    expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
+        'product_id' => $product->id,
+        'storage_path' => 'folder\\public\\file.zip',
+    ]));
+    expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
+        'product_id' => $product->id,
+        'storage_path' => '../secret/file.zip',
+    ]));
+    expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
+        'product_id' => $product->id,
+        'storage_path' => '..\\secret\\file.zip',
+    ]));
+    expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
+        'product_id' => $product->id,
+        'storage_path' => 'products/../secret/file.zip',
+    ]));
+    expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
+        'product_id' => $product->id,
+        'storage_path' => 'products\\..\\secret\\file.zip',
+    ]));
+    expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
+        'product_id' => $product->id,
+        'storage_path' => '',
     ]));
     expectCatalogConstraintViolation(fn () => ProductFile::factory()->create([
         'product_id' => $product->id,

@@ -154,8 +154,11 @@ CREATE TABLE categories (
     parent_id BIGINT REFERENCES categories(id) ON DELETE SET NULL,
     slug      TEXT NOT NULL UNIQUE,
     name      TEXT NOT NULL,
-    position  INT  NOT NULL DEFAULT 0
+    position  INT  NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX ON categories (parent_id);
 
 CREATE TABLE products (
     id                    BIGSERIAL PRIMARY KEY,
@@ -206,6 +209,7 @@ CREATE TABLE product_category (
     category_id BIGINT REFERENCES categories(id) ON DELETE CASCADE,
     PRIMARY KEY (product_id, category_id)
 );
+CREATE INDEX ON product_category (category_id);
 
 -- 🔐 LE LIVRABLE. Jamais d'URL publique. Chemin privé + checksum.
 CREATE TABLE product_files (
@@ -220,7 +224,15 @@ CREATE TABLE product_files (
     version         TEXT DEFAULT '1.0',
     position        INT NOT NULL DEFAULT 0,
     is_active       BOOLEAN NOT NULL DEFAULT true,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (
+        length(btrim(storage_path)) > 0
+        AND storage_path !~* '^[a-z][a-z0-9+.-]*://'
+        AND storage_path !~ '^[A-Za-z]:[\\/]'
+        AND storage_path !~ '^[\\/]'
+        AND storage_path !~ '(^|[\\/])public([\\/]|$)'
+        AND storage_path !~ '(^|[\\/])\.\.([\\/]|$)'
+    )
 );
 CREATE INDEX ON product_files (product_id, is_active);
 
@@ -232,6 +244,7 @@ CREATE TABLE product_bundles (
     PRIMARY KEY (bundle_id, child_product_id),
     CHECK (bundle_id <> child_product_id)       -- pas d'auto-inclusion directe
 );
+CREATE INDEX ON product_bundles (child_product_id);
 
 -- Note P2 : la prévention des cycles indirects de bundles (A contient B qui contient A)
 -- sera traitée au niveau Service/tests plus tard, pas par cette contrainte SQL simple.

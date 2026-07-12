@@ -16,6 +16,8 @@ return new class extends Migration
             $table->text('name');
             $table->integer('position')->default(0);
             $table->timestampsTz();
+
+            $table->index('parent_id', 'categories_parent_id_index');
         });
 
         DB::statement('ALTER TABLE categories ADD CONSTRAINT categories_slug_unique UNIQUE (slug)');

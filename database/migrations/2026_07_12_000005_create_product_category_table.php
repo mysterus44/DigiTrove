@@ -13,6 +13,7 @@ return new class extends Migration
             $table->foreignId('category_id')->constrained()->cascadeOnDelete();
 
             $table->primary(['product_id', 'category_id']);
+            $table->index('category_id', 'product_category_category_id_index');
         });
     }
 
