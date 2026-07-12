@@ -187,7 +187,10 @@ CREATE INDEX ON products (type);
 CREATE TABLE product_prices (
     id          BIGSERIAL PRIMARY KEY,
     product_id  BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    currency    CHAR(3) NOT NULL CHECK (currency = upper(currency)),
+    currency    VARCHAR(3) NOT NULL CHECK (
+                    char_length(currency) = 3
+                    AND currency = upper(currency)
+                ), -- code ISO 4217 attendu
     price_minor BIGINT NOT NULL CHECK (price_minor >= 0),
     compare_at_price_minor BIGINT,
     is_active   BOOLEAN NOT NULL DEFAULT true,

@@ -162,7 +162,8 @@ Statut : ⬜ non démarré. Plan BDD à valider avant tout code.
 
 Décisions P2 validées :
 - `products` ne porte pas de montant ni devise.
-- `product_prices` porte les prix fixes par devise, en `BIGINT`, jamais `FLOAT`.
+- `product_prices` porte les prix fixes par devise, avec `currency VARCHAR(3)`
+  contraint longueur 3 + majuscules, montants en `BIGINT`, jamais `FLOAT`.
 - Les bundles sont des produits `type = bundle` avec prix propre dans
   `product_prices`, indépendant de la somme des produits enfants.
 - Hors P2 : `product_price_history`, conversion automatique, taux de change,

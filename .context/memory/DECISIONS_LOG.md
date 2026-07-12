@@ -195,10 +195,11 @@ IMPACT : mémoire projet, plan P2 à valider, future implémentation catalogue.
 CONTEXTE : avant P2, KingKouda a validé que DigiTrove doit gérer des prix fixes
 par devise et que les bundles ont leur propre prix commercial.
 CHOIX : retirer `price_minor`, `compare_at_price_minor` et `currency` de
-`products`. Ajouter `product_prices` avec `product_id`, `currency CHAR(3)`,
+`products`. Ajouter `product_prices` avec `product_id`, `currency VARCHAR(3)`,
 `price_minor BIGINT`, `compare_at_price_minor`, `is_active` et timestamps.
 Contrainte unique `(product_id, currency)`, prix non négatifs, prix barré nul ou
-supérieur/égal au prix, devise ISO 4217 en majuscules, index `(currency, is_active)`.
+supérieur/égal au prix, devise ISO 4217 de longueur 3 en majuscules, index
+`(currency, is_active)`.
 Un bundle reste un `products.type = 'bundle'` et son prix vit aussi dans
 `product_prices`, indépendamment de la somme des enfants.
 ALTERNATIVES REJETÉES : prix directement sur `products`, conversion automatique,
@@ -208,6 +209,17 @@ IMPACT : `DigiTrove_Schema_BDD_v1.md`, futur plan P2 Catalogue, futures migratio
 `products`, `product_prices`, `product_bundles`. `product_price_history`,
 conversion automatique, promotions avancées, checkout, commandes, paiements et
 download grants sont reportés.
+
+### D-019 : P2 — devise catalogue en `VARCHAR(3)` contraint ✅
+CONTEXTE : la baseline P2 documentait initialement `product_prices.currency` en
+`CHAR(3)`, ce qui peut introduire des ambiguïtés de padding en PostgreSQL.
+CHOIX : utiliser `VARCHAR(3)` pour `product_prices.currency`, avec contrainte
+stricte `char_length(currency) = 3` et `currency = upper(currency)`. Le code
+attendu reste ISO 4217, et les montants restent en `BIGINT`.
+ALTERNATIVES REJETÉES : conserver `CHAR(3)`, ou utiliser `TEXT` sans contrainte
+de longueur.
+IMPACT : documentation BDD P2 et futures migrations catalogue. Aucun `FLOAT`,
+`REAL`, `DOUBLE PRECISION` ou `DECIMAL` ne doit être utilisé pour l'argent.
 
 ---
 

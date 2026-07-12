@@ -113,7 +113,8 @@ Ne pas démarrer P2 en code tant que le plan BDD catalogue n'est pas validé.
 Résumé P2 pressenti : créer le socle catalogue `categories`, `products`,
 `product_prices`, `product_files`, `product_category`, `product_bundles` avec
 fichiers digitaux sur disque privé uniquement, prix fixes par devise en `BIGINT`,
-devise explicite, slugs uniques, statuts contrôlés et tests de garde-fou.
+devise explicite via `product_prices.currency VARCHAR(3)` contraint longueur 3
+et majuscules, slugs uniques, statuts contrôlés et tests de garde-fou.
 `products` ne porte aucun montant. Les bundles ont leur propre prix commercial
 dans `product_prices`, indépendant de la somme de leurs enfants. Aucun checkout,
 paiement ni grant de téléchargement en P2.
@@ -140,7 +141,8 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 - Le schéma BDD v1 attend la validation finale de KingKouda avant P1.
 - Multi-devises validé : `currency` obligatoire sur les montants, montants en
   `BIGINT` unités mineures. Pour P2, prix fixes par devise via `product_prices`
-  (D-018) ; conversion automatique et taux de change reportés.
+  (D-018) avec `currency VARCHAR(3)` contraint longueur 3 + majuscules (D-019) ;
+  conversion automatique et taux de change reportés.
 - Checkout invité validé : un visiteur peut acheter via `visitors` + e-mail sans
   créer de compte. Le compte reste fortement suggéré pour historique d'achat,
   promotions, annonces, avantages CRM et future affiliation.
@@ -164,11 +166,13 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 - Fait : décisions humaines P2 enregistrées. Le schéma catalogue est révisé :
   prix sortis de `products`, ajout de `product_prices`, prix fixes par devise,
   bundles tarifés comme produits autonomes via `product_prices`, et
-  `product_price_history` reportée.
+  `product_price_history` reportée. Baseline durcie ensuite : la devise catalogue
+  P2 est documentée en `VARCHAR(3)` avec contraintes longueur 3 + majuscules.
 - État build/tests : `php artisan test` OK via PostgreSQL réel (17 tests,
   57 assertions), `./vendor/bin/pint --test` OK (38 fichiers).
 - Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-018, prix catalogue
-  séparés par devise et bundles autonomes.
+  séparés par devise et bundles autonomes ; D-019, devise catalogue en
+  `VARCHAR(3)` contraint.
 - Laisse à : validation humaine du plan BDD `P2 — Catalogue` révisé, puis aucune
   migration P2 tant que ce plan n'est pas validé.
 
