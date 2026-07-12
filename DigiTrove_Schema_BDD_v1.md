@@ -12,7 +12,7 @@ modèle casse dès la première analyse sérieuse. Voici la carte :
 | Ton entité | Tables réelles |
 |------------|----------------|
 | **Utilisateurs / Clients** | `users` (auth) · `customer_profiles` (CRM) · `visitors` (anonymes) |
-| **Produits Digitaux** | `products` · `product_files` (livrables) · `product_bundles` · `categories` |
+| **Produits Digitaux** | `products` · `product_prices` · `product_files` (livrables) · `product_bundles` · `categories` |
 | **Commandes** | `orders` · `order_items` · `payments` · `download_grants` |
 | **Données Analytiques** | `events` (partitionnée) · `analytics_sessions` · `campaigns` · rollups |
 
@@ -20,9 +20,8 @@ modèle casse dès la première analyse sérieuse. Voici la carte :
 
 - **Multi-devises confirmé** : chaque montant doit porter une `currency` obligatoire.
   Les montants restent en `BIGINT` unités mineures, jamais en `FLOAT`.
-- **Prix multi-devises à trancher avant P2/P3** : prix fixes par devise ou conversion
-  automatique. Recommandation actuelle : prix fixes par devise pour garder le contrôle
-  commercial.
+- **Prix multi-devises tranchés pour P2** : prix fixes par devise via
+  `product_prices`. Conversion automatique et taux de change sont reportés.
 - **Checkout invité autorisé** : un visiteur peut acheter sans compte via `visitors`
   + e-mail. Le compte client est fortement suggéré, mais non imposé.
 - **Modèle `visitor → user` confirmé** : un visiteur peut devenir utilisateur plus
@@ -32,6 +31,19 @@ modèle casse dès la première analyse sérieuse. Voici la carte :
   doit pas être modélisée comme un simple rôle utilisateur. Prévoir plus tard des
   tables dédiées (`affiliate_profiles`, `affiliate_links`, `referrals`,
   `affiliate_commissions`, `affiliate_payouts`). Ces tables ne font pas partie de P1.
+
+### Décisions humaines finales avant P2 Catalogue
+
+- **Prix fixes par devise** : chaque produit peut avoir un prix commercial distinct
+  par devise. Pas de conversion automatique en P2, pas de table de taux de change.
+- **Prix séparés de `products`** : `products` ne porte plus `price_minor`,
+  `compare_at_price_minor` ni `currency`. Les prix vivent dans `product_prices`.
+- **Bundles tarifés comme produits** : un bundle reste un produit avec
+  `products.type = 'bundle'` et possède son propre prix dans `product_prices`,
+  indépendant de la somme de ses produits enfants.
+- **Historique des prix reporté** : `product_price_history`, promotions avancées,
+  conversion automatique, taux de change, checkout, commandes, paiements et
+  download grants sont explicitement hors P2.
 
 ---
 
@@ -156,12 +168,8 @@ CREATE TABLE products (
     short_description     TEXT,
     long_description      TEXT,
     cover_image_path      TEXT,
-    -- 💰 ENTIERS. Jamais FLOAT sur de l'argent. XOF : minor = 1.
-    -- Multi-devises confirmé : `currency` reste obligatoire.
-    -- Avant P2/P3, trancher prix fixes par devise (recommandé) vs conversion automatique.
-    price_minor           BIGINT NOT NULL CHECK (price_minor >= 0),
-    compare_at_price_minor BIGINT CHECK (compare_at_price_minor >= 0), -- prix barré
-    currency              CHAR(3) NOT NULL DEFAULT 'XOF',
+    meta_title            TEXT,
+    meta_description      TEXT,
     -- Rollups pour le tri "meilleures ventes" sans agrégation
     sales_count           INT NOT NULL DEFAULT 0,
     rating_avg            NUMERIC(3,2) DEFAULT 0,
@@ -174,14 +182,21 @@ CREATE TABLE products (
 CREATE INDEX ON products (status, published_at DESC);
 CREATE INDEX ON products (type);
 
--- Audit des prix. Un prix qui change ne doit pas effacer l'histoire.
-CREATE TABLE product_price_history (
+-- 💰 Prix fixes par devise. Les montants restent en BIGINT, jamais FLOAT/DECIMAL.
+-- Un bundle possède son propre prix ici, indépendant de ses produits enfants.
+CREATE TABLE product_prices (
     id          BIGSERIAL PRIMARY KEY,
     product_id  BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    price_minor BIGINT NOT NULL,
-    changed_by  BIGINT REFERENCES users(id),
-    changed_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    currency    CHAR(3) NOT NULL CHECK (currency = upper(currency)),
+    price_minor BIGINT NOT NULL CHECK (price_minor >= 0),
+    compare_at_price_minor BIGINT,
+    is_active   BOOLEAN NOT NULL DEFAULT true,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (product_id, currency),
+    CHECK (compare_at_price_minor IS NULL OR compare_at_price_minor >= price_minor)
 );
+CREATE INDEX ON product_prices (currency, is_active);
 
 CREATE TABLE product_category (
     product_id  BIGINT REFERENCES products(id) ON DELETE CASCADE,
@@ -209,11 +224,18 @@ CREATE INDEX ON product_files (product_id, is_active);
 -- Packs : un produit "bundle" contient d'autres produits.
 CREATE TABLE product_bundles (
     bundle_id BIGINT REFERENCES products(id) ON DELETE CASCADE,
-    child_id  BIGINT REFERENCES products(id) ON DELETE CASCADE,
+    child_product_id  BIGINT REFERENCES products(id) ON DELETE CASCADE,
     position  INT NOT NULL DEFAULT 0,
-    PRIMARY KEY (bundle_id, child_id),
-    CHECK (bundle_id <> child_id)               -- pas d'auto-inclusion
+    PRIMARY KEY (bundle_id, child_product_id),
+    CHECK (bundle_id <> child_product_id)       -- pas d'auto-inclusion directe
 );
+
+-- Note P2 : la prévention des cycles indirects de bundles (A contient B qui contient A)
+-- sera traitée au niveau Service/tests plus tard, pas par cette contrainte SQL simple.
+
+-- Reporté hors P2 : audit/historique des prix, conversion automatique de devises,
+-- taux de change, promotions avancées, checkout, commandes, paiements,
+-- download_grants et toute livraison active.
 
 -- Licences (logiciels). Optionnel selon ton catalogue.
 -- Note migration : cette table se crée après `order_items`, car elle y référence.
@@ -515,7 +537,9 @@ visitors ──(login)──> users ──1:1──> customer_profiles
    │                    │            │                 │                     │
    │                    │            └──1:N──> payments│                     └──1:N──> download_logs
    │                    │                              │
-   │                    └──N:M──> customer_segments    └──> products ──1:N──> product_files
+   │                    └──N:M──> customer_segments    └──> products ──1:N──> product_prices
+   │                                                          │
+   │                                                          ├──1:N──> product_files
    │                                                          │
    └──1:N──> analytics_sessions ──1:N──> events               └──N:M──> categories
                                             ↑                 └──N:M──> product_bundles (self)
@@ -571,7 +595,7 @@ Ordre technique des migrations à respecter avant P1 :
 5. `licenses` après `order_items`.
 
 1. `users` + `customer_profiles` + `visitors` (fondation identité)
-2. `products` + `product_files` + `categories` (catalogue)
+2. `categories` + `products` + `product_prices` + `product_files` + pivots catalogue
 3. `carts` → `orders` → `order_items` → `payments` (commerce)
 4. `download_grants` + `download_logs` (livraison sécurisée)
 5. `events` partitionnée + rollups (analytique)

@@ -134,10 +134,9 @@ CONTEXTE : avant P1, KingKouda a validé les règles produit structurantes pour
 ne pas forcer la création de compte et pour préparer la vente internationale et
 l'affiliation sans polluer le modèle identité.
 CHOIX : DigiTrove supporte le multi-devises. `currency` reste obligatoire sur les
-montants, et les montants restent en `BIGINT` unités mineures. Avant P2/P3, il
-faudra trancher entre prix fixes par devise et conversion automatique ; la
-recommandation actuelle est de privilégier les prix fixes par devise pour garder
-le contrôle commercial. Le compte client n'est pas obligatoire pour acheter :
+montants, et les montants restent en `BIGINT` unités mineures. Le choix catalogue
+P2 est tranché par D-018 : prix fixes par devise, conversion automatique reportée.
+Le compte client n'est pas obligatoire pour acheter :
 un visiteur peut acheter en checkout invité via `visitors` + e-mail. Le compte
 est fortement suggéré pour l'historique d'achat, les promotions, les annonces,
 les avantages CRM et l'accès futur à l'affiliation. L'affiliation exige un compte,
@@ -192,6 +191,24 @@ ajouter des paiements, exposer des fichiers digitaux, créer des grants de
 téléchargement, ou viser `main`.
 IMPACT : mémoire projet, plan P2 à valider, future implémentation catalogue.
 
+### D-018 : P2 — prix catalogue séparés par devise et bundles autonomes ✅
+CONTEXTE : avant P2, KingKouda a validé que DigiTrove doit gérer des prix fixes
+par devise et que les bundles ont leur propre prix commercial.
+CHOIX : retirer `price_minor`, `compare_at_price_minor` et `currency` de
+`products`. Ajouter `product_prices` avec `product_id`, `currency CHAR(3)`,
+`price_minor BIGINT`, `compare_at_price_minor`, `is_active` et timestamps.
+Contrainte unique `(product_id, currency)`, prix non négatifs, prix barré nul ou
+supérieur/égal au prix, devise ISO 4217 en majuscules, index `(currency, is_active)`.
+Un bundle reste un `products.type = 'bundle'` et son prix vit aussi dans
+`product_prices`, indépendamment de la somme des enfants.
+ALTERNATIVES REJETÉES : prix directement sur `products`, conversion automatique,
+taux de change en P2, prix de bundle calculé automatiquement, historique des prix
+en P2.
+IMPACT : `DigiTrove_Schema_BDD_v1.md`, futur plan P2 Catalogue, futures migrations
+`products`, `product_prices`, `product_bundles`. `product_price_history`,
+conversion automatique, promotions avancées, checkout, commandes, paiements et
+download grants sont reportés.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
@@ -201,10 +218,10 @@ IMPACT : mémoire projet, plan P2 à valider, future implémentation catalogue.
 - **Le champ `usb` du legacy** : les produits avaient un champ `usb`. Livraison
   physique sur clé USB ? Si oui, il faut un modèle de commande hybride
   (digital + physique) avec adresse de livraison. À trancher. Voir AUDIT_LEGACY.md.
-- **Prix multi-devises avant P2/P3** : multi-devises validé, mais il faudra choisir
-  entre prix fixes par devise (recommandé) et conversion automatique.
-- **Plan BDD P2 Catalogue** : à valider avant toute migration catalogue. Inclure
-  la décision prix fixes par devise vs conversion automatique.
+- **Prix multi-devises avant P2/P3** : prix fixes par devise validés pour P2.
+  Conversion automatique et taux de change reportés.
+- **Plan BDD P2 Catalogue** : à valider avant toute migration catalogue, avec
+  `product_prices` et bundles tarifés indépendamment.
 
 ---
 

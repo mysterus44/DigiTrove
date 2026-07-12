@@ -111,10 +111,12 @@
 Ne pas démarrer P2 en code tant que le plan BDD catalogue n'est pas validé.
 
 Résumé P2 pressenti : créer le socle catalogue `categories`, `products`,
-`product_files`, `product_category`, `product_bundles` avec fichiers digitaux sur
-disque privé uniquement, montants en `BIGINT`, devise explicite, slugs uniques,
-statuts contrôlés et tests de garde-fou. Aucun checkout, paiement ni grant de
-téléchargement en P2.
+`product_prices`, `product_files`, `product_category`, `product_bundles` avec
+fichiers digitaux sur disque privé uniquement, prix fixes par devise en `BIGINT`,
+devise explicite, slugs uniques, statuts contrôlés et tests de garde-fou.
+`products` ne porte aucun montant. Les bundles ont leur propre prix commercial
+dans `product_prices`, indépendant de la somme de leurs enfants. Aucun checkout,
+paiement ni grant de téléchargement en P2.
 
 Critère d'entrée P2 : plan BDD catalogue validé explicitement par KingKouda.
 
@@ -137,8 +139,8 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
   conteneur existant `8fi-redis` sur `6379`.
 - Le schéma BDD v1 attend la validation finale de KingKouda avant P1.
 - Multi-devises validé : `currency` obligatoire sur les montants, montants en
-  `BIGINT` unités mineures. Avant P2/P3, trancher prix fixes par devise
-  (recommandé) ou conversion automatique.
+  `BIGINT` unités mineures. Pour P2, prix fixes par devise via `product_prices`
+  (D-018) ; conversion automatique et taux de change reportés.
 - Checkout invité validé : un visiteur peut acheter via `visitors` + e-mail sans
   créer de compte. Le compte reste fortement suggéré pour historique d'achat,
   promotions, annonces, avantages CRM et future affiliation.
@@ -157,6 +159,18 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-11 — Codex
+- Fait : décisions humaines P2 enregistrées. Le schéma catalogue est révisé :
+  prix sortis de `products`, ajout de `product_prices`, prix fixes par devise,
+  bundles tarifés comme produits autonomes via `product_prices`, et
+  `product_price_history` reportée.
+- État build/tests : `php artisan test` OK via PostgreSQL réel (17 tests,
+  57 assertions), `./vendor/bin/pint --test` OK (38 fichiers).
+- Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-018, prix catalogue
+  séparés par devise et bundles autonomes.
+- Laisse à : validation humaine du plan BDD `P2 — Catalogue` révisé, puis aucune
+  migration P2 tant que ce plan n'est pas validé.
 
 ### 2026-07-11 — Codex
 - Fait : audit post-merge P1 confirmé. La PR #2 a été mergée dans

@@ -150,13 +150,23 @@ Statut : ⬜ non démarré. Plan BDD à valider avant tout code.
 | Tâche | Statut |
 |-------|--------|
 | Plan BDD P2 Catalogue | 🔄 IN_PROGRESS — à valider humainement |
-| Migrations categories / products / product_files / product_category / product_bundles | ⬜ TODO |
-| product_price_history | ⬜ TODO — à confirmer dans le plan P2 |
+| Migrations categories / products / product_prices / product_files / product_category / product_bundles | ⬜ TODO |
+| Prix fixes par devise via `product_prices` | ✅ DECIDED — D-018 |
+| Bundles avec prix commercial propre via `product_prices` | ✅ DECIDED — D-018 |
+| product_price_history | ⏸️ PAUSED — reporté hors P2 |
 | Upload fichiers sur disque **privé** | ⬜ TODO — aucune URL publique |
 | checksum_sha256 calculé à l'upload | ⬜ TODO |
 | Reviews + modération + verified_purchase | ⬜ TODO — probablement hors première livraison P2 |
 | Filament ProductResource | ⬜ TODO — après validation BDD |
 | Tests catalogue et garde-fous sécurité | ⬜ TODO |
+
+Décisions P2 validées :
+- `products` ne porte pas de montant ni devise.
+- `product_prices` porte les prix fixes par devise, en `BIGINT`, jamais `FLOAT`.
+- Les bundles sont des produits `type = bundle` avec prix propre dans
+  `product_prices`, indépendant de la somme des produits enfants.
+- Hors P2 : `product_price_history`, conversion automatique, taux de change,
+  promotions avancées, checkout, commandes, paiements, download grants.
 
 ## P3 — COMMERCE
 | Tâche | Statut |
