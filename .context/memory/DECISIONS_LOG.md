@@ -337,6 +337,27 @@ commande `pending` 30 min, anonymisation partielle des données invité après d
 légale à définir, paiement tardif => `requires_review` (traitement manuel), suppression
 physique commandes/paiements interdite hors politique légale dédiée.
 
+### D-025 : P3A Coupons et Paniers — durcissements d'implémentation ✅
+CONTEXTE : KingKouda a validé l'implémentation de la première tranche P3, strictement
+limitée à `coupons`, `coupon_currency_rules`, `coupon_products`,
+`coupon_categories`, `carts` et `cart_items`. La consigne P3A précise plusieurs
+invariants plus stricts que le pseudo-SQL initial de D-024.
+CHOIX : les limites coupon globales/par client sont `NULL` ou strictement positives ;
+`carts.secret_hash` est obligatoire, unique et contraint à 64 caractères hexadécimaux
+minuscules ; `carts.expires_at` est obligatoire sans figer en BDD une durée métier ;
+les FK identité/coupon du panier utilisent `ON DELETE SET NULL` ; la suppression
+physique d'un produit présent dans `cart_items` est refusée (`ON DELETE RESTRICT`) ;
+les index inverses des pivots et les index de cycle de vie panier sont explicites.
+Les montants coupon sont uniquement des `BIGINT` dans `coupon_currency_rules`, avec
+une devise `VARCHAR(3)` uppercase. `cart_items` ne contient aucun prix, devise,
+remise, sous-total, total ou snapshot.
+LIMITES ASSUMÉES : l'existence d'une règle devise pour un coupon fixe, l'éligibilité
+produit/catégorie et les plafonds de consommation restent des cohérences
+transactionnelles de la future logique métier. P3A ne fournit ni moteur coupon, ni
+cookie panier, ni checkout, ni commande, ni paiement, ni webhook, ni livraison.
+IMPACT : six migrations P3A, modèles/enums/factories associés, tests PostgreSQL et
+mémoire projet. P3B/P3C restent bloqués jusqu'à review et merge de P3A.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
@@ -350,10 +371,10 @@ physique commandes/paiements interdite hors politique légale dédiée.
   Conversion automatique et taux de change reportés.
 - **P2 Catalogue** : ✅ mergé dans `p0-foundations-laravel13` via PR #3 (`aff4d05`).
   Clos (voir D-022).
-- **P3 Commerce** : décisions de schéma tranchées (D-024) et plan BDD P3 finalisé.
-  Reste à valider le plan complet avant toute migration. Décisions non bloquantes
-  (durées d'expiration, anonymisation, paiement tardif) encore à confirmer au moment
-  de l'implémentation.
+- **P3 Commerce** : P3A Coupons et Paniers implémenté sur `p3a-coupons-carts`
+  (D-024/D-025), en attente de review/merge. P3B/P3C non démarrés. Les durées
+  d'expiration métier, l'anonymisation invité et le paiement tardif restent à
+  confirmer avant les tranches concernées.
 
 ---
 

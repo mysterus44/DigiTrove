@@ -11,7 +11,7 @@ P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
-P3 COMMERCE         : █░░░░░░░░░  plan BDD finalisé (D-024), 0% code
+P3 COMMERCE         : ███░░░░░░░  P3A implémenté, non mergé (D-024/D-025)
 P4 LIVRAISON        : ░░░░░░░░░░  0%
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
@@ -20,8 +20,8 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 
 > Rappel : **aucune logique métier avant que P1→P4 soient migrés et testés.**
 > P1 et P2 sont mergés dans `p0-foundations-laravel13` (P2 via PR #3 → `aff4d05`).
-> P2 reste limité au schéma Catalogue. Prochaine étape : plan BDD P3 Commerce
-> UNIQUEMENT (aucun code) à valider avant migration.
+> P2 reste limité au schéma Catalogue. P3A ajoute uniquement les coupons et paniers
+> sur `p3a-coupons-carts`; P3B/P3C ne sont pas démarrés.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -207,8 +207,8 @@ Vérifications post-merge P2 sur `p0-foundations-laravel13` (`aff4d05`) :
 - `git diff --check` : PASS
 
 ## P3 — COMMERCE
-Statut : 🗺️ **plan BDD finalisé (D-024)**, en attente de validation humaine avant toute
-migration. Aucun code P3 écrit.
+Statut : 🧱 **P3A Coupons et Paniers implémenté sur `p3a-coupons-carts`**, non mergé.
+P3B Commandes et P3C Paiements ne sont pas démarrés.
 
 Ordre de migration figé (D-024) : `coupons` → `coupon_currency_rules` →
 `coupon_products` → `coupon_categories` → `carts` → `cart_items` → `orders` →
@@ -216,21 +216,27 @@ Ordre de migration figé (D-024) : `coupons` → `coupon_currency_rules` →
 
 | Tâche | Statut |
 |-------|--------|
-| Plan BDD P3 + décisions de schéma (D-024) | ✅ DONE — à valider |
+| Plan BDD P3 + décisions de schéma (D-024) | ✅ DONE — validé pour P3A |
 | Schéma commerce réécrit dans `DigiTrove_Schema_BDD_v1.md` (VARCHAR(3), snapshot étendu, idempotence) | ✅ DONE |
-| Migrations (12 tables, ordre ci-dessus) | ⬜ TODO — après validation |
+| Migrations P3A (`coupons` → `cart_items`, 6 tables) | ✅ DONE — non mergé |
+| Modèles/enums/factories P3A | ✅ DONE — sans logique métier |
+| Tests PostgreSQL P3A (contraintes, relations, sécurité) | ✅ DONE — 13 tests, 119 assertions |
+| Migrations P3B/P3C (`orders` → `coupon_redemptions`) | ⬜ TODO — interdit avant review/merge P3A |
 | OrderService (snapshot prix + nom) | ⬜ TODO |
 | CouponService (règle par devise, plafonds, verrou transactionnel) | ⬜ TODO |
 | PaymentGateway (interface) + 1 provider | ⬜ TODO |
 | Webhook : signature + getStatus + montant + idempotence + dédup `payment_webhook_events` | ⬜ TODO |
 | RefundService + trigger cumul ≤ capturé (+ tests concurrence) | ⬜ TODO |
 | Event OrderPaid | ⬜ TODO |
-| Checkout invité (UUID + secret haché, sans compte) | ⬜ TODO |
+| Accès applicatif au panier invité (cookie + UUID + secret haché) | ⬜ TODO — schéma seulement en P3A |
 | Job expiration paniers (7 j) + commandes pending (30 min) | ⬜ TODO |
 | Tests (snapshot, idempotence, montant falsifié, double webhook, remboursement partiel) | ⬜ TODO |
 
 Décisions bloquantes tranchées (D-024) : prix panier dynamique, coupon fixe par devise,
 `product_id` nullable + snapshot, quantité ≥ 1, panier invité UUID+hash, un seul coupon.
+Durcissements P3A (D-025) : limites d'usage nulles ou strictement positives,
+`secret_hash` obligatoire/unique au format SHA-256 minuscule, `expires_at` obligatoire,
+suppression physique d'un produit référencé par un panier refusée.
 Décisions non bloquantes à confirmer à l'implémentation : durées d'expiration (7 j / 30 min),
 anonymisation invité, paiement tardif `requires_review`.
 
