@@ -358,6 +358,22 @@ cookie panier, ni checkout, ni commande, ni paiement, ni webhook, ni livraison.
 IMPACT : six migrations P3A, modèles/enums/factories associés, tests PostgreSQL et
 mémoire projet. P3B/P3C restent bloqués jusqu'à review et merge de P3A.
 
+### D-026 : P3A mergé, P3B reste derrière un plan validé ✅
+CONTEXTE : la PR #4 `p3a-coupons-carts` a été mergée dans
+`p0-foundations-laravel13` via `234e3034f0e1ea5e20af9ca359d19d799c140072`
+(commits `81f32fc` + `1c0d5a2`, base `2288a63`). L'audit post-merge confirme
+16 migrations, uniquement les tables P1/P2/P3A, 44 tests / 322 assertions et
+Pint vert sur 72 fichiers. `origin/main` reste intact à `1e41b92`.
+CHOIX : clôturer P3A comme mergé et validé. Supprimer uniquement la branche locale
+`p3a-coupons-carts`, conserver `origin/p3a-coupons-carts`, puis préparer comme
+prochaine étape le plan d'implémentation de P3B Commandes uniquement. Aucune
+migration, modèle ou logique P3B ne démarre avant validation humaine de ce plan ;
+P3C Paiements reste non démarré.
+ALTERNATIVES REJETÉES : démarrer immédiatement `orders`/`order_items`, préparer les
+paiements ou webhooks, supprimer la branche distante P3A, ou toucher à `main`.
+IMPACT : mémoire projet et gate P3B. P3A fournit uniquement le socle coupons/paniers ;
+aucun checkout, commande, paiement, webhook ou téléchargement n'est encore livré.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
@@ -371,8 +387,9 @@ mémoire projet. P3B/P3C restent bloqués jusqu'à review et merge de P3A.
   Conversion automatique et taux de change reportés.
 - **P2 Catalogue** : ✅ mergé dans `p0-foundations-laravel13` via PR #3 (`aff4d05`).
   Clos (voir D-022).
-- **P3 Commerce** : P3A Coupons et Paniers implémenté sur `p3a-coupons-carts`
-  (D-024/D-025), en attente de review/merge. P3B/P3C non démarrés. Les durées
+- **P3 Commerce** : P3A Coupons et Paniers mergé via PR #4 (`234e303`, D-024 à
+  D-026). Prochaine étape : plan P3B Commandes uniquement ; P3B/P3C non démarrés.
+  Les durées
   d'expiration métier, l'anonymisation invité et le paiement tardif restent à
   confirmer avant les tranches concernées.
 

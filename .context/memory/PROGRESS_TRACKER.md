@@ -11,7 +11,7 @@ P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
-P3 COMMERCE         : ███░░░░░░░  P3A implémenté, non mergé (D-024/D-025)
+P3 COMMERCE         : ███░░░░░░░  P3A mergé PR #4 → 234e303 (D-024/D-025/D-026)
 P4 LIVRAISON        : ░░░░░░░░░░  0%
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
@@ -19,9 +19,8 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
 > Rappel : **aucune logique métier avant que P1→P4 soient migrés et testés.**
-> P1 et P2 sont mergés dans `p0-foundations-laravel13` (P2 via PR #3 → `aff4d05`).
-> P2 reste limité au schéma Catalogue. P3A ajoute uniquement les coupons et paniers
-> sur `p3a-coupons-carts`; P3B/P3C ne sont pas démarrés.
+> P1, P2 et P3A sont mergés dans `p0-foundations-laravel13` (P3A via PR #4 →
+> `234e303`). P3A reste limité aux coupons et paniers ; P3B/P3C ne sont pas démarrés.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -207,7 +206,8 @@ Vérifications post-merge P2 sur `p0-foundations-laravel13` (`aff4d05`) :
 - `git diff --check` : PASS
 
 ## P3 — COMMERCE
-Statut : 🧱 **P3A Coupons et Paniers implémenté sur `p3a-coupons-carts`**, non mergé.
+Statut : ✅ **P3A Coupons et Paniers mergé dans `p0-foundations-laravel13`** via
+PR #4 (`234e303`).
 P3B Commandes et P3C Paiements ne sont pas démarrés.
 
 Ordre de migration figé (D-024) : `coupons` → `coupon_currency_rules` →
@@ -218,10 +218,11 @@ Ordre de migration figé (D-024) : `coupons` → `coupon_currency_rules` →
 |-------|--------|
 | Plan BDD P3 + décisions de schéma (D-024) | ✅ DONE — validé pour P3A |
 | Schéma commerce réécrit dans `DigiTrove_Schema_BDD_v1.md` (VARCHAR(3), snapshot étendu, idempotence) | ✅ DONE |
-| Migrations P3A (`coupons` → `cart_items`, 6 tables) | ✅ DONE — non mergé |
+| Migrations P3A (`coupons` → `cart_items`, 6 tables) | ✅ DONE — mergé PR #4 |
 | Modèles/enums/factories P3A | ✅ DONE — sans logique métier |
 | Tests PostgreSQL P3A (contraintes, relations, sécurité) | ✅ DONE — 15 tests, 147 assertions |
-| Migrations P3B/P3C (`orders` → `coupon_redemptions`) | ⬜ TODO — interdit avant review/merge P3A |
+| Plan d'implémentation P3B Commandes | ⬜ TODO — prochaine étape, validation humaine avant code |
+| Migrations P3B/P3C (`orders` → `coupon_redemptions`) | ⬜ TODO — aucune créée |
 | OrderService (snapshot prix + nom) | ⬜ TODO |
 | CouponService (règle par devise, plafonds, verrou transactionnel) | ⬜ TODO |
 | PaymentGateway (interface) + 1 provider | ⬜ TODO |
@@ -240,9 +241,20 @@ suppression physique d'un produit référencé par un panier refusée.
 Couverture de régression : cascades réelles `carts` → `cart_items` et `coupons` →
 `coupon_currency_rules`/pivots testées ; produits et catégories préservés ; types
 PostgreSQL `citext`, `uuid` et `varchar(3)` verrouillés par introspection. Suite
-complète : 44 tests, 322 assertions. P3A reste non mergé ; P3B/P3C non démarrés.
+complète : 44 tests, 322 assertions. P3A est mergé ; P3B/P3C non démarrés.
 Décisions non bloquantes à confirmer à l'implémentation : durées d'expiration (7 j / 30 min),
 anonymisation invité, paiement tardif `requires_review`.
+
+Vérifications post-merge P3A sur `p0-foundations-laravel13` (`234e303`) :
+- PR #4 : commits `81f32fc` + `1c0d5a2`, base `2288a63`
+- `origin/main` confirmé intact à `1e41b92` et sans P3A
+- branche locale `p3a-coupons-carts` supprimée ; branche distante conservée
+- `php artisan migrate:fresh --env=testing` : PASS, 16 migrations ; tables
+  applicatives strictement P1 + P2 + six tables P3A
+- `php artisan test --filter=P3ACouponsCartsSchemaTest` : PASS, 15 tests,
+  147 assertions
+- `php artisan test` : PASS, 44 tests, 322 assertions
+- `./vendor/bin/pint --test` : PASS, 72 fichiers ; `git diff --check` : PASS
 
 ## P4 — LIVRAISON (⚠️ cœur sécurité)
 | Tâche | Statut |

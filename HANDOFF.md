@@ -8,13 +8,17 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-13
-- **Branche git active** : `p3a-coupons-carts` (feature P3A ; base `2288a63`)
+- **Branche git active** : `p0-foundations-laravel13` (P3A mergé ; gate P3B)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
 - **Merge P2 Catalogue** : `aff4d05 Merge pull request #3 from mysterus44/p2-catalog`
   (SHA complet `aff4d05d552a78754fc90bcb145fb75aba66dc93`, 2 parents `9a11791` + `fbaa33a`)
-- **`main` local** : réaligné sur `origin/main` = `1e41b92 DigiTrove V2` (intact, sans P1/P2)
+- **Merge P3A Coupons et Paniers** :
+  `234e303 Merge pull request #4 from mysterus44/p3a-coupons-carts`
+  (SHA complet `234e3034f0e1ea5e20af9ca359d19d799c140072`, parents `2288a63` + `1c0d5a2`)
+- **`main` local** : réaligné sur `origin/main` = `1e41b92 DigiTrove V2`
+  (intact, sans P1/P2/P3A)
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
   - `php artisan --version` OK via `digitrove-php:dev` → Laravel Framework 13.19.0
@@ -54,8 +58,13 @@
     - `php artisan test` OK → 29 tests, 173 assertions
     - `./vendor/bin/pint --test` OK → 55 fichiers
     - `git diff --check` OK
-  - P3A Coupons et Paniers (PostgreSQL réel `digitrove_testing`) :
+  - Post-merge P3A Coupons et Paniers (PostgreSQL réel `digitrove_testing`) :
     - `php artisan migrate:fresh --env=testing` OK → 16 migrations (P1 + P2 + 6 P3A)
+    - tables applicatives = `users`, `customer_profiles`, `visitors`, `categories`,
+      `products`, `product_prices`, `product_files`, `product_category`,
+      `product_bundles`, `coupons`, `coupon_currency_rules`, `coupon_products`,
+      `coupon_categories`, `carts`, `cart_items`
+    - aucune table commande, paiement, remboursement, livraison ou analytics
     - `php artisan test` OK → 44 tests, 322 assertions
     - tests P3A ciblés OK → 15 tests, 147 assertions
     - `./vendor/bin/pint --test` et `git diff --check` OK
@@ -148,8 +157,12 @@
     analytics ou affiliation ajouté
   - cycles indirects de bundles toujours non exposés et à traiter avant toute
     écriture métier/admin/API
-- **P3A Coupons et Paniers implémenté, non mergé** :
-  - branche dédiée `p3a-coupons-carts`, créée depuis `2288a63`
+- **P3A Coupons et Paniers implémenté et mergé** :
+  - PR #4 mergée dans `p0-foundations-laravel13` via `234e303`
+  - commits intégrés : `81f32fc` (implémentation) + `1c0d5a2` (tests renforcés)
+  - branche locale `p3a-coupons-carts` supprimée après preuve du merge
+  - branche distante `origin/p3a-coupons-carts` conservée à `1c0d5a2`
+  - `origin/main` reste intact à `1e41b92`, sans P3A
   - six migrations strictement P3A : `coupons`, `coupon_currency_rules`,
     `coupon_products`, `coupon_categories`, `carts`, `cart_items`
   - modèles : `Coupon`, `CouponCurrencyRule`, `Cart`, `CartItem`
@@ -170,8 +183,9 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Action suivante : review humaine de `p3a-coupons-carts`, puis PR vers
-`p0-foundations-laravel13` si l'audit est vert. Ne pas démarrer P3B/P3C.**
+**Action suivante : préparer uniquement le plan d'implémentation BDD de
+`P3B — Commandes`. Ne créer aucune migration, aucun modèle ni logique P3B avant
+validation humaine de ce plan. P3C Paiements reste non démarré.**
 
 Gate actuel : aucune migration `orders`, `order_items`, `payments`,
 `payment_webhook_events`, `refunds` ou `coupon_redemptions` ; aucun contrôleur/route,
@@ -222,6 +236,19 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-13 — Codex (clôture post-merge P3A)
+- Fait : PR #4 confirmée et mergée dans `p0-foundations-laravel13` via
+  `234e3034f0e1ea5e20af9ca359d19d799c140072` ; commits `81f32fc` et `1c0d5a2`
+  intégrés, absents de `origin/main` resté à `1e41b92`.
+- Fait : base locale synchronisée par fast-forward ; branche locale
+  `p3a-coupons-carts` supprimée et branche distante conservée.
+- État build/tests : `migrate:fresh` OK (16 migrations et 15 tables applicatives
+  P1/P2/P3A), tests P3A OK (15 tests, 147 assertions), suite complète OK
+  (44 tests, 322 assertions), Pint OK (72 fichiers), diff-check OK.
+- Décisions prises (→ DECISIONS_LOG.md) : D-026, P3A clos ; P3B reste derrière
+  un plan d'implémentation validé et P3C demeure non démarré.
+- Laisse à : plan P3B Commandes uniquement, sans code avant validation humaine.
 
 ### 2026-07-13 — Codex (durcissement tests P3A)
 - Fait : ajout de deux tests comportementaux PostgreSQL prouvant les cascades
