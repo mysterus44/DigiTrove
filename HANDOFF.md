@@ -205,6 +205,17 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
 
+### 2026-07-13 — Claude Code (suite)
+- Fait : création du point d'entrée `CLAUDE.md` (miroir court d'`AGENTS.md`, sans
+  duplication) après confirmation du push manuel de `bc13f13` sur
+  `origin/p0-foundations-laravel13`. Documenté via D-023.
+- État build/tests : `git diff --check` OK ; `php artisan test` OK (29 tests,
+  173 assertions) ; `./vendor/bin/pint --test` OK (55 fichiers) — inchangés,
+  `CLAUDE.md` est purement documentaire.
+- Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-023, `CLAUDE.md` point
+  d'entrée Claude Code miroir d'`AGENTS.md`.
+- Laisse à : plan BDD P3 Commerce (aucun code), à faire valider par KingKouda.
+
 ### 2026-07-13 — Claude Code
 - Fait : audit post-merge P2 et clôture. Merge PR #3 confirmé localement
   (`aff4d05 Merge pull request #3 from mysterus44/p2-catalog`, 2 parents

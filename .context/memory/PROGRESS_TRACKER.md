@@ -22,6 +22,7 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > P1 et P2 sont mergés dans `p0-foundations-laravel13` (P2 via PR #3 → `aff4d05`).
 > P2 reste limité au schéma Catalogue. Prochaine étape : plan BDD P3 Commerce
 > UNIQUEMENT (aucun code) à valider avant migration.
+> Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
 

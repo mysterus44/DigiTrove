@@ -276,6 +276,24 @@ statuts contraints sur commandes/paiements/remboursements, idempotence
 paiements/webhooks, montant et devise revérifiés serveur, remboursement partiel
 supportable, jamais de livraison sur retour navigateur, aucun `download_grant` en P3.
 
+### D-023 : `CLAUDE.md` — point d'entrée Claude Code miroir d'`AGENTS.md` ✅
+CONTEXTE : `AGENTS.md` désigne `CLAUDE.md` comme le miroir/point d'entrée de Claude
+Code, mais le fichier était absent de la racine. Sans lui, la session Claude Code
+n'a pas de point d'ancrage explicite équivalent à celui de Codex.
+CHOIX : créer un `CLAUDE.md` court et économe en tokens, qui (1) identifie DigiTrove
+et le rôle ARIA-DEV, (2) impose l'ordre de lecture prioritaire (`HANDOFF.md`,
+`PROJECT_CONTEXT.md`, `DigiTrove_Schema_BDD_v1.md`, `.context/CO_CODING_PROTOCOL.md`,
+`PROGRESS_TRACKER.md`, `DECISIONS_LOG.md`), (3) rappelle les garde-fous
+non négociables (plan avant code, une feature à la fois, BDD avant logique, aucun
+secret, aucun push sur `main`, tests PostgreSQL réels, arrêt sur validation humaine),
+(4) renvoie à `AGENTS.md` pour les règles détaillées sans les dupliquer, (5) résume
+l'état (P0/SITE-00/P1/P2 faits, P3 non démarré).
+ALTERNATIVES REJETÉES : dupliquer tout `AGENTS.md` dans `CLAUDE.md` (risque de
+divergence entre les deux points d'entrée du même développeur), ou laisser
+`CLAUDE.md` absent.
+IMPACT : continuité du co-codage Codex ⇄ Claude Code. Aucun impact code/BDD :
+`CLAUDE.md` est de la documentation, `AGENTS.md` reste la source unique des règles.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
