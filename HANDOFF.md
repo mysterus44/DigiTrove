@@ -56,8 +56,8 @@
     - `git diff --check` OK
   - P3A Coupons et Paniers (PostgreSQL réel `digitrove_testing`) :
     - `php artisan migrate:fresh --env=testing` OK → 16 migrations (P1 + P2 + 6 P3A)
-    - `php artisan test` OK → 42 tests, 294 assertions
-    - tests P3A ciblés OK → 13 tests, 119 assertions
+    - `php artisan test` OK → 44 tests, 322 assertions
+    - tests P3A ciblés OK → 15 tests, 147 assertions
     - `./vendor/bin/pint --test` et `git diff --check` OK
 
 ---
@@ -157,6 +157,10 @@
   - factories sans secret brut, prix panier ou fichier digital réel
   - tests PostgreSQL des contraintes CITEXT, montants `BIGINT`, pivots, UUID/hash,
     FK prudentes, index et absence de tables hors périmètre
+  - couverture de régression renforcée : cascades réelles panier → articles et
+    coupon → règles/pivots, avec préservation des produits et catégories
+  - introspection PostgreSQL verrouillant `coupons.code` en `citext`,
+    `carts.public_id` en `uuid` et les devises panier/coupon en `varchar(3)`
   - cohérences coupon inter-tables reportées à la future logique transactionnelle
   - aucun contrôleur, route, API, service, Filament, checkout, commande, paiement,
     webhook, remboursement, téléchargement, import legacy ou déploiement Azure
@@ -219,13 +223,26 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
 
+### 2026-07-13 — Codex (durcissement tests P3A)
+- Fait : ajout de deux tests comportementaux PostgreSQL prouvant les cascades
+  `carts` → `cart_items` et `coupons` → règles devise/pivots, sans supprimer les
+  produits ni catégories référencés.
+- Fait : introspection `information_schema.columns` ajoutée pour verrouiller les
+  types physiques `citext`, `uuid` et `varchar(3)` ; aucune migration, modèle,
+  factory ou logique métier modifié.
+- État build/tests : `migrate:fresh` OK (16 migrations), tests P3A OK (15 tests,
+  147 assertions), suite complète OK (44 tests, 322 assertions), Pint et diff-check OK.
+- Laisse à : review finale puis PR de P3A vers `p0-foundations-laravel13`.
+  P3B/P3C restent non démarrés.
+
 ### 2026-07-13 — Codex (P3A Coupons et Paniers)
 - Fait : audit de reprise classé `P3A NON DÉMARRÉ`, base propre/synchronisée à
   `2288a63`, puis création de `p3a-coupons-carts`. Implémentation stricte des six
   tables P3A, modèles, enums, factories et tests PostgreSQL ; aucun artefact partiel
   de Claude n'était présent à récupérer.
-- État build/tests : `migrate:fresh` OK (16 migrations), tests P3A OK (13 tests,
-  119 assertions), suite complète OK (42 tests, 294 assertions), Pint et diff-check OK.
+- État build/tests initial : `migrate:fresh`, tests P3A, suite complète, Pint et
+  diff-check étaient verts. Les compteurs actuels sont consignés dans l'entrée
+  de durcissement de couverture ci-dessus.
 - Décisions prises (→ DECISIONS_LOG.md) : D-025, durcissements P3A (`secret_hash`,
   expiration obligatoire, limites positives, FK produit restrictive, index explicites).
 - Laisse à : review/PR de P3A vers `p0-foundations-laravel13`. P3B/P3C interdits tant

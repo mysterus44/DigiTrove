@@ -95,6 +95,25 @@ it('has exactly the six P3A tables and expected columns', function () {
     foreach (['currency', 'fixed_amount_minor', 'amount_minor', 'is_cumulative'] as $column) {
         expect(Schema::hasColumn('coupons', $column))->toBeFalse("Forbidden coupons column exists: {$column}");
     }
+
+    $structuralColumns = DB::table('information_schema.columns')
+        ->select('table_name', 'column_name', 'data_type', 'udt_name', 'character_maximum_length')
+        ->where('table_schema', 'public')
+        ->whereIn('table_name', ['coupons', 'coupon_currency_rules', 'carts'])
+        ->whereIn('column_name', ['code', 'public_id', 'currency'])
+        ->get()
+        ->keyBy(fn (object $column): string => "{$column->table_name}.{$column->column_name}");
+
+    expect($structuralColumns)->toHaveCount(4)
+        ->and($structuralColumns['coupons.code']->udt_name)->toBe('citext')
+        ->and($structuralColumns['carts.public_id']->data_type)->toBe('uuid')
+        ->and($structuralColumns['carts.public_id']->udt_name)->toBe('uuid');
+
+    foreach (['coupon_currency_rules.currency', 'carts.currency'] as $currencyColumn) {
+        expect($structuralColumns[$currencyColumn]->data_type)->toBe('character varying')
+            ->and($structuralColumns[$currencyColumn]->udt_name)->toBe('varchar')
+            ->and($structuralColumns[$currencyColumn]->character_maximum_length)->toBe(3);
+    }
 });
 
 it('does not create P3B, P3C, delivery, analytics, or affiliation tables', function () {
@@ -302,6 +321,51 @@ it('sets cart identity and coupon references to null on physical deletion', func
     expect($cart->refresh()->user_id)->toBeNull()
         ->and($cart->visitor_id)->toBeNull()
         ->and($cart->coupon_id)->toBeNull();
+});
+
+it('cascades cart deletion to its items while preserving products', function () {
+    $product = Product::factory()->create();
+    $cart = Cart::factory()->create();
+    $item = CartItem::factory()->create([
+        'cart_id' => $cart->id,
+        'product_id' => $product->id,
+    ]);
+
+    expect(DB::table('carts')->where('id', $cart->id)->exists())->toBeTrue()
+        ->and(DB::table('cart_items')->where('id', $item->id)->exists())->toBeTrue()
+        ->and(DB::table('products')->where('id', $product->id)->exists())->toBeTrue();
+
+    $cart->delete();
+
+    expect(DB::table('carts')->where('id', $cart->id)->exists())->toBeFalse()
+        ->and(DB::table('cart_items')->where('id', $item->id)->exists())->toBeFalse()
+        ->and(DB::table('products')->where('id', $product->id)->exists())->toBeTrue();
+});
+
+it('cascades coupon deletion to currency rules and eligibility pivots', function () {
+    $coupon = Coupon::factory()->fixed()->create();
+    $currencyRule = CouponCurrencyRule::factory()->create(['coupon_id' => $coupon->id]);
+    $product = Product::factory()->create();
+    $category = Category::factory()->create();
+
+    $coupon->products()->attach($product->id);
+    $coupon->categories()->attach($category->id);
+
+    expect(DB::table('coupons')->where('id', $coupon->id)->exists())->toBeTrue()
+        ->and(DB::table('coupon_currency_rules')->where('id', $currencyRule->id)->exists())->toBeTrue()
+        ->and(DB::table('coupon_products')->where('coupon_id', $coupon->id)->where('product_id', $product->id)->exists())->toBeTrue()
+        ->and(DB::table('coupon_categories')->where('coupon_id', $coupon->id)->where('category_id', $category->id)->exists())->toBeTrue()
+        ->and(DB::table('products')->where('id', $product->id)->exists())->toBeTrue()
+        ->and(DB::table('categories')->where('id', $category->id)->exists())->toBeTrue();
+
+    $coupon->delete();
+
+    expect(DB::table('coupons')->where('id', $coupon->id)->exists())->toBeFalse()
+        ->and(DB::table('coupon_currency_rules')->where('id', $currencyRule->id)->exists())->toBeFalse()
+        ->and(DB::table('coupon_products')->where('coupon_id', $coupon->id)->where('product_id', $product->id)->exists())->toBeFalse()
+        ->and(DB::table('coupon_categories')->where('coupon_id', $coupon->id)->where('category_id', $category->id)->exists())->toBeFalse()
+        ->and(DB::table('products')->where('id', $product->id)->exists())->toBeTrue()
+        ->and(DB::table('categories')->where('id', $category->id)->exists())->toBeTrue();
 });
 
 it('maps cart items, enforces quantity and uniqueness, and protects referenced products', function () {

@@ -220,7 +220,7 @@ Ordre de migration figé (D-024) : `coupons` → `coupon_currency_rules` →
 | Schéma commerce réécrit dans `DigiTrove_Schema_BDD_v1.md` (VARCHAR(3), snapshot étendu, idempotence) | ✅ DONE |
 | Migrations P3A (`coupons` → `cart_items`, 6 tables) | ✅ DONE — non mergé |
 | Modèles/enums/factories P3A | ✅ DONE — sans logique métier |
-| Tests PostgreSQL P3A (contraintes, relations, sécurité) | ✅ DONE — 13 tests, 119 assertions |
+| Tests PostgreSQL P3A (contraintes, relations, sécurité) | ✅ DONE — 15 tests, 147 assertions |
 | Migrations P3B/P3C (`orders` → `coupon_redemptions`) | ⬜ TODO — interdit avant review/merge P3A |
 | OrderService (snapshot prix + nom) | ⬜ TODO |
 | CouponService (règle par devise, plafonds, verrou transactionnel) | ⬜ TODO |
@@ -237,6 +237,10 @@ Décisions bloquantes tranchées (D-024) : prix panier dynamique, coupon fixe pa
 Durcissements P3A (D-025) : limites d'usage nulles ou strictement positives,
 `secret_hash` obligatoire/unique au format SHA-256 minuscule, `expires_at` obligatoire,
 suppression physique d'un produit référencé par un panier refusée.
+Couverture de régression : cascades réelles `carts` → `cart_items` et `coupons` →
+`coupon_currency_rules`/pivots testées ; produits et catégories préservés ; types
+PostgreSQL `citext`, `uuid` et `varchar(3)` verrouillés par introspection. Suite
+complète : 44 tests, 322 assertions. P3A reste non mergé ; P3B/P3C non démarrés.
 Décisions non bloquantes à confirmer à l'implémentation : durées d'expiration (7 j / 30 min),
 anonymisation invité, paiement tardif `requires_review`.
 
