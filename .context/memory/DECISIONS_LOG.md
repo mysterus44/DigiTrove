@@ -250,6 +250,32 @@ laisser les timestamps catégories implicites, ou repousser la sécurité
 `storage_path` à une validation Laravel.
 IMPACT : migrations P2 existantes, tests PostgreSQL catalogue, documentation BDD.
 
+### D-022 : P2 Catalogue mergé, P3 Commerce reste derrière un plan BDD validé ✅
+CONTEXTE : la PR #3 P2 Catalogue a été mergée dans `p0-foundations-laravel13` via
+`aff4d05 Merge pull request #3 from mysterus44/p2-catalog` (commits `d43751d` +
+`fbaa33a`, base `9a11791`), avec CI verte côté GitHub et audit post-merge local
+vert (migrate:fresh 10 migrations, 29 tests / 173 assertions, Pint 55 fichiers,
+`git diff --check` propre, `citext` présent, inventaire strictement P1 + P2).
+`origin/main` reste intact à `1e41b92` et ne contient pas P2.
+CHOIX : clôturer P2 comme terminé et mergé. Nettoyage contrôlé : branche locale
+`p2-catalog` supprimée après confirmation du merge, branche distante
+`origin/p2-catalog` conservée, `main` local réaligné sur `origin/main` par pointeur
+seul (`git branch -f main origin/main`) sans reset/rebase/force-push et sans jamais
+pousser `main`. Étape suivante : produire UNIQUEMENT le plan BDD P3 Commerce
+(`carts`, `cart_items`, `coupons`, `orders`, `order_items`, `payments`, `refunds`
++ pivots strictement nécessaires) à faire valider avant toute migration.
+ALTERNATIVES REJETÉES : démarrer les migrations/modèles P3, ajouter checkout,
+paiements, webhooks, un fournisseur de paiement, des téléchargements ou des
+`download_grants`, supprimer la branche distante `p2-catalog`, ou pousser sur `main`.
+IMPACT : mémoire projet, `HANDOFF.md`, futur plan P3 à valider. Invariants imposés
+au plan P3 : argent en `BIGINT`, devise `VARCHAR(3)` majuscule (jamais FLOAT / REAL /
+DOUBLE / DECIMAL / NUMERIC), snapshot obligatoire dans `order_items` (nom, type,
+prix unitaire, devise, quantité, total ligne), commande indépendante du prix
+catalogue courant, checkout invité (`user_id` nullable + `visitor` + e-mail),
+statuts contraints sur commandes/paiements/remboursements, idempotence
+paiements/webhooks, montant et devise revérifiés serveur, remboursement partiel
+supportable, jamais de livraison sur retour navigateur, aucun `download_grant` en P3.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
@@ -261,8 +287,10 @@ IMPACT : migrations P2 existantes, tests PostgreSQL catalogue, documentation BDD
   (digital + physique) avec adresse de livraison. À trancher. Voir AUDIT_LEGACY.md.
 - **Prix multi-devises avant P2/P3** : prix fixes par devise validés pour P2.
   Conversion automatique et taux de change reportés.
-- **P2 Catalogue** : implémenté sur branche `p2-catalog`, non mergé, en attente de
-  review humaine.
+- **P2 Catalogue** : ✅ mergé dans `p0-foundations-laravel13` via PR #3 (`aff4d05`).
+  Clos (voir D-022).
+- **P3 Commerce** : en attente du plan BDD P3 (aucun code tant que le plan n'est pas
+  validé par KingKouda).
 
 ---
 

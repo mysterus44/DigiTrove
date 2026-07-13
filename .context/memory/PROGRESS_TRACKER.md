@@ -10,7 +10,7 @@ P0 FONDATIONS       : ██████████  100%
 P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
-P2 CATALOGUE        : ██████████  100% (branche, non mergé)
+P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
 P3 COMMERCE         : ░░░░░░░░░░  0%
 P4 LIVRAISON        : ░░░░░░░░░░  0%
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
@@ -19,8 +19,9 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
 > Rappel : **aucune logique métier avant que P1→P4 soient migrés et testés.**
-> P1 est mergé dans `p0-foundations-laravel13`. P2 est implémenté sur
-> `p2-catalog`, non mergé, et reste limité au schéma Catalogue.
+> P1 et P2 sont mergés dans `p0-foundations-laravel13` (P2 via PR #3 → `aff4d05`).
+> P2 reste limité au schéma Catalogue. Prochaine étape : plan BDD P3 Commerce
+> UNIQUEMENT (aucun code) à valider avant migration.
 
 ---
 
@@ -145,7 +146,8 @@ téléchargement, affiliation, segment marketing avancé ou analytics. Aucun che
 invité, aucun middleware/stitching avancé, aucun front métier.
 
 ## P2 — CATALOGUE
-Statut : ✅ implémenté techniquement sur `p2-catalog`, en attente de review/merge.
+Statut : ✅ implémenté et **mergé** dans `p0-foundations-laravel13` via PR #3
+(`aff4d05 Merge pull request #3 from mysterus44/p2-catalog`).
 
 | Tâche | Statut |
 |-------|--------|
@@ -181,6 +183,23 @@ Décisions P2 validées :
 Vérifications P2 passées :
 - `php artisan migrate:fresh --env=testing` via `digitrove-php:dev` + PostgreSQL
   réel : PASS, migrations P1 + 6 migrations P2
+- `php artisan test` via `digitrove-php:dev` + PostgreSQL réel : PASS,
+  29 tests, 173 assertions
+- `./vendor/bin/pint --test` via `digitrove-php:dev` : PASS, 55 fichiers
+- `git diff --check` : PASS
+
+Vérifications post-merge P2 sur `p0-foundations-laravel13` (`aff4d05`) :
+- Merge GitHub : `aff4d05 Merge pull request #3 from mysterus44/p2-catalog`
+  (commits `d43751d` + `fbaa33a`, base `9a11791`)
+- `origin/main` confirmé intact à `1e41b92 DigiTrove V2` (P2 absent de `main`)
+- Branche locale `p2-catalog` supprimée (`git branch -d`, merge confirmé) ;
+  `origin/p2-catalog` conservée
+- `main` local réaligné (pointeur seul) sur `1e41b92`
+- `php artisan migrate:fresh --env=testing` via `digitrove-php:dev` + PostgreSQL
+  réel `digitrove_testing` : PASS, 10 migrations ; tables applicatives = `users`,
+  `customer_profiles`, `visitors`, `categories`, `products`, `product_prices`,
+  `product_files`, `product_category`, `product_bundles` ; extension `citext`
+  présente ; aucune table commerce/paiement/téléchargement/affiliation/analytics
 - `php artisan test` via `digitrove-php:dev` + PostgreSQL réel : PASS,
   29 tests, 173 assertions
 - `./vendor/bin/pint --test` via `digitrove-php:dev` : PASS, 55 fichiers

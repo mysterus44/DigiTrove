@@ -6,12 +6,15 @@
 
 ## 📍 ÉTAT ACTUEL
 
-- **Dernier agent** : Codex
-- **Date** : 2026-07-12
-- **Branche git** : `p2-catalog`
+- **Dernier agent** : Claude Code
+- **Date** : 2026-07-13
+- **Branche git active** : `p0-foundations-laravel13` (intégration ; `aff4d05`)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
+- **Merge P2 Catalogue** : `aff4d05 Merge pull request #3 from mysterus44/p2-catalog`
+  (SHA complet `aff4d05d552a78754fc90bcb145fb75aba66dc93`, 2 parents `9a11791` + `fbaa33a`)
+- **`main` local** : réaligné sur `origin/main` = `1e41b92 DigiTrove V2` (intact, sans P1/P2)
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
   - `php artisan --version` OK via `digitrove-php:dev` → Laravel Framework 13.19.0
@@ -41,6 +44,16 @@
     173 assertions
   - P2 Catalogue : `./vendor/bin/pint --test` OK → 55 fichiers
   - P2 Catalogue : `git diff --check` OK
+  - Post-merge P2 (sur `p0-foundations-laravel13` à `aff4d05`, via `digitrove-php:dev`
+    + PostgreSQL réel `digitrove_testing`) :
+    - `php artisan migrate:fresh --env=testing` OK → 10 migrations (4 P1 + 6 P2)
+    - inventaire tables applicatives = `users`, `customer_profiles`, `visitors`,
+      `categories`, `products`, `product_prices`, `product_files`,
+      `product_category`, `product_bundles` (+ `migrations`) ; extension `citext`
+      présente ; **aucune** table commerce/paiement/téléchargement/affiliation/analytics
+    - `php artisan test` OK → 29 tests, 173 assertions
+    - `./vendor/bin/pint --test` OK → 55 fichiers
+    - `git diff --check` OK
 
 ---
 
@@ -107,7 +120,14 @@
     visiteurs anonymes et garde-fou anti tables hors périmètre
   - aucun catalogue, panier, commande, paiement, téléchargement, affiliation,
     analytics, checkout invité ou front métier ajouté
-- **P2 Catalogue implémenté sur `p2-catalog`, non mergé** :
+- **P2 Catalogue implémenté et mergé dans `p0-foundations-laravel13`** :
+  - PR #3 mergée correctement via
+    `aff4d05 Merge pull request #3 from mysterus44/p2-catalog`
+    (commits intégrés `d43751d` + `fbaa33a`, base `9a11791`)
+  - `origin/main` reste intact à `1e41b92 DigiTrove V2` (P2 absent de `main`)
+  - branche locale `p2-catalog` supprimée après vérification `git branch -d` (merge confirmé)
+  - branche distante `origin/p2-catalog` conservée
+  - `main` local réaligné (pointeur only, `git branch -f main origin/main`) sur `1e41b92`
   - branche créée depuis `origin/p0-foundations-laravel13` à `9a11791`
   - migrations strictement P2 : `categories`, `products`, `product_prices`,
     `product_files`, `product_category`, `product_bundles`
@@ -128,11 +148,21 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Action recommandée immédiate : review humaine de la branche `p2-catalog`, puis PR
-vers `p0-foundations-laravel13` si l'audit est OK.**
+**P2 est clos et mergé. Action suivante : produire UNIQUEMENT le plan BDD P3 Commerce
+(carts, cart_items, coupons, orders, order_items, payments, refunds + pivots
+strictement nécessaires), à faire valider par KingKouda avant toute migration.**
 
-Ne pas commencer P3. Ne pas ajouter Filament/admin, import legacy, routes catalogue,
-upload réel, checkout, paiement, livraison ou `download_grants` pendant la review P2.
+Gate P3 : aucune migration, aucun modèle, aucun checkout, aucun paiement, aucun
+webhook, aucun fournisseur de paiement, aucun téléchargement, aucun `download_grant`,
+aucun Filament, aucun déploiement — tant que le plan BDD P3 n'est pas validé.
+Invariants à porter dans le plan : argent en `BIGINT`, devise `VARCHAR(3)` majuscule
+(jamais FLOAT/REAL/DOUBLE/DECIMAL/NUMERIC), snapshot obligatoire dans `order_items`
+(nom, type, prix unitaire, devise, quantité, total ligne), checkout invité autorisé
+(`user_id` nullable + `visitor` + e-mail), idempotence paiements/webhooks, montant et
+devise revérifiés côté serveur, remboursement partiel supportable, jamais de livraison
+sur retour navigateur.
+
+Ne pas pousser sur `main`. Ne toucher qu'à `origin/p0-foundations-laravel13`.
 
 Toujours respecter : BDD avant logique, plan avant code, une seule feature à la fois.
 
@@ -174,6 +204,33 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-13 — Claude Code
+- Fait : audit post-merge P2 et clôture. Merge PR #3 confirmé localement
+  (`aff4d05 Merge pull request #3 from mysterus44/p2-catalog`, 2 parents
+  `9a11791` + `fbaa33a`, commits `d43751d` + `fbaa33a`) ; `origin/main` intact à
+  `1e41b92` et P2 absent de `main`. `p0-foundations-laravel13` synchronisé sur
+  `origin/p0-foundations-laravel13` (fast-forward, worktree propre, aucun reset/rebase).
+  Branche locale `p2-catalog` supprimée (`git branch -d`, merge confirmé) ;
+  `origin/p2-catalog` conservée. `main` local réaligné par pointeur seul
+  (`git branch -f main origin/main`) sur `1e41b92` — 3 conditions prouvées
+  (main non active, `4f48fc8` ancêtre de `origin/p0-foundations-laravel13`,
+  `origin/main` toujours `1e41b92`) ; aucun `4f48fc8`/P1/P2 perdu (tous atteignables
+  depuis `p0-foundations-laravel13`).
+- État build/tests : post-merge P2 via `digitrove-php:dev` + PostgreSQL réel
+  `digitrove_testing` (conteneur `digitrove-postgres-1`) —
+  `php artisan migrate:fresh --env=testing` OK (10 migrations : 4 P1 + 6 P2),
+  inventaire = `users`, `customer_profiles`, `visitors`, `categories`, `products`,
+  `product_prices`, `product_files`, `product_category`, `product_bundles`
+  (+ `migrations`) ; extension `citext` présente ; aucune table hors périmètre ;
+  `php artisan test` OK (29 tests, 173 assertions) ; `./vendor/bin/pint --test` OK
+  (55 fichiers) ; `git diff --check` OK.
+- Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-022, P2 clos et mergé ; P3
+  Commerce reste derrière un plan BDD validé avant toute migration.
+- Note : le SHA `afff4d05` de la consigne humaine est une coquille pour `aff4d05`
+  (SHA réel du merge). `CLAUDE.md` est absent de la racine (miroir d'`AGENTS.md` à recréer).
+- Laisse à : production du plan BDD P3 Commerce UNIQUEMENT (aucun code), à faire
+  valider par KingKouda. Push effectué sur `origin/p0-foundations-laravel13` seul.
 
 ### 2026-07-12 — Codex
 - Fait : corrections d'audit P2 appliquées sur `p2-catalog` sans élargir le
