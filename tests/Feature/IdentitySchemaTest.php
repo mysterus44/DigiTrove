@@ -157,11 +157,8 @@ it('allows anonymous visitors and future attachment to a user', function () {
     expect($visitor->refresh()->user->is($user))->toBeTrue();
 });
 
-it('does not create out-of-scope business tables during P1', function () {
+it('does not create out-of-scope commerce, delivery, analytics, or affiliation tables', function () {
     $forbiddenTables = [
-        'products',
-        'product_files',
-        'categories',
         'carts',
         'orders',
         'order_items',
