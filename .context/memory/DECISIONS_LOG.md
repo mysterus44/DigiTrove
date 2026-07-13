@@ -294,6 +294,49 @@ divergence entre les deux points d'entrée du même développeur), ou laisser
 IMPACT : continuité du co-codage Codex ⇄ Claude Code. Aucun impact code/BDD :
 `CLAUDE.md` est de la documentation, `AGENTS.md` reste la source unique des règles.
 
+### D-024 : P3 Commerce — décisions de schéma validées (plan, avant migration) ✅
+CONTEXTE : avant d'écrire la moindre migration P3, KingKouda a tranché les points
+structurants du schéma Commerce. Le plan BDD P3 est finalisé sur ces bases ; aucune
+migration/logique n'est écrite tant que le plan complet n'est pas validé.
+CHOIX :
+1. **Prix du panier** : recalcul dynamique jusqu'au passage en commande. AUCUN prix,
+   remise ou devise stocké dans `cart_items`. Snapshot définitif UNIQUEMENT dans
+   `order_items` (prix unitaire, sous-total, remise, total, devise, nom, slug, type).
+2. **Coupon fixe multi-devises** : aucune conversion automatique (cohérent D-018).
+   Une règle indépendante par devise via `coupon_currency_rules` (remplace le nom
+   `coupon_amounts`) : `fixed_amount_minor`, `min_order_minor`, `max_discount_minor`,
+   `UNIQUE (coupon_id, currency)`, devise `VARCHAR(3)` uppercase, montants `>= 0`.
+3. **Suppression produit** : `order_items.product_id` nullable, `ON DELETE SET NULL`,
+   snapshots conservés définitivement → la commande reste lisible même produit
+   renommé/archivé/supprimé. La suppression physique reste évitée (SoftDeletes P2).
+4. **Quantité digitale** : entier `>= 1` autorisé (prépare ventes multi-licences/unités).
+5. **Panier invité** : `carts.public_id UUID` opaque + secret aléatoire cryptographique
+   transmis UNIQUEMENT dans un cookie sécurisé (HttpOnly, SameSite, signé/chiffré) ;
+   en base seul `SHA-256(secret)` (`carts.secret_hash`), jamais le secret brut, jamais
+   un token complet dans les logs.
+6. **Coupons** : un seul coupon MAX par panier (`carts.coupon_id`) et par commande
+   (`orders.coupon_id` + snapshot code/type/montant), aucun cumul ; la notion
+   `is_cumulative` est supprimée. Consommation tracée dans `coupon_redemptions`
+   (`UNIQUE (order_id)`).
+HARDENING BDD associé : argent en `BIGINT`, devise `VARCHAR(3)` uppercase partout
+(correction de `CHAR(3)` du schéma v1) ; `payments` avec `idempotency_key UNIQUE`,
+`UNIQUE (provider, provider_ref) WHERE provider_ref IS NOT NULL`, et
+`UNIQUE (order_id) WHERE status='succeeded'` (un seul encaissement final) ;
+`payment_webhook_events UNIQUE (provider, external_event_id)` (anti double-webhook,
+payload allowlisté, aucun secret/PAN/token) ; `orders.status` sépare l'échec de
+tentative (dans `payments.status`) de l'état commande (`pending`/`payment_review`/...).
+NON exprimable par CHECK mono-ligne (→ service + trigger transactionnel + tests de
+concurrence) : existence d'une règle devise pour un coupon `fixed`, cumul
+`SUM(refunds succeeded) <= payment.amount_minor`, plafonds coupon global/par client.
+ALTERNATIVES REJETÉES : prix réservé au panier, conversion automatique de devises en
+P3, blocage dur de suppression produit, quantité forcée à 1, token invité en clair en
+base, cumul de coupons / `is_cumulative`, argent en `CHAR(3)`/FLOAT/DECIMAL.
+IMPACT : `DigiTrove_Schema_BDD_v1.md` (BLOC COMMERCE réécrit), futures migrations P3.
+Décisions non bloquantes (recommandations, non figées) : expiration panier invité 7 j,
+commande `pending` 30 min, anonymisation partielle des données invité après durée
+légale à définir, paiement tardif => `requires_review` (traitement manuel), suppression
+physique commandes/paiements interdite hors politique légale dédiée.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
@@ -307,8 +350,10 @@ IMPACT : continuité du co-codage Codex ⇄ Claude Code. Aucun impact code/BDD :
   Conversion automatique et taux de change reportés.
 - **P2 Catalogue** : ✅ mergé dans `p0-foundations-laravel13` via PR #3 (`aff4d05`).
   Clos (voir D-022).
-- **P3 Commerce** : en attente du plan BDD P3 (aucun code tant que le plan n'est pas
-  validé par KingKouda).
+- **P3 Commerce** : décisions de schéma tranchées (D-024) et plan BDD P3 finalisé.
+  Reste à valider le plan complet avant toute migration. Décisions non bloquantes
+  (durées d'expiration, anonymisation, paiement tardif) encore à confirmer au moment
+  de l'implémentation.
 
 ---
 

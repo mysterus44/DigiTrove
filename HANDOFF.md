@@ -148,21 +148,24 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**P2 est clos et mergé. Action suivante : produire UNIQUEMENT le plan BDD P3 Commerce
-(carts, cart_items, coupons, orders, order_items, payments, refunds + pivots
-strictement nécessaires), à faire valider par KingKouda avant toute migration.**
+**Le plan BDD P3 Commerce est finalisé (D-024) et documenté dans
+`DigiTrove_Schema_BDD_v1.md`. Action suivante : VALIDATION HUMAINE (KingKouda) du plan
+complet. Aucune migration P3 tant que ce plan n'est pas validé.**
 
-Gate P3 : aucune migration, aucun modèle, aucun checkout, aucun paiement, aucun
-webhook, aucun fournisseur de paiement, aucun téléchargement, aucun `download_grant`,
-aucun Filament, aucun déploiement — tant que le plan BDD P3 n'est pas validé.
-Invariants à porter dans le plan : argent en `BIGINT`, devise `VARCHAR(3)` majuscule
-(jamais FLOAT/REAL/DOUBLE/DECIMAL/NUMERIC), snapshot obligatoire dans `order_items`
-(nom, type, prix unitaire, devise, quantité, total ligne), checkout invité autorisé
-(`user_id` nullable + `visitor` + e-mail), idempotence paiements/webhooks, montant et
-devise revérifiés côté serveur, remboursement partiel supportable, jamais de livraison
-sur retour navigateur.
+À la validation, implémenter P3 dans l'ordre figé (D-024), une table/feature à la fois :
+`coupons` → `coupon_currency_rules` → `coupon_products` → `coupon_categories` →
+`carts` → `cart_items` → `orders` → `order_items` → `payments` →
+`payment_webhook_events` → `refunds` → `coupon_redemptions`.
 
-Ne pas pousser sur `main`. Ne toucher qu'à `origin/p0-foundations-laravel13`.
+Gate P3 (tant que non validé) : aucune migration, aucun modèle, aucun contrôleur/route,
+aucun panier applicatif, aucun checkout, aucun paiement, aucun webhook, aucun
+fournisseur de paiement, aucun Filament, aucun `download_grant`, aucun téléchargement,
+aucun déploiement Azure. Ne pas pousser sur `main` ; ne toucher qu'à
+`origin/p0-foundations-laravel13`.
+
+Points à trancher AVANT les migrations concernées : durées d'expiration (panier invité
+7 j, commande pending 30 min — recommandées), anonymisation des données invité, gestion
+du paiement tardif (`requires_review` recommandé).
 
 Toujours respecter : BDD avant logique, plan avant code, une seule feature à la fois.
 
@@ -204,6 +207,25 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-13 — Claude Code (plan P3)
+- Fait : décisions humaines P3 consignées (D-024) et **plan BDD P3 Commerce finalisé**.
+  Réécriture du BLOC COMMERCE de `DigiTrove_Schema_BDD_v1.md` : argent `BIGINT`, devise
+  `VARCHAR(3)` uppercase (fin du `CHAR(3)`), prix panier dynamique (aucun prix dans
+  `cart_items`), snapshot étendu dans `order_items`, `coupon_currency_rules` (règle
+  par devise), un seul coupon par panier/commande (suppression `is_cumulative`), panier
+  invité `public_id` + `SHA-256(secret)`, `payments` avec idempotence + un seul
+  `succeeded` par commande, `payment_webhook_events` (anti double-webhook, payload
+  allowlisté), `refunds` partiels avec garde cumul, `coupon_redemptions`. Aucune
+  migration/modèle/logique P3 créé.
+- État build/tests : `git diff --check` OK ; `php artisan test` OK (29 tests,
+  173 assertions) ; `./vendor/bin/pint --test` OK (55 fichiers) — inchangés (docs seuls).
+- Décisions prises (→ DECISIONS_LOG.md) : D-024, décisions de schéma P3 validées.
+- Ouvertes : #5 coupon multi-devises tranché (règle par devise) ; non bloquantes à
+  confirmer à l'implémentation (expiration panier 7 j, commande pending 30 min,
+  anonymisation invité, paiement tardif `requires_review`).
+- Laisse à : **validation humaine du plan BDD P3 complet** avant d'écrire la moindre
+  migration. Ne pas démarrer P3 (ni Filament, ni paiement, ni webhook, ni download).
 
 ### 2026-07-13 — Claude Code (suite)
 - Fait : création du point d'entrée `CLAUDE.md` (miroir court d'`AGENTS.md`, sans

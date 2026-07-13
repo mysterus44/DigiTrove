@@ -11,7 +11,7 @@ P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
-P3 COMMERCE         : ░░░░░░░░░░  0%
+P3 COMMERCE         : █░░░░░░░░░  plan BDD finalisé (D-024), 0% code
 P4 LIVRAISON        : ░░░░░░░░░░  0%
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
@@ -207,16 +207,32 @@ Vérifications post-merge P2 sur `p0-foundations-laravel13` (`aff4d05`) :
 - `git diff --check` : PASS
 
 ## P3 — COMMERCE
+Statut : 🗺️ **plan BDD finalisé (D-024)**, en attente de validation humaine avant toute
+migration. Aucun code P3 écrit.
+
+Ordre de migration figé (D-024) : `coupons` → `coupon_currency_rules` →
+`coupon_products` → `coupon_categories` → `carts` → `cart_items` → `orders` →
+`order_items` → `payments` → `payment_webhook_events` → `refunds` → `coupon_redemptions`.
+
 | Tâche | Statut |
 |-------|--------|
-| Migrations carts / orders / order_items / payments / coupons / refunds | ⬜ TODO |
+| Plan BDD P3 + décisions de schéma (D-024) | ✅ DONE — à valider |
+| Schéma commerce réécrit dans `DigiTrove_Schema_BDD_v1.md` (VARCHAR(3), snapshot étendu, idempotence) | ✅ DONE |
+| Migrations (12 tables, ordre ci-dessus) | ⬜ TODO — après validation |
 | OrderService (snapshot prix + nom) | ⬜ TODO |
+| CouponService (règle par devise, plafonds, verrou transactionnel) | ⬜ TODO |
 | PaymentGateway (interface) + 1 provider | ⬜ TODO |
-| Webhook : signature + getStatus + montant + idempotence | ⬜ TODO |
+| Webhook : signature + getStatus + montant + idempotence + dédup `payment_webhook_events` | ⬜ TODO |
+| RefundService + trigger cumul ≤ capturé (+ tests concurrence) | ⬜ TODO |
 | Event OrderPaid | ⬜ TODO |
-| Checkout invité (sans compte) | ⬜ TODO |
-| Job expiration commandes pending (30 min) | ⬜ TODO |
-| Tests (snapshot, idempotence, montant falsifié) | ⬜ TODO |
+| Checkout invité (UUID + secret haché, sans compte) | ⬜ TODO |
+| Job expiration paniers (7 j) + commandes pending (30 min) | ⬜ TODO |
+| Tests (snapshot, idempotence, montant falsifié, double webhook, remboursement partiel) | ⬜ TODO |
+
+Décisions bloquantes tranchées (D-024) : prix panier dynamique, coupon fixe par devise,
+`product_id` nullable + snapshot, quantité ≥ 1, panier invité UUID+hash, un seul coupon.
+Décisions non bloquantes à confirmer à l'implémentation : durées d'expiration (7 j / 30 min),
+anonymisation invité, paiement tardif `requires_review`.
 
 ## P4 — LIVRAISON (⚠️ cœur sécurité)
 | Tâche | Statut |
