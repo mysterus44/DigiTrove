@@ -57,6 +57,22 @@ class Product extends Model
     }
 
     /**
+     * @return BelongsToMany<Coupon, $this>
+     */
+    public function coupons(): BelongsToMany
+    {
+        return $this->belongsToMany(Coupon::class, 'coupon_products');
+    }
+
+    /**
+     * @return HasMany<CartItem, $this>
+     */
+    public function cartItems(): HasMany
+    {
+        return $this->hasMany(CartItem::class);
+    }
+
+    /**
      * @return BelongsToMany<Product, $this>
      */
     public function childProducts(): BelongsToMany

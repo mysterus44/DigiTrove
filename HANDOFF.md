@@ -6,9 +6,9 @@
 
 ## 📍 ÉTAT ACTUEL
 
-- **Dernier agent** : Claude Code
+- **Dernier agent** : Codex
 - **Date** : 2026-07-13
-- **Branche git active** : `p0-foundations-laravel13` (intégration ; `aff4d05`)
+- **Branche git active** : `p3a-coupons-carts` (feature P3A ; base `2288a63`)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -54,6 +54,11 @@
     - `php artisan test` OK → 29 tests, 173 assertions
     - `./vendor/bin/pint --test` OK → 55 fichiers
     - `git diff --check` OK
+  - P3A Coupons et Paniers (PostgreSQL réel `digitrove_testing`) :
+    - `php artisan migrate:fresh --env=testing` OK → 16 migrations (P1 + P2 + 6 P3A)
+    - `php artisan test` OK → 44 tests, 322 assertions
+    - tests P3A ciblés OK → 15 tests, 147 assertions
+    - `./vendor/bin/pint --test` et `git diff --check` OK
 
 ---
 
@@ -143,25 +148,35 @@
     analytics ou affiliation ajouté
   - cycles indirects de bundles toujours non exposés et à traiter avant toute
     écriture métier/admin/API
+- **P3A Coupons et Paniers implémenté, non mergé** :
+  - branche dédiée `p3a-coupons-carts`, créée depuis `2288a63`
+  - six migrations strictement P3A : `coupons`, `coupon_currency_rules`,
+    `coupon_products`, `coupon_categories`, `carts`, `cart_items`
+  - modèles : `Coupon`, `CouponCurrencyRule`, `Cart`, `CartItem`
+  - enums : `CouponDiscountType`, `CartStatus`
+  - factories sans secret brut, prix panier ou fichier digital réel
+  - tests PostgreSQL des contraintes CITEXT, montants `BIGINT`, pivots, UUID/hash,
+    FK prudentes, index et absence de tables hors périmètre
+  - couverture de régression renforcée : cascades réelles panier → articles et
+    coupon → règles/pivots, avec préservation des produits et catégories
+  - introspection PostgreSQL verrouillant `coupons.code` en `citext`,
+    `carts.public_id` en `uuid` et les devises panier/coupon en `varchar(3)`
+  - cohérences coupon inter-tables reportées à la future logique transactionnelle
+  - aucun contrôleur, route, API, service, Filament, checkout, commande, paiement,
+    webhook, remboursement, téléchargement, import legacy ou déploiement Azure
+  - P3B/P3C non démarrés
 
 ---
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Le plan BDD P3 Commerce est finalisé (D-024) et documenté dans
-`DigiTrove_Schema_BDD_v1.md`. Action suivante : VALIDATION HUMAINE (KingKouda) du plan
-complet. Aucune migration P3 tant que ce plan n'est pas validé.**
+**Action suivante : review humaine de `p3a-coupons-carts`, puis PR vers
+`p0-foundations-laravel13` si l'audit est vert. Ne pas démarrer P3B/P3C.**
 
-À la validation, implémenter P3 dans l'ordre figé (D-024), une table/feature à la fois :
-`coupons` → `coupon_currency_rules` → `coupon_products` → `coupon_categories` →
-`carts` → `cart_items` → `orders` → `order_items` → `payments` →
-`payment_webhook_events` → `refunds` → `coupon_redemptions`.
-
-Gate P3 (tant que non validé) : aucune migration, aucun modèle, aucun contrôleur/route,
-aucun panier applicatif, aucun checkout, aucun paiement, aucun webhook, aucun
-fournisseur de paiement, aucun Filament, aucun `download_grant`, aucun téléchargement,
-aucun déploiement Azure. Ne pas pousser sur `main` ; ne toucher qu'à
-`origin/p0-foundations-laravel13`.
+Gate actuel : aucune migration `orders`, `order_items`, `payments`,
+`payment_webhook_events`, `refunds` ou `coupon_redemptions` ; aucun contrôleur/route,
+checkout, webhook, fournisseur de paiement, Filament, `download_grant`, téléchargement
+ou déploiement Azure. Ne jamais pousser sur `main`.
 
 Points à trancher AVANT les migrations concernées : durées d'expiration (panier invité
 7 j, commande pending 30 min — recommandées), anonymisation des données invité, gestion
@@ -207,6 +222,31 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-13 — Codex (durcissement tests P3A)
+- Fait : ajout de deux tests comportementaux PostgreSQL prouvant les cascades
+  `carts` → `cart_items` et `coupons` → règles devise/pivots, sans supprimer les
+  produits ni catégories référencés.
+- Fait : introspection `information_schema.columns` ajoutée pour verrouiller les
+  types physiques `citext`, `uuid` et `varchar(3)` ; aucune migration, modèle,
+  factory ou logique métier modifié.
+- État build/tests : `migrate:fresh` OK (16 migrations), tests P3A OK (15 tests,
+  147 assertions), suite complète OK (44 tests, 322 assertions), Pint et diff-check OK.
+- Laisse à : review finale puis PR de P3A vers `p0-foundations-laravel13`.
+  P3B/P3C restent non démarrés.
+
+### 2026-07-13 — Codex (P3A Coupons et Paniers)
+- Fait : audit de reprise classé `P3A NON DÉMARRÉ`, base propre/synchronisée à
+  `2288a63`, puis création de `p3a-coupons-carts`. Implémentation stricte des six
+  tables P3A, modèles, enums, factories et tests PostgreSQL ; aucun artefact partiel
+  de Claude n'était présent à récupérer.
+- État build/tests initial : `migrate:fresh`, tests P3A, suite complète, Pint et
+  diff-check étaient verts. Les compteurs actuels sont consignés dans l'entrée
+  de durcissement de couverture ci-dessus.
+- Décisions prises (→ DECISIONS_LOG.md) : D-025, durcissements P3A (`secret_hash`,
+  expiration obligatoire, limites positives, FK produit restrictive, index explicites).
+- Laisse à : review/PR de P3A vers `p0-foundations-laravel13`. P3B/P3C interdits tant
+  que P3A n'est pas revu et mergé.
 
 ### 2026-07-13 — Claude Code (plan P3)
 - Fait : décisions humaines P3 consignées (D-024) et **plan BDD P3 Commerce finalisé**.

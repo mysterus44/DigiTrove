@@ -47,6 +47,14 @@ class User extends Authenticatable
         return $this->hasMany(Visitor::class);
     }
 
+    /**
+     * @return HasMany<Cart, $this>
+     */
+    public function carts(): HasMany
+    {
+        return $this->hasMany(Cart::class);
+    }
+
     public function getAuthPasswordName(): string
     {
         return 'password_hash';
