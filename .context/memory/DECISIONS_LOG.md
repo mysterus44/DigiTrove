@@ -423,8 +423,12 @@ unicité simple des lignes, réservation de coupon pendant `pending`, email ou s
 stocké en clair, hash non versionné, remises génériques non modélisées, suppression des
 FK historiques ou triggers comptables immédiats empêchant la création transactionnelle.
 IMPACT : migrations P3B `orders`, `order_items`, `coupon_redemptions`, triggers et
-tests PostgreSQL associés, implémentés sur la branche `p3b-orders` après validation
-humaine. P3C reste non démarré et soumis à review/merge préalable de P3B.
+tests PostgreSQL associés. P3B a été mergé via la
+[PR #5](https://github.com/mysterus44/DigiTrove/pull/5) dans
+`p0-foundations-laravel13` par `f07d2258c18e196af608f7df97a5816a7cf578f6`, puis
+validé post-merge : 19 migrations, 62 tests / 650 assertions, six fonctions, huit
+triggers dont quatre différés, rollback isolé automatisé et contrainte coupon durcie
+contre `CHECK = UNKNOWN`. P3C reste non démarré et soumis à un plan séparé validé.
 
 ---
 
@@ -440,8 +444,8 @@ humaine. P3C reste non démarré et soumis à review/merge préalable de P3B.
 - **P2 Catalogue** : ✅ mergé dans `p0-foundations-laravel13` via PR #3 (`aff4d05`).
   Clos (voir D-022).
 - **P3 Commerce** : P3A Coupons et Paniers mergé via PR #4 (`234e303`, D-024 à
-  D-026). P3B Commandes est implémenté sur `p3b-orders` selon D-027, non mergé ;
-  P3C reste non démarré.
+  D-026). P3B Commandes mergé via PR #5 (`f07d225`, D-027) ; P3C reste non démarré
+  et exige un plan séparé avant toute implémentation.
   Les durées
   d'expiration métier, l'anonymisation invité et le paiement tardif restent à
   confirmer avant les tranches concernées.

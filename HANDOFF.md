@@ -8,7 +8,7 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-14
-- **Branche git active** : `p3b-orders` (P3B implémenté ; non mergé)
+- **Branche git active** : `p0-foundations-laravel13` (P3B mergé et validé)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -17,6 +17,9 @@
 - **Merge P3A Coupons et Paniers** :
   `234e303 Merge pull request #4 from mysterus44/p3a-coupons-carts`
   (SHA complet `234e3034f0e1ea5e20af9ca359d19d799c140072`, parents `2288a63` + `1c0d5a2`)
+- **Merge P3B Commandes** : [PR #5](https://github.com/mysterus44/DigiTrove/pull/5)
+  `f07d225 Merge pull request #5 from mysterus44/p3b-orders`
+  (SHA complet `f07d2258c18e196af608f7df97a5816a7cf578f6`, parents `6f7578e` + `499e2bd`)
 - **`main` local** : réaligné sur `origin/main` = `1e41b92 DigiTrove V2`
   (intact, sans P1/P2/P3A/P3B)
 - **Build/tests** :
@@ -72,7 +75,7 @@
     - `php artisan test` OK sur PostgreSQL réel → 44 tests, 322 assertions
     - `./vendor/bin/pint --test` OK → 72 fichiers
     - `git diff --check` OK
-  - P3B Commandes sur `p3b-orders` (PostgreSQL réel) :
+  - Post-merge P3B Commandes sur `p0-foundations-laravel13` (PostgreSQL réel) :
     - `php artisan migrate:fresh --env=testing` OK → 19 migrations
     - rollback automatisé des trois migrations P3B OK → tables, fonctions et
       triggers P3B supprimés dans une base PostgreSQL isolée
@@ -189,7 +192,13 @@
   - aucun contrôleur, route, API, service, Filament, checkout, commande, paiement,
     webhook, remboursement, téléchargement, import legacy ou déploiement Azure
   - P3B/P3C absents du périmètre et de la PR P3A
-- **P3B Commandes implémenté et corrigé après review, non mergé** :
+- **P3B Commandes implémenté, corrigé et mergé** :
+  - [PR #5](https://github.com/mysterus44/DigiTrove/pull/5) mergée dans
+    `p0-foundations-laravel13` via `f07d225`
+  - commits intégrés : `b42371b` (implémentation) + `499e2bd` (durcissement sécurité/tests)
+  - branche locale `p3b-orders` supprimée après preuve du merge
+  - branche distante `origin/p3b-orders` conservée à `499e2bd`
+  - `origin/main` reste intact à `1e41b92`, sans P3B
   - décision D-027 validée humainement puis appliquée sur `p3b-orders`
   - ordre : `orders` → `order_items` → `coupon_redemptions`
   - suppression et mutations commerciales des commandes/lignes bloquées par triggers
@@ -204,21 +213,22 @@
   - correction post-review : `orders_coupon_snapshot_consistency_check` ferme le cas
     PostgreSQL `CHECK = UNKNOWN` ; tests P3B vérifient SQLSTATE + nom de contrainte
     ou message trigger, scénarios coupon NULL couverts, rollback P3B automatisé
+  - audit post-merge : trois tables P3B, six fonctions, huit triggers, dont quatre
+    constraint triggers `DEFERRABLE INITIALLY DEFERRED`, confirmés dans PostgreSQL
   - aucun code P3C, checkout, paiement, webhook, remboursement ou livraison
 
 ---
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Action suivante : review finale de `P3B — Commandes` après correctif, puis PR de
-`p3b-orders` vers `p0-foundations-laravel13` si l'audit est propre. Ne pas merger
-automatiquement. P3C Paiements reste interdit.**
+**Action suivante : produire uniquement le plan BDD de `P3C — Paiements et
+Remboursements` dans une exécution séparée, puis attendre sa validation humaine avant
+toute migration ou logique.**
 
-Gate actuel : les migrations `orders`, `order_items` et `coupon_redemptions` existent
-uniquement sur `p3b-orders`, avec correctif post-review non mergé. Aucune migration
+Gate actuel : P3B est mergé et validé dans `p0-foundations-laravel13`. Aucune migration
 `payments`, `payment_webhook_events` ou `refunds` ; aucun contrôleur/route, checkout,
 webhook, fournisseur de paiement, Filament, `download_grant`, téléchargement ou
-déploiement Azure. Ne jamais pousser sur `main`.
+déploiement Azure. P3C reste non démarré. Ne jamais pousser sur `main`.
 
 Points reportés sans bloquer la structure P3B : durée métier `pending` recommandée à
 30 minutes (`expires_at` reste immuable), politique légale d'anonymisation invité,
@@ -264,6 +274,21 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-14 — Codex (clôture post-merge P3B)
+- Fait : [PR #5](https://github.com/mysterus44/DigiTrove/pull/5) confirmée et mergée
+  dans `p0-foundations-laravel13` via
+  `f07d2258c18e196af608f7df97a5816a7cf578f6` ; commits `b42371b` et `499e2bd`
+  intégrés, absents de `origin/main` resté à `1e41b92`.
+- Fait : audit PostgreSQL post-merge confirmé : tables `orders`, `order_items`,
+  `coupon_redemptions`, six fonctions, huit triggers, quatre constraint triggers
+  différés et contrainte coupon durcie contre `CHECK = UNKNOWN`.
+- État build/tests : `migrate:fresh` OK (19 migrations), tests P3B OK (18 tests,
+  337 assertions), suite complète OK (62 tests, 650 assertions), Pint OK (83 fichiers),
+  `git diff --check` OK. Rollback P3B isolé automatisé toujours vert.
+- Nettoyage : branche locale `p3b-orders` supprimée ; branche distante conservée.
+- Laisse à : plan P3C Paiements/Remboursements uniquement, dans une exécution séparée.
+  Aucun code P3C n'est démarré.
 
 ### 2026-07-14 — Codex (correctif post-review P3B)
 - Fait : correction de la contrainte coupon `orders_coupon_snapshot_consistency_check`
