@@ -8,7 +8,7 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-14
-- **Branche git active** : `p0-foundations-laravel13` (plan P3B finalisé ; gate humain)
+- **Branche git active** : `p3b-orders` (P3B implémenté ; non mergé)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -18,7 +18,7 @@
   `234e303 Merge pull request #4 from mysterus44/p3a-coupons-carts`
   (SHA complet `234e3034f0e1ea5e20af9ca359d19d799c140072`, parents `2288a63` + `1c0d5a2`)
 - **`main` local** : réaligné sur `origin/main` = `1e41b92 DigiTrove V2`
-  (intact, sans P1/P2/P3A)
+  (intact, sans P1/P2/P3A/P3B)
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
   - `php artisan --version` OK via `digitrove-php:dev` → Laravel Framework 13.19.0
@@ -72,6 +72,12 @@
     - `php artisan test` OK sur PostgreSQL réel → 44 tests, 322 assertions
     - `./vendor/bin/pint --test` OK → 72 fichiers
     - `git diff --check` OK
+  - P3B Commandes sur `p3b-orders` (PostgreSQL réel) :
+    - `php artisan migrate:fresh --env=testing` OK → 19 migrations
+    - rollback des trois migrations P3B OK → tables et fonctions P3B supprimées
+    - tests P3B ciblés OK → 17 tests, 200 assertions
+    - suite complète OK → 61 tests, 513 assertions
+    - `./vendor/bin/pint --test` OK → 83 fichiers ; `git diff --check` OK
 
 ---
 
@@ -181,10 +187,10 @@
   - cohérences coupon inter-tables reportées à la future logique transactionnelle
   - aucun contrôleur, route, API, service, Filament, checkout, commande, paiement,
     webhook, remboursement, téléchargement, import legacy ou déploiement Azure
-  - P3B/P3C non démarrés
-- **Plan P3B Commandes finalisé, sans implémentation** :
-  - décision D-027 enregistrée après validation humaine des choix `1A`, `2A`, `3A`
-  - ordre prévu : `orders` → `order_items` → `coupon_redemptions`
+  - P3B/P3C absents du périmètre et de la PR P3A
+- **P3B Commandes implémenté, non mergé** :
+  - décision D-027 validée humainement puis appliquée sur `p3b-orders`
+  - ordre : `orders` → `order_items` → `coupon_redemptions`
   - suppression et mutations commerciales des commandes/lignes bloquées par triggers
     PostgreSQL ; seules transitions de cycle de vie et nullifications FK contrôlées
   - une ligne maximum par produit non NULL via index unique partiel
@@ -193,20 +199,22 @@
   - consommation coupon seulement après paiement serveur confirmé en P3C, sous verrou,
     avec identité `HMAC-SHA-256` versionnée ; aucune réservation pendant `pending`
   - remises P3 limitées aux coupons ; `discount_minor = 0` sans snapshots coupon
-  - aucune migration, modèle, enum, factory, test ou trigger P3B/P3C créé
+  - trois migrations, trois modèles, un enum, trois factories et tests PostgreSQL créés
+  - aucun code P3C, checkout, paiement, webhook, remboursement ou livraison
 
 ---
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Action suivante : faire valider humainement le plan final D-027 de
-`P3B — Commandes`. Après validation seulement, préparer une branche P3B dédiée et
-implémenter strictement les trois migrations prévues. P3C Paiements reste interdit.**
+**Action suivante : review technique de `P3B — Commandes`, puis PR de `p3b-orders`
+vers `p0-foundations-laravel13` si l'audit est propre. Ne pas merger automatiquement.
+P3C Paiements reste interdit.**
 
-Gate actuel : D-027 est documentée mais aucune migration `orders`, `order_items`,
-`coupon_redemptions`, `payments`, `payment_webhook_events` ou `refunds` n'existe ;
-aucun contrôleur/route, checkout, webhook, fournisseur de paiement, Filament,
-`download_grant`, téléchargement ou déploiement Azure. Ne jamais pousser sur `main`.
+Gate actuel : les migrations `orders`, `order_items` et `coupon_redemptions` existent
+uniquement sur `p3b-orders`. Aucune migration `payments`, `payment_webhook_events` ou
+`refunds` ; aucun contrôleur/route, checkout, webhook, fournisseur de paiement,
+Filament, `download_grant`, téléchargement ou déploiement Azure. Ne jamais pousser
+sur `main`.
 
 Points reportés sans bloquer la structure P3B : durée métier `pending` recommandée à
 30 minutes (`expires_at` reste immuable), politique légale d'anonymisation invité,
@@ -252,6 +260,19 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-14 — Codex (implémentation P3B Commandes)
+- Fait : branche `p3b-orders` créée depuis `6f7578e`; trois migrations réversibles
+  ajoutées pour `orders`, `order_items` et `coupon_redemptions`, sans artefact P3C.
+- Fait : immutabilité et suppression physique bloquées par triggers PostgreSQL,
+  agrégats/devises et redemption coupon contrôlés au commit par constraint triggers
+  différés, snapshots historiques et nullifications FK testés.
+- Fait : modèles, `OrderStatus`, factories et relations P1/P2/P3A minimales ajoutés ;
+  aucun service, route, contrôleur, paiement, webhook, checkout ou téléchargement.
+- État build/tests : 19 migrations et rollback P3B OK ; tests P3B 17/200 ; suite
+  complète 61/513 ; Pint 83 fichiers ; diff-check OK.
+- Laisse à : review technique et PR de `p3b-orders` vers
+  `p0-foundations-laravel13`. P3C reste interdit avant merge et nouveau plan validé.
 
 ### 2026-07-14 — Codex (plan final P3B Commandes)
 - Fait : garde-fous Git confirmés sur `p0-foundations-laravel13` à `ba48b5d`, local

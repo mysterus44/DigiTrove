@@ -393,7 +393,7 @@ CHOIX :
    désactivation normale complètent la protection.
 3. **Lignes immuables** : tout `DELETE` de `order_items` est refusé et toute mise à
    jour commerciale est interdite. Seule l'exception `product_id` non-NULL → NULL,
-   sans autre changement hors `updated_at`, rend `ON DELETE SET NULL` compatible avec
+   sans aucun autre changement, `updated_at` inclus, rend `ON DELETE SET NULL` compatible avec
    les suppressions physiques exceptionnelles ; les produits sont normalement
    SoftDeleted. `order_id` utilise `ON DELETE RESTRICT`.
 4. **Une ligne par produit et commande** : `quantity` porte plusieurs unités/licences.
@@ -422,9 +422,9 @@ ALTERNATIVES REJETÉES : protections Laravel seules, `ON DELETE CASCADE` sur l'h
 unicité simple des lignes, réservation de coupon pendant `pending`, email ou secret HMAC
 stocké en clair, hash non versionné, remises génériques non modélisées, suppression des
 FK historiques ou triggers comptables immédiats empêchant la création transactionnelle.
-IMPACT : plan final des futures migrations P3B `orders`, `order_items`,
-`coupon_redemptions`, triggers et tests PostgreSQL associés. Aucun code P3B/P3C n'est
-créé par cette décision ; une validation humaine reste obligatoire avant implémentation.
+IMPACT : migrations P3B `orders`, `order_items`, `coupon_redemptions`, triggers et
+tests PostgreSQL associés, implémentés sur la branche `p3b-orders` après validation
+humaine. P3C reste non démarré et soumis à review/merge préalable de P3B.
 
 ---
 
@@ -440,7 +440,8 @@ créé par cette décision ; une validation humaine reste obligatoire avant impl
 - **P2 Catalogue** : ✅ mergé dans `p0-foundations-laravel13` via PR #3 (`aff4d05`).
   Clos (voir D-022).
 - **P3 Commerce** : P3A Coupons et Paniers mergé via PR #4 (`234e303`, D-024 à
-  D-026). Prochaine étape : plan P3B Commandes uniquement ; P3B/P3C non démarrés.
+  D-026). P3B Commandes est implémenté sur `p3b-orders` selon D-027, non mergé ;
+  P3C reste non démarré.
   Les durées
   d'expiration métier, l'anonymisation invité et le paiement tardif restent à
   confirmer avant les tranches concernées.

@@ -47,6 +47,14 @@ class Visitor extends Model
     }
 
     /**
+     * @return HasMany<Order, $this>
+     */
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

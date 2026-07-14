@@ -157,14 +157,11 @@ it('allows anonymous visitors and future attachment to a user', function () {
     expect($visitor->refresh()->user->is($user))->toBeTrue();
 });
 
-it('does not create out-of-scope P3B, P3C, delivery, analytics, or affiliation tables', function () {
+it('does not create out-of-scope P3C, delivery, analytics, or affiliation tables', function () {
     $forbiddenTables = [
-        'orders',
-        'order_items',
         'payments',
         'payment_webhook_events',
         'refunds',
-        'coupon_redemptions',
         'download_grants',
         'download_logs',
         'affiliate_profiles',

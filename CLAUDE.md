@@ -39,8 +39,8 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
 
 - **P0 Fondations** ✅ terminé · **SITE-00** ✅ mergé · **P1 Identité** ✅ mergé
 - **P2 Catalogue** ✅ mergé (PR #3 → `aff4d05`)
-- **P3 Commerce** 🟡 P3A mergé (PR #4) · plan P3B Commandes finalisé (D-027),
-  en attente de validation humaine avant migrations · P3C non démarré
+- **P3 Commerce** 🟡 P3A mergé (PR #4) · P3B Commandes implémenté sur
+  `p3b-orders` selon D-027, non mergé · P3C non démarré
 
 ## 🔄 EN FIN DE TÂCHE
 

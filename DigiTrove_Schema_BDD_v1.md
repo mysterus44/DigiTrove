@@ -437,14 +437,12 @@ CREATE TABLE orders (
     CHECK (expires_at > placed_at),
     CHECK (paid_at IS NULL OR paid_at >= placed_at),
     CHECK (cancelled_at IS NULL OR cancelled_at >= placed_at),
-    CHECK (status NOT IN ('paid','partially_refunded','refunded') OR paid_at IS NOT NULL),
-    CHECK (status <> 'cancelled' OR cancelled_at IS NOT NULL),
     -- En P3, discount_minor représente uniquement une remise coupon. L'absence de
     -- coupon se déduit des snapshots, pas de coupon_id qui peut devenir NULL après
     -- suppression exceptionnelle du coupon référencé.
     CHECK (
         (
-            coupon_id IS NULL AND coupon_code_snapshot IS NULL
+            coupon_code_snapshot IS NULL
             AND coupon_discount_type_snapshot IS NULL
             AND coupon_percent_basis_points_snapshot IS NULL
             AND coupon_fixed_amount_minor_snapshot IS NULL
@@ -455,12 +453,14 @@ CREATE TABLE orders (
             AND coupon_percent_basis_points_snapshot IS NOT NULL
             AND coupon_percent_basis_points_snapshot BETWEEN 1 AND 10000
             AND coupon_fixed_amount_minor_snapshot IS NULL
+            AND discount_minor > 0
         ) OR (
             coupon_code_snapshot IS NOT NULL AND btrim(coupon_code_snapshot) <> ''
             AND coupon_discount_type_snapshot = 'fixed'
             AND coupon_percent_basis_points_snapshot IS NULL
             AND coupon_fixed_amount_minor_snapshot IS NOT NULL
-            AND coupon_fixed_amount_minor_snapshot >= 0
+            AND coupon_fixed_amount_minor_snapshot > 0
+            AND discount_minor > 0
         )
     ),
     CHECK (coupon_id IS NULL OR coupon_code_snapshot IS NOT NULL)
@@ -526,20 +526,22 @@ CREATE INDEX coupon_redemptions_coupon_redeemed_at_index
     ON coupon_redemptions (coupon_id, redeemed_at DESC);
 CREATE INDEX coupon_redemptions_redeemed_at_index ON coupon_redemptions (redeemed_at DESC);
 
--- PLAN DES TRIGGERS P3B (créés dans les trois futures migrations, pas dans cette doc) :
--- 1. orders_reject_delete : BEFORE DELETE, lève toujours une exception explicite.
--- 2. orders_enforce_immutable_update : BEFORE UPDATE, seules status, paid_at,
+-- TRIGGERS P3B (implémentés dans les trois migrations P3B) :
+-- 1. orders_prevent_delete_trigger : BEFORE DELETE, lève toujours une exception explicite.
+-- 2. orders_enforce_immutability_trigger : BEFORE UPDATE, seules status, paid_at,
 --    cancelled_at et updated_at peuvent évoluer. expires_at reste figé. Exception
 --    référentielle strictement limitée à cart_id/user_id/visitor_id/coupon_id passant
 --    de non-NULL à NULL, sans autre changement commercial, pour rendre SET NULL viable.
--- 3. order_items_reject_delete : BEFORE DELETE, lève toujours une exception.
--- 4. order_items_enforce_immutable_update : BEFORE UPDATE, autorise uniquement
---    product_id non-NULL -> NULL, toutes les autres colonnes identiques sauf updated_at.
--- 5. orders_validate_items_deferred et order_items_validate_order_deferred :
+-- 3. order_items_prevent_delete_trigger : BEFORE DELETE, lève toujours une exception.
+-- 4. order_items_enforce_immutability_trigger : BEFORE UPDATE, autorise uniquement
+--    product_id non-NULL -> NULL, toutes les autres colonnes, updated_at inclus, identiques.
+-- 5. orders_validate_items_consistency_trigger et
+--    order_items_validate_order_consistency_trigger :
 --    CONSTRAINT TRIGGER AFTER ROW, DEFERRABLE INITIALLY DEFERRED, sur INSERT/UPDATE
 --    d'orders et INSERT/UPDATE/DELETE d'order_items. Au commit : au moins une ligne,
 --    devises identiques, sommes des sous-totaux/remises/totaux cohérentes avec orders.
--- 6. coupon_redemptions_validate_order_deferred et orders_validate_redemption_deferred :
+-- 6. coupon_redemptions_validate_order_consistency_trigger et
+--    orders_validate_redemption_consistency_trigger :
 --    CONSTRAINT TRIGGER AFTER ROW, DEFERRABLE INITIALLY DEFERRED. Au commit : commande
 --    avec snapshots coupon, code/type/remise/devise identiques et statut dans
 --    paid/partially_refunded/refunded. L'ordre d'insertion interne à la transaction

@@ -116,14 +116,11 @@ it('has exactly the six P3A tables and expected columns', function () {
     }
 });
 
-it('does not create P3B, P3C, delivery, analytics, or affiliation tables', function () {
+it('does not create P3C, delivery, analytics, or affiliation tables', function () {
     $forbiddenTables = [
-        'orders',
-        'order_items',
         'payments',
         'payment_webhook_events',
         'refunds',
-        'coupon_redemptions',
         'download_grants',
         'download_logs',
         'events',
