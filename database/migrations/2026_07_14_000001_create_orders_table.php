@@ -74,29 +74,35 @@ return new class extends Migration
         DB::statement('ALTER TABLE orders ADD CONSTRAINT orders_cancelled_at_after_placement_check CHECK (cancelled_at IS NULL OR cancelled_at >= placed_at)');
         DB::statement(<<<'SQL'
             ALTER TABLE orders
-            ADD CONSTRAINT orders_coupon_snapshots_check
+            ADD CONSTRAINT orders_coupon_snapshot_consistency_check
             CHECK (
-                (
-                    coupon_code_snapshot IS NULL
-                    AND coupon_discount_type_snapshot IS NULL
-                    AND coupon_percent_basis_points_snapshot IS NULL
-                    AND coupon_fixed_amount_minor_snapshot IS NULL
-                    AND discount_minor = 0
-                ) OR (
-                    coupon_code_snapshot IS NOT NULL
-                    AND length(btrim(coupon_code_snapshot)) > 0
-                    AND coupon_discount_type_snapshot = 'percent'
-                    AND coupon_percent_basis_points_snapshot BETWEEN 1 AND 10000
-                    AND coupon_fixed_amount_minor_snapshot IS NULL
-                    AND discount_minor > 0
-                ) OR (
-                    coupon_code_snapshot IS NOT NULL
-                    AND length(btrim(coupon_code_snapshot)) > 0
-                    AND coupon_discount_type_snapshot = 'fixed'
-                    AND coupon_percent_basis_points_snapshot IS NULL
-                    AND coupon_fixed_amount_minor_snapshot > 0
-                    AND discount_minor > 0
-                )
+                CASE
+                    WHEN coupon_code_snapshot IS NULL
+                        AND coupon_discount_type_snapshot IS NULL
+                        AND coupon_percent_basis_points_snapshot IS NULL
+                        AND coupon_fixed_amount_minor_snapshot IS NULL
+                        AND discount_minor = 0
+                    THEN TRUE
+                    WHEN coupon_code_snapshot IS NOT NULL
+                        AND length(btrim(coupon_code_snapshot)) > 0
+                        AND coupon_discount_type_snapshot IS NOT NULL
+                        AND coupon_discount_type_snapshot = 'percent'
+                        AND coupon_percent_basis_points_snapshot IS NOT NULL
+                        AND coupon_percent_basis_points_snapshot BETWEEN 1 AND 10000
+                        AND coupon_fixed_amount_minor_snapshot IS NULL
+                        AND discount_minor > 0
+                    THEN TRUE
+                    WHEN coupon_code_snapshot IS NOT NULL
+                        AND length(btrim(coupon_code_snapshot)) > 0
+                        AND coupon_discount_type_snapshot IS NOT NULL
+                        AND coupon_discount_type_snapshot = 'fixed'
+                        AND coupon_fixed_amount_minor_snapshot IS NOT NULL
+                        AND coupon_fixed_amount_minor_snapshot > 0
+                        AND coupon_percent_basis_points_snapshot IS NULL
+                        AND discount_minor > 0
+                    THEN TRUE
+                    ELSE FALSE
+                END IS TRUE
             )
             SQL);
         DB::statement('ALTER TABLE orders ADD CONSTRAINT orders_coupon_reference_requires_snapshot_check CHECK (coupon_id IS NULL OR coupon_code_snapshot IS NOT NULL)');

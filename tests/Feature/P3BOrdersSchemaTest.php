@@ -14,8 +14,11 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 uses(RefreshDatabase::class);
+
+const P3B_COUPON_SNAPSHOT_CONSTRAINT = 'orders_coupon_snapshot_consistency_check';
 
 function forceP3BConstraints(): void
 {
@@ -23,22 +26,44 @@ function forceP3BConstraints(): void
     DB::statement('SET CONSTRAINTS ALL DEFERRED');
 }
 
-function expectP3BConstraintViolation(Closure $callback): void
+function expectP3BQueryException(Closure $callback, string $sqlState, string $messageFragment): void
 {
-    $violated = false;
+    $exception = null;
 
     try {
         DB::transaction(function () use ($callback): void {
             $callback();
             forceP3BConstraints();
         });
-    } catch (QueryException) {
-        $violated = true;
+    } catch (QueryException $queryException) {
+        $exception = $queryException;
     } finally {
         DB::statement('SET CONSTRAINTS ALL DEFERRED');
     }
 
-    expect($violated)->toBeTrue();
+    expect($exception)->not->toBeNull()
+        ->and((string) $exception->getCode())->toBe($sqlState)
+        ->and($exception->getMessage())->toContain($messageFragment);
+}
+
+function expectP3BCheckViolation(Closure $callback, string $constraintName): void
+{
+    expectP3BQueryException($callback, '23514', $constraintName);
+}
+
+function expectP3BUniqueViolation(Closure $callback, string $constraintName): void
+{
+    expectP3BQueryException($callback, '23505', $constraintName);
+}
+
+function expectP3BTriggerViolation(Closure $callback, string $messageFragment): void
+{
+    expectP3BQueryException($callback, '23514', $messageFragment);
+}
+
+function expectP3BDeferredViolation(Closure $callback, string $messageFragment): void
+{
+    expectP3BQueryException($callback, '23514', $messageFragment);
 }
 
 /**
@@ -329,6 +354,92 @@ it('creates the required indexes, FK actions, functions, and deferred constraint
     expect($immediateTriggers)->toBe(4);
 });
 
+it('rolls back P3B migrations without leaving PostgreSQL tables, functions, or triggers behind', function () {
+    $connection = config('database.connections.pgsql');
+    $databaseName = 'digitrove_p3b_rollback_'.strtolower(Str::random(10));
+    $quotedDatabaseName = '"'.$databaseName.'"';
+    $adminDsn = sprintf(
+        'pgsql:host=%s;port=%s;dbname=postgres',
+        $connection['host'],
+        $connection['port'] ?? 5432,
+    );
+    $admin = new PDO(
+        $adminDsn,
+        $connection['username'],
+        $connection['password'],
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
+    );
+
+    $runArtisan = function (array $arguments) use ($databaseName): void {
+        $process = new Process([PHP_BINARY, 'artisan', ...$arguments], base_path(), [
+            'APP_ENV' => 'testing',
+            'DB_CONNECTION' => 'pgsql',
+            'DB_DATABASE' => $databaseName,
+        ]);
+        $process->setTimeout(120);
+        $process->run();
+
+        expect($process->isSuccessful())
+            ->toBeTrue($process->getOutput().$process->getErrorOutput());
+    };
+
+    try {
+        $admin->exec("DROP DATABASE IF EXISTS {$quotedDatabaseName} WITH (FORCE)");
+        $admin->exec("CREATE DATABASE {$quotedDatabaseName}");
+
+        $runArtisan(['migrate:fresh', '--env=testing', '--force']);
+        $runArtisan(['migrate:rollback', '--env=testing', '--force', '--step=3']);
+
+        $testDsn = sprintf(
+            'pgsql:host=%s;port=%s;dbname=%s',
+            $connection['host'],
+            $connection['port'] ?? 5432,
+            $databaseName,
+        );
+        $testPdo = new PDO(
+            $testDsn,
+            $connection['username'],
+            $connection['password'],
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
+        );
+
+        foreach (['orders', 'order_items', 'coupon_redemptions'] as $tableName) {
+            $statement = $testPdo->query("SELECT to_regclass('public.{$tableName}')");
+            expect($statement->fetchColumn())->toBeNull();
+        }
+
+        $functionList = implode("','", [
+            'prevent_orders_delete',
+            'enforce_orders_immutability',
+            'prevent_order_items_delete',
+            'enforce_order_items_immutability',
+            'validate_order_items_consistency',
+            'validate_coupon_redemption_consistency',
+        ]);
+        $functionCount = $testPdo
+            ->query("SELECT COUNT(*) FROM pg_proc WHERE proname IN ('{$functionList}')")
+            ->fetchColumn();
+        expect((int) $functionCount)->toBe(0);
+
+        $triggerList = implode("','", [
+            'orders_prevent_delete_trigger',
+            'orders_enforce_immutability_trigger',
+            'orders_validate_items_consistency_trigger',
+            'orders_validate_redemption_consistency_trigger',
+            'order_items_prevent_delete_trigger',
+            'order_items_enforce_immutability_trigger',
+            'order_items_validate_order_consistency_trigger',
+            'coupon_redemptions_validate_order_consistency_trigger',
+        ]);
+        $triggerCount = $testPdo
+            ->query("SELECT COUNT(*) FROM pg_trigger WHERE tgname IN ('{$triggerList}')")
+            ->fetchColumn();
+        expect((int) $triggerCount)->toBe(0);
+    } finally {
+        $admin->exec("DROP DATABASE IF EXISTS {$quotedDatabaseName} WITH (FORCE)");
+    }
+});
+
 it('supports guest orders while enforcing opaque identities, formats, and uniqueness', function () {
     ['order' => $order] = createP3BOrder();
 
@@ -340,21 +451,21 @@ it('supports guest orders while enforcing opaque identities, formats, and unique
         ->and($order->status)->toBe(OrderStatus::Pending)
         ->and($order->toArray())->not->toHaveKeys(['checkout_idempotency_hash', 'ip_hash']);
 
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['public_id' => $order->public_id]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['order_number' => $order->order_number]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create([
+    expectP3BUniqueViolation(fn () => Order::factory()->create(['public_id' => $order->public_id]), 'orders_public_id_unique');
+    expectP3BUniqueViolation(fn () => Order::factory()->create(['order_number' => $order->order_number]), 'orders_order_number_unique');
+    expectP3BUniqueViolation(fn () => Order::factory()->create([
         'checkout_idempotency_hash' => $order->getRawOriginal('checkout_idempotency_hash'),
-    ]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['order_number' => 'DGT-2026-0000000000']));
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['checkout_idempotency_hash' => str_repeat('A', 64)]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['checkout_idempotency_hash' => str_repeat('a', 63)]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['ip_hash' => str_repeat('g', 64)]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['customer_email' => '   ']));
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['billing_country_code' => 'ci']));
+    ]), 'orders_checkout_idempotency_hash_unique');
+    expectP3BCheckViolation(fn () => Order::factory()->create(['order_number' => 'DGT-2026-IIIIIIIIII']), 'orders_order_number_format_check');
+    expectP3BCheckViolation(fn () => Order::factory()->create(['checkout_idempotency_hash' => str_repeat('A', 64)]), 'orders_checkout_idempotency_hash_format_check');
+    expectP3BCheckViolation(fn () => Order::factory()->create(['checkout_idempotency_hash' => str_repeat('a', 63)]), 'orders_checkout_idempotency_hash_format_check');
+    expectP3BCheckViolation(fn () => Order::factory()->create(['ip_hash' => str_repeat('g', 64)]), 'orders_ip_hash_format_check');
+    expectP3BCheckViolation(fn () => Order::factory()->create(['customer_email' => '   ']), 'orders_customer_email_format_check');
+    expectP3BCheckViolation(fn () => Order::factory()->create(['billing_country_code' => 'ci']), 'orders_billing_country_code_format_check');
 
     $cart = Cart::factory()->create();
     createP3BOrder(['cart_id' => $cart->id]);
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['cart_id' => $cart->id]));
+    expectP3BUniqueViolation(fn () => Order::factory()->create(['cart_id' => $cart->id]), 'orders_cart_id_unique');
 });
 
 it('enforces order money, currency, dates, status, and coupon snapshot branches', function () {
@@ -388,34 +499,103 @@ it('enforces order money, currency, dates, status, and coupon snapshot branches'
         'line_total_minor' => 8000,
     ]);
 
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['subtotal_minor' => -1]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['discount_minor' => 10001, 'total_minor' => 0]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['total_minor' => 9999]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['currency' => 'xof']));
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['currency' => 'XO']));
-    expectP3BConstraintViolation(fn () => DB::table('orders')->where('id', $validOrder->id)->update([
+    expectP3BCheckViolation(fn () => Order::factory()->create(['subtotal_minor' => -1]), 'orders_discount_not_above_subtotal_check');
+    expectP3BCheckViolation(fn () => Order::factory()->create([
+        'coupon_id' => $percentCoupon->id,
+        'coupon_code_snapshot' => $percentCoupon->code,
+        'coupon_discount_type_snapshot' => 'percent',
+        'coupon_percent_basis_points_snapshot' => 1500,
+        'discount_minor' => 10001,
+        'total_minor' => 0,
+    ]), 'orders_discount_not_above_subtotal_check');
+    expectP3BCheckViolation(fn () => Order::factory()->create(['total_minor' => 9999]), 'orders_total_formula_check');
+    expectP3BCheckViolation(fn () => Order::factory()->create(['currency' => 'xof']), 'orders_currency_format_check');
+    expectP3BCheckViolation(fn () => Order::factory()->create(['currency' => 'XO']), 'orders_currency_format_check');
+    expectP3BCheckViolation(fn () => DB::table('orders')->where('id', $validOrder->id)->update([
         'status' => 'failed',
-    ]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['expires_at' => now()->subMinute()]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['paid_at' => now()->subDay()]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create(['cancelled_at' => now()->subDay()]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create([
+    ]), 'orders_status_check');
+    expectP3BCheckViolation(fn () => Order::factory()->create(['expires_at' => now()->subMinute()]), 'orders_expiration_after_placement_check');
+    expectP3BCheckViolation(fn () => Order::factory()->create(['paid_at' => now()->subDay()]), 'orders_paid_at_after_placement_check');
+    expectP3BCheckViolation(fn () => Order::factory()->create(['cancelled_at' => now()->subDay()]), 'orders_cancelled_at_after_placement_check');
+    expectP3BCheckViolation(fn () => Order::factory()->create([
         'discount_minor' => 1,
         'total_minor' => 9999,
-    ]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create([
+    ]), P3B_COUPON_SNAPSHOT_CONSTRAINT);
+    expectP3BCheckViolation(fn () => Order::factory()->create([
+        'coupon_code_snapshot' => null,
+        'coupon_discount_type_snapshot' => null,
+        'coupon_percent_basis_points_snapshot' => null,
+        'coupon_fixed_amount_minor_snapshot' => null,
+        'discount_minor' => 1,
+        'total_minor' => 9999,
+    ]), P3B_COUPON_SNAPSHOT_CONSTRAINT);
+    expectP3BCheckViolation(fn () => Order::factory()->create([
+        'coupon_code_snapshot' => 'TYPE-NULL',
+        'coupon_discount_type_snapshot' => null,
+        'coupon_percent_basis_points_snapshot' => null,
+        'coupon_fixed_amount_minor_snapshot' => null,
+        'discount_minor' => 1000,
+        'total_minor' => 9000,
+    ]), P3B_COUPON_SNAPSHOT_CONSTRAINT);
+    expectP3BCheckViolation(fn () => Order::factory()->create([
+        'coupon_code_snapshot' => 'PERCENT-MISSING-BASIS',
+        'coupon_discount_type_snapshot' => 'percent',
+        'coupon_percent_basis_points_snapshot' => null,
+        'coupon_fixed_amount_minor_snapshot' => null,
+        'discount_minor' => 1000,
+        'total_minor' => 9000,
+    ]), P3B_COUPON_SNAPSHOT_CONSTRAINT);
+    expectP3BCheckViolation(fn () => Order::factory()->create([
+        'coupon_code_snapshot' => 'PERCENT-WITH-FIXED',
+        'coupon_discount_type_snapshot' => 'percent',
+        'coupon_percent_basis_points_snapshot' => 1000,
+        'coupon_fixed_amount_minor_snapshot' => 1000,
+        'discount_minor' => 1000,
+        'total_minor' => 9000,
+    ]), P3B_COUPON_SNAPSHOT_CONSTRAINT);
+    expectP3BCheckViolation(fn () => Order::factory()->create([
+        'coupon_code_snapshot' => 'FIXED-MISSING-AMOUNT',
+        'coupon_discount_type_snapshot' => 'fixed',
+        'coupon_percent_basis_points_snapshot' => null,
+        'coupon_fixed_amount_minor_snapshot' => null,
+        'discount_minor' => 1000,
+        'total_minor' => 9000,
+    ]), P3B_COUPON_SNAPSHOT_CONSTRAINT);
+    expectP3BCheckViolation(fn () => Order::factory()->create([
+        'coupon_code_snapshot' => 'FIXED-WITH-PERCENT',
+        'coupon_discount_type_snapshot' => 'fixed',
+        'coupon_percent_basis_points_snapshot' => 1000,
+        'coupon_fixed_amount_minor_snapshot' => 1000,
+        'discount_minor' => 1000,
+        'total_minor' => 9000,
+    ]), P3B_COUPON_SNAPSHOT_CONSTRAINT);
+    expectP3BCheckViolation(fn () => Order::factory()->create([
+        'coupon_code_snapshot' => null,
+        'coupon_discount_type_snapshot' => 'percent',
+        'coupon_percent_basis_points_snapshot' => 1000,
+        'discount_minor' => 1000,
+        'total_minor' => 9000,
+    ]), P3B_COUPON_SNAPSHOT_CONSTRAINT);
+    expectP3BCheckViolation(fn () => Order::factory()->create([
+        'coupon_code_snapshot' => '   ',
+        'coupon_discount_type_snapshot' => 'fixed',
+        'coupon_fixed_amount_minor_snapshot' => 1000,
+        'discount_minor' => 1000,
+        'total_minor' => 9000,
+    ]), P3B_COUPON_SNAPSHOT_CONSTRAINT);
+    expectP3BCheckViolation(fn () => Order::factory()->create([
         'coupon_code_snapshot' => 'ZERO-PERCENT',
         'coupon_discount_type_snapshot' => 'percent',
         'coupon_percent_basis_points_snapshot' => 1000,
         'discount_minor' => 0,
-    ]));
-    expectP3BConstraintViolation(fn () => Order::factory()->create([
+    ]), P3B_COUPON_SNAPSHOT_CONSTRAINT);
+    expectP3BCheckViolation(fn () => Order::factory()->create([
         'coupon_code_snapshot' => 'ZERO-FIXED',
         'coupon_discount_type_snapshot' => 'fixed',
         'coupon_fixed_amount_minor_snapshot' => 0,
         'discount_minor' => 1,
         'total_minor' => 9999,
-    ]));
+    ]), P3B_COUPON_SNAPSHOT_CONSTRAINT);
 });
 
 it('maps P1, P2, and P3A relations without exposing sensitive hashes', function () {
@@ -562,29 +742,29 @@ it('allows lifecycle updates and controlled nullification but rejects commercial
 
     $replacement = User::factory()->create();
 
-    expectP3BConstraintViolation(fn () => DB::table('orders')->where('id', $order->id)->update([
+    expectP3BTriggerViolation(fn () => DB::table('orders')->where('id', $order->id)->update([
         'user_id' => $replacement->id,
-    ]));
-    expectP3BConstraintViolation(fn () => DB::table('orders')->where('id', $order->id)->update([
+    ]), 'orders provenance references may only be nulled');
+    expectP3BTriggerViolation(fn () => DB::table('orders')->where('id', $order->id)->update([
         'subtotal_minor' => 11000,
         'total_minor' => 11000,
-    ]));
-    expectP3BConstraintViolation(fn () => DB::table('orders')->where('id', $order->id)->update([
+    ]), 'orders commercial data is immutable');
+    expectP3BTriggerViolation(fn () => DB::table('orders')->where('id', $order->id)->update([
         'customer_email' => 'changed@example.test',
-    ]));
-    expectP3BConstraintViolation(fn () => DB::table('orders')->where('id', $order->id)->update([
+    ]), 'orders commercial data is immutable');
+    expectP3BTriggerViolation(fn () => DB::table('orders')->where('id', $order->id)->update([
         'expires_at' => now()->addHour(),
-    ]));
+    ]), 'orders commercial data is immutable');
 });
 
 it('rejects physical deletion of orders even before any item exists', function () {
-    expectP3BConstraintViolation(function (): void {
+    expectP3BTriggerViolation(function (): void {
         $order = Order::factory()->create();
         DB::table('orders')->where('id', $order->id)->delete();
-    });
+    }, 'orders are immutable and cannot be deleted');
 
     ['order' => $order] = createP3BOrder();
-    expectP3BConstraintViolation(fn () => $order->delete());
+    expectP3BTriggerViolation(fn () => $order->delete(), 'orders are immutable and cannot be deleted');
 });
 
 it('keeps order items immutable while allowing only FK-driven product nullification', function () {
@@ -602,18 +782,18 @@ it('keeps order items immutable while allowing only FK-driven product nullificat
     ]);
     $updatedAt = DB::table('order_items')->where('id', $item->id)->value('updated_at');
 
-    expectP3BConstraintViolation(fn () => $item->delete());
-    expectP3BConstraintViolation(fn () => DB::table('order_items')->where('id', $item->id)->update([
+    expectP3BTriggerViolation(fn () => $item->delete(), 'order_items are immutable and cannot be deleted');
+    expectP3BTriggerViolation(fn () => DB::table('order_items')->where('id', $item->id)->update([
         'product_name_snapshot' => 'Changed snapshot',
-    ]));
-    expectP3BConstraintViolation(fn () => DB::table('order_items')->where('id', $item->id)->update([
+    ]), 'order_items commercial data is immutable');
+    expectP3BTriggerViolation(fn () => DB::table('order_items')->where('id', $item->id)->update([
         'unit_price_minor' => 9000,
         'line_subtotal_minor' => 9000,
         'line_total_minor' => 9000,
-    ]));
-    expectP3BConstraintViolation(fn () => DB::table('order_items')->where('id', $item->id)->update([
+    ]), 'order_items commercial data is immutable');
+    expectP3BTriggerViolation(fn () => DB::table('order_items')->where('id', $item->id)->update([
         'updated_at' => now()->addMinute(),
-    ]));
+    ]), 'order_items commercial data is immutable');
 
     $product->forceDelete();
     forceP3BConstraints();
@@ -624,9 +804,9 @@ it('keeps order items immutable while allowing only FK-driven product nullificat
         ->and(DB::table('order_items')->where('id', $item->id)->value('updated_at'))->toBe($updatedAt);
 
     $replacement = Product::factory()->create();
-    expectP3BConstraintViolation(fn () => DB::table('order_items')->where('id', $item->id)->update([
+    expectP3BTriggerViolation(fn () => DB::table('order_items')->where('id', $item->id)->update([
         'product_id' => $replacement->id,
-    ]));
+    ]), 'order_items commercial data is immutable');
 });
 
 it('enforces one line per live product while retaining multiple historical null product lines', function () {
@@ -645,10 +825,10 @@ it('enforces one line per live product while retaining multiple historical null 
         return [$order, $firstItem, $secondItem];
     });
 
-    expectP3BConstraintViolation(fn () => OrderItem::factory()
+    expectP3BUniqueViolation(fn () => OrderItem::factory()
         ->forOrder($order)
         ->forProduct($firstProduct)
-        ->create());
+        ->create(), 'order_items_order_id_product_id_unique');
 
     $firstProduct->forceDelete();
     $secondProduct->forceDelete();
@@ -663,19 +843,19 @@ it('accepts a complete transaction and rejects missing lines, currency drift, an
     ['order' => $order] = createP3BOrder();
     expect($order->items)->toHaveCount(1);
 
-    expectP3BConstraintViolation(fn () => Order::factory()->create());
+    expectP3BDeferredViolation(fn () => Order::factory()->create(), 'orders must contain at least one order_item');
 
-    expectP3BConstraintViolation(function (): void {
+    expectP3BDeferredViolation(function (): void {
         $order = Order::factory()->create();
         OrderItem::factory()->forOrder($order)->create(['currency' => 'USD']);
-    });
+    }, 'order_items currency must match orders currency');
 
-    expectP3BConstraintViolation(function (): void {
+    expectP3BDeferredViolation(function (): void {
         $order = Order::factory()->create();
         OrderItem::factory()->forOrder($order)->priced(9000)->create();
-    });
+    }, 'order_items totals must match orders totals');
 
-    expectP3BConstraintViolation(function (): void {
+    expectP3BDeferredViolation(function (): void {
         $order = Order::factory()->create([
             'discount_minor' => 1000,
             'total_minor' => 9000,
@@ -684,14 +864,16 @@ it('accepts a complete transaction and rejects missing lines, currency drift, an
             'coupon_percent_basis_points_snapshot' => 1000,
         ]);
         OrderItem::factory()->forOrder($order)->create();
-    });
+    }, 'order_items totals must match orders totals');
 
-    expectP3BConstraintViolation(fn () => OrderItem::factory()->make([
+    expectP3BCheckViolation(fn () => OrderItem::factory()->make([
         'quantity' => 0,
-    ])->save());
-    expectP3BConstraintViolation(fn () => OrderItem::factory()->make([
+        'line_subtotal_minor' => 0,
+        'line_total_minor' => 0,
+    ])->save(), 'order_items_quantity_positive_check');
+    expectP3BCheckViolation(fn () => OrderItem::factory()->make([
         'line_subtotal_minor' => 9999,
-    ])->save());
+    ])->save(), 'order_items_line_subtotal_formula_check');
 });
 
 it('creates no automatic redemption and accepts one matching paid-order redemption', function () {
@@ -720,41 +902,41 @@ it('creates no automatic redemption and accepts one matching paid-order redempti
         ->and($redemption->customer_key_version)->toBe(1)
         ->and($redemption->getRawOriginal('customer_key_hash'))->toMatch('/^[0-9a-f]{64}$/');
 
-    expectP3BConstraintViolation(fn () => CouponRedemption::factory()->create([
+    expectP3BUniqueViolation(fn () => CouponRedemption::factory()->create([
         'coupon_id' => $coupon->id,
         'order_id' => $order->id,
         'coupon_code_snapshot' => $order->coupon_code_snapshot,
         'discount_type_snapshot' => $order->coupon_discount_type_snapshot,
         'discount_minor' => $order->discount_minor,
         'currency' => $order->currency,
-    ]));
+    ]), 'coupon_redemptions_order_id_unique');
 });
 
 it('rejects malformed or inconsistent coupon redemptions at the PostgreSQL layer', function () {
     ['order' => $paidOrder, 'coupon' => $coupon] = createP3BCouponOrder();
 
-    expectP3BConstraintViolation(fn () => CouponRedemption::factory()->create([
+    expectP3BCheckViolation(fn () => CouponRedemption::factory()->create([
         'order_id' => $paidOrder->id,
         'customer_key_version' => 0,
-    ]));
-    expectP3BConstraintViolation(fn () => CouponRedemption::factory()->create([
+    ]), 'coupon_redemptions_customer_key_version_positive_check');
+    expectP3BCheckViolation(fn () => CouponRedemption::factory()->create([
         'order_id' => $paidOrder->id,
         'customer_key_hash' => str_repeat('A', 64),
-    ]));
+    ]), 'coupon_redemptions_customer_key_hash_format_check');
 
     ['order' => $noCouponOrder] = createP3BOrder([
         'status' => OrderStatus::Paid,
         'paid_at' => now(),
     ]);
 
-    expectP3BConstraintViolation(fn () => CouponRedemption::factory()->create([
+    expectP3BDeferredViolation(fn () => CouponRedemption::factory()->create([
         'coupon_id' => null,
         'order_id' => $noCouponOrder->id,
         'coupon_code_snapshot' => 'NO-COUPON',
         'discount_type_snapshot' => 'percent',
         'discount_minor' => 0,
         'currency' => 'XOF',
-    ]));
+    ]), 'coupon_redemptions must match a paid order coupon snapshot');
 
     foreach ([
         ['coupon_code_snapshot' => 'MISMATCH'],
@@ -763,27 +945,27 @@ it('rejects malformed or inconsistent coupon redemptions at the PostgreSQL layer
         ['currency' => 'USD'],
         ['coupon_id' => Coupon::factory()->create()->id],
     ] as $mismatch) {
-        expectP3BConstraintViolation(fn () => CouponRedemption::factory()->create(array_merge([
+        expectP3BDeferredViolation(fn () => CouponRedemption::factory()->create(array_merge([
             'coupon_id' => $coupon->id,
             'order_id' => $paidOrder->id,
             'coupon_code_snapshot' => $paidOrder->coupon_code_snapshot,
             'discount_type_snapshot' => $paidOrder->coupon_discount_type_snapshot,
             'discount_minor' => $paidOrder->discount_minor,
             'currency' => $paidOrder->currency,
-        ], $mismatch)));
+        ], $mismatch)), 'coupon_redemptions must match a paid order coupon snapshot');
     }
 
     foreach ([OrderStatus::Pending, OrderStatus::PaymentReview, OrderStatus::Cancelled, OrderStatus::Expired] as $status) {
         ['order' => $order, 'coupon' => $statusCoupon] = createP3BCouponOrder($status);
 
-        expectP3BConstraintViolation(fn () => CouponRedemption::factory()->create([
+        expectP3BDeferredViolation(fn () => CouponRedemption::factory()->create([
             'coupon_id' => $statusCoupon->id,
             'order_id' => $order->id,
             'coupon_code_snapshot' => $order->coupon_code_snapshot,
             'discount_type_snapshot' => $order->coupon_discount_type_snapshot,
             'discount_minor' => $order->discount_minor,
             'currency' => $order->currency,
-        ]));
+        ]), 'coupon_redemptions must match a paid order coupon snapshot');
     }
 });
 

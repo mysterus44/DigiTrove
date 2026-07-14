@@ -74,9 +74,10 @@
     - `git diff --check` OK
   - P3B Commandes sur `p3b-orders` (PostgreSQL réel) :
     - `php artisan migrate:fresh --env=testing` OK → 19 migrations
-    - rollback des trois migrations P3B OK → tables et fonctions P3B supprimées
-    - tests P3B ciblés OK → 17 tests, 200 assertions
-    - suite complète OK → 61 tests, 513 assertions
+    - rollback automatisé des trois migrations P3B OK → tables, fonctions et
+      triggers P3B supprimés dans une base PostgreSQL isolée
+    - tests P3B ciblés OK → 18 tests, 337 assertions
+    - suite complète OK → 62 tests, 650 assertions
     - `./vendor/bin/pint --test` OK → 83 fichiers ; `git diff --check` OK
 
 ---
@@ -188,7 +189,7 @@
   - aucun contrôleur, route, API, service, Filament, checkout, commande, paiement,
     webhook, remboursement, téléchargement, import legacy ou déploiement Azure
   - P3B/P3C absents du périmètre et de la PR P3A
-- **P3B Commandes implémenté, non mergé** :
+- **P3B Commandes implémenté et corrigé après review, non mergé** :
   - décision D-027 validée humainement puis appliquée sur `p3b-orders`
   - ordre : `orders` → `order_items` → `coupon_redemptions`
   - suppression et mutations commerciales des commandes/lignes bloquées par triggers
@@ -200,21 +201,24 @@
     avec identité `HMAC-SHA-256` versionnée ; aucune réservation pendant `pending`
   - remises P3 limitées aux coupons ; `discount_minor = 0` sans snapshots coupon
   - trois migrations, trois modèles, un enum, trois factories et tests PostgreSQL créés
+  - correction post-review : `orders_coupon_snapshot_consistency_check` ferme le cas
+    PostgreSQL `CHECK = UNKNOWN` ; tests P3B vérifient SQLSTATE + nom de contrainte
+    ou message trigger, scénarios coupon NULL couverts, rollback P3B automatisé
   - aucun code P3C, checkout, paiement, webhook, remboursement ou livraison
 
 ---
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Action suivante : review technique de `P3B — Commandes`, puis PR de `p3b-orders`
-vers `p0-foundations-laravel13` si l'audit est propre. Ne pas merger automatiquement.
-P3C Paiements reste interdit.**
+**Action suivante : review finale de `P3B — Commandes` après correctif, puis PR de
+`p3b-orders` vers `p0-foundations-laravel13` si l'audit est propre. Ne pas merger
+automatiquement. P3C Paiements reste interdit.**
 
 Gate actuel : les migrations `orders`, `order_items` et `coupon_redemptions` existent
-uniquement sur `p3b-orders`. Aucune migration `payments`, `payment_webhook_events` ou
-`refunds` ; aucun contrôleur/route, checkout, webhook, fournisseur de paiement,
-Filament, `download_grant`, téléchargement ou déploiement Azure. Ne jamais pousser
-sur `main`.
+uniquement sur `p3b-orders`, avec correctif post-review non mergé. Aucune migration
+`payments`, `payment_webhook_events` ou `refunds` ; aucun contrôleur/route, checkout,
+webhook, fournisseur de paiement, Filament, `download_grant`, téléchargement ou
+déploiement Azure. Ne jamais pousser sur `main`.
 
 Points reportés sans bloquer la structure P3B : durée métier `pending` recommandée à
 30 minutes (`expires_at` reste immuable), politique légale d'anonymisation invité,
@@ -260,6 +264,19 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-14 — Codex (correctif post-review P3B)
+- Fait : correction de la contrainte coupon `orders_coupon_snapshot_consistency_check`
+  avec branches strictes et `CASE ... ELSE FALSE END IS TRUE`, afin de refuser les
+  expressions PostgreSQL `CHECK = UNKNOWN`.
+- Fait : durcissement des tests P3B : helpers SQLSTATE/contrainte/message, scénarios
+  coupon NULL et branches percent/fixed, reproductions critiques verrouillées, rollback
+  automatisé des trois migrations P3B en base PostgreSQL isolée.
+- État build/tests : `migrate:fresh` OK (19 migrations), tests P3B OK (18 tests,
+  337 assertions), suite complète OK (62 tests, 650 assertions), Pint OK (83 fichiers),
+  `git diff --check` OK.
+- Laisse à : review finale de `p3b-orders`, puis PR vers `p0-foundations-laravel13`
+  si l'audit est propre. P3C reste strictement interdit.
 
 ### 2026-07-14 — Codex (implémentation P3B Commandes)
 - Fait : branche `p3b-orders` créée depuis `6f7578e`; trois migrations réversibles
