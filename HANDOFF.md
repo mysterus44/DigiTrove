@@ -6,9 +6,9 @@
 
 ## 📍 ÉTAT ACTUEL
 
-- **Dernier agent** : Codex
+- **Dernier agent** : Claude Code
 - **Date** : 2026-07-14
-- **Branche git active** : `p0-foundations-laravel13` (P3B mergé et validé)
+- **Branche git active** : `p0-foundations-laravel13` (P3B mergé ; plan P3C finalisé)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -221,18 +221,26 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Action suivante : produire uniquement le plan BDD de `P3C — Paiements et
-Remboursements` dans une exécution séparée, puis attendre sa validation humaine avant
-toute migration ou logique.**
+**Le plan BDD P3C Paiements & Remboursements est FINALISÉ et validé (D-028, choix
+1A–5A), documenté dans `DigiTrove_Schema_BDD_v1.md` (tables + index partiels + triggers
+T1–T11). Action suivante : IMPLÉMENTER P3C sur une branche dédiée, dans une exécution
+séparée**, en réutilisant les patterns P3B (prevent-delete + immutability + constraint
+triggers différés) et en respectant les divergences P3C (provider `VARCHAR(32)`
+lowercase, hash `VARCHAR(64)`, cumul remboursements par trigger IMMÉDIAT avec verrou de
+ligne, webhook purgeable).
 
-Gate actuel : P3B est mergé et validé dans `p0-foundations-laravel13`. Aucune migration
-`payments`, `payment_webhook_events` ou `refunds` ; aucun contrôleur/route, checkout,
-webhook, fournisseur de paiement, Filament, `download_grant`, téléchargement ou
-déploiement Azure. P3C reste non démarré. Ne jamais pousser sur `main`.
+Ordre des migrations P3C : `create_payments_table` → `create_payment_webhook_events_table`
+→ `create_refunds_table`. `coupon_redemptions` (P3B) est seulement alimentée, jamais
+recréée. Une table/feature à la fois, BDD avant logique.
 
-Points reportés sans bloquer la structure P3B : durée métier `pending` recommandée à
-30 minutes (`expires_at` reste immuable), politique légale d'anonymisation invité,
-rotation des secrets HMAC avant P3C et gestion du paiement tardif `requires_review`.
+Gate : tant que la branche P3C n'est pas ouverte et validée, aucune migration
+`payments`/`payment_webhook_events`/`refunds`, aucun modèle/enum/factory/test/trigger,
+aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement, Filament,
+`download_grant`, téléchargement ou déploiement Azure. Ne jamais pousser sur `main`.
+
+Points reportés sans bloquer la structure : durée métier `pending` (30 min recommandé),
+anonymisation invité, rotation des secrets HMAC avant P3C, valeur de rétention webhook
+(90 j recommandé), gestion du paiement tardif `requires_review`.
 
 Toujours respecter : BDD avant logique, plan avant code, une seule feature à la fois.
 
@@ -274,6 +282,29 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-14 — Claude Code (plan final P3C Paiements & Remboursements)
+- Fait : **finalisation documentaire du plan BDD P3C** après validation humaine des
+  choix `1A`–`5A`. Décision **D-028** enregistrée. Réécriture de la section P3C de
+  `DigiTrove_Schema_BDD_v1.md` : tables `payments`, `payment_webhook_events`, `refunds`
+  (provider canonique `VARCHAR(32)` lowercase, `public_id UUID`, `idempotency_key_hash
+  VARCHAR(64)`, `attempt_number`, montants `BIGINT` > 0, devise `VARCHAR(3)`), index
+  partiels (`one_succeeded`/`one_requires_review` par commande, réf fournisseur, dédup
+  webhook signé et invalide-par-hash), catalogue de triggers **T1–T11** (prevent-delete,
+  immutabilité + transitions, cohérence immédiate montant/devise, constraint triggers
+  différés paiement↔commande et remboursement↔commande, plafond remboursement IMMÉDIAT
+  avec `FOR UPDATE`, garde de rétention webhook), orchestrations serveur et plan de tests.
+- Divergences corrigées vs brouillon D-024 : `idempotency_key`→`idempotency_key_hash`,
+  ajout `public_id`/`attempt_number`, `ON DELETE CASCADE`→`RESTRICT`, suppression du
+  `raw_payload` (métadonnées filtrées), provider `TEXT`→`VARCHAR(32)` lowercase, ajout
+  cohérence différée + machine à états, webhook invalide minimal + dédup par hash,
+  cumul remboursements par trigger immédiat verrouillant (≠ différé P3B).
+- État build/tests : `git diff --check` OK ; **aucun fichier PHP touché** (exécution
+  documentaire). Tests non relancés (aucun code modifié ; baseline P3B inchangée :
+  19 migrations, 62 tests / 650 assertions).
+- Décisions prises (→ DECISIONS_LOG.md) : **D-028** intégrité P3C.
+- Laisse à : **implémentation P3C sur une branche dédiée** (nouvelle exécution), après
+  ce plan validé. Ne rien implémenter ici.
 
 ### 2026-07-14 — Codex (clôture post-merge P3B)
 - Fait : [PR #5](https://github.com/mysterus44/DigiTrove/pull/5) confirmée et mergée

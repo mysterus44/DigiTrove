@@ -11,7 +11,7 @@ P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
-P3 COMMERCE         : ███████░░░  P3A et P3B mergés ; P3C non démarré
+P3 COMMERCE         : ████████░░  P3A+P3B mergés ; P3C plan finalisé (D-028), 0% code
 P4 LIVRAISON        : ░░░░░░░░░░  0%
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
@@ -21,7 +21,8 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > Rappel : **aucune logique métier avant que P1→P4 soient migrés et testés.**
 > P1, P2, P3A et P3B sont mergés dans `p0-foundations-laravel13` (P3B via PR #5 →
 > `f07d225`).
-> P3C Paiements reste strictement non démarré.
+> P3C Paiements : **plan BDD finalisé (D-028, choix 1A–5A)**, implémentation non
+> démarrée — à réaliser sur une branche dédiée dans une exécution séparée.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -208,8 +209,10 @@ Vérifications post-merge P2 sur `p0-foundations-laravel13` (`aff4d05`) :
 
 ## P3 — COMMERCE
 Statut : ✅ **P3A Coupons et Paniers** et **P3B Commandes** mergés dans
-`p0-foundations-laravel13` via PR #4 (`234e303`) et PR #5 (`f07d225`). P3C n'est
-pas implémenté.
+`p0-foundations-laravel13` via PR #4 (`234e303`) et PR #5 (`f07d225`). **P3C
+Paiements & Remboursements : plan BDD finalisé (D-028, choix 1A–5A), 0 % code** —
+tables, index partiels et triggers T1–T11 documentés dans `DigiTrove_Schema_BDD_v1.md`.
+Implémentation à faire sur une branche dédiée, exécution séparée.
 
 Ordre de migration révisé (D-024/D-027) : `coupons` → `coupon_currency_rules` →
 `coupon_products` → `coupon_categories` → `carts` → `cart_items` → `orders` →
@@ -227,7 +230,8 @@ Ordre de migration révisé (D-024/D-027) : `coupons` → `coupon_currency_rules
 | Migrations P3B (`orders`, `order_items`, `coupon_redemptions`) | ✅ DONE — mergé PR #5 |
 | Modèles/enums/factories P3B | ✅ DONE — sans logique checkout/paiement |
 | Tests PostgreSQL P3B (contraintes, immutabilité, cohérence différée) | ✅ DONE — 18 tests, 337 assertions |
-| Migrations P3C (`payments`, webhooks, `refunds`) | ⬜ TODO — aucune créée |
+| Plan BDD P3C + décisions d'intégrité (D-028) | ✅ DONE — validé (1A–5A) |
+| Migrations P3C (`payments` → `payment_webhook_events` → `refunds`) | ⬜ TODO — aucune créée, plan figé |
 | OrderService (snapshot prix + nom) | ⬜ TODO |
 | CouponService (règle par devise, plafonds, verrou transactionnel) | ⬜ TODO |
 | PaymentGateway (interface) + 1 provider | ⬜ TODO |

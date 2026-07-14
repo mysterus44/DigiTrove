@@ -559,70 +559,271 @@ CREATE INDEX coupon_redemptions_redeemed_at_index ON coupon_redemptions (redeeme
 -- Une rotation HMAC doit calculer les identités de toutes les versions encore retenues
 -- lors du contrôle par client, sinon le changement de clé contournerait le plafond.
 
--- Une commande peut avoir PLUSIEURS tentatives de paiement. Séparer paiement et
--- commande, sinon les retries corrompent l'état. Aucune validation sur retour navigateur.
+-- ============================================================================
+-- 🅲.P3C PAIEMENTS & REMBOURSEMENTS — PLAN FINALISÉ (D-028 ; choix 1A–5A validés)
+-- Ordre migrations : create_payments_table -> create_payment_webhook_events_table
+--                    -> create_refunds_table.
+-- `coupon_redemptions` existe déjà (P3B) : ALIMENTÉE en P3C, jamais recréée.
+-- Argent BIGINT ; devise VARCHAR(3) upper ; provider canonique VARCHAR(32) lowercase.
+-- Hash SHA-256 = VARCHAR(64) CHECK ~ '^[0-9a-f]{64}$' ; clés/secrets bruts jamais stockés.
+-- Aucune ligne `payments` pour une commande total_minor = 0 (flux gratuit distinct).
+-- Aucune validation depuis un retour navigateur (cf. SECURITE_PAIEMENT.md).
+-- Les triggers VÉRIFIENT et REFUSENT ; ils ne mutent jamais montant/statut/référence.
+-- Ordre de verrouillage global : orders -> payments -> coupons -> refunds/agrégats.
+-- ============================================================================
+
+-- Une commande peut avoir PLUSIEURS tentatives ; une seule 'succeeded' ; une seule
+-- 'requires_review'. Champs commerciaux figés, seuls statut + cycle + réf (NULL->valeur) bougent.
 CREATE TABLE payments (
-    id              BIGSERIAL PRIMARY KEY,
-    order_id        BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    provider        TEXT   NOT NULL,               -- cinetpay, wave, stripe...
-    provider_ref    TEXT,                          -- référence côté opérateur
-    idempotency_key TEXT   NOT NULL UNIQUE,        -- 🔐 généré côté DigiTrove, 1 par tentative
-    amount_minor    BIGINT NOT NULL CHECK (amount_minor >= 0),
-    currency        VARCHAR(3) NOT NULL
-                    CHECK (char_length(currency)=3 AND currency=upper(currency)),
-    status          TEXT   NOT NULL DEFAULT 'pending'
-                    CHECK (status IN ('pending','processing','requires_review','succeeded','failed','cancelled','expired')),
-    raw_payload     JSONB,                         -- filtré/allowlisté avant stockage
-    processed_at    TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                          BIGSERIAL PRIMARY KEY,
+    public_id                   UUID   NOT NULL,
+    order_id                    BIGINT NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
+    provider                    VARCHAR(32) NOT NULL,          -- canonique lowercase
+    provider_payment_reference  TEXT,                          -- NULL->valeur puis figé
+    idempotency_key_hash        VARCHAR(64) NOT NULL,          -- SHA-256 ; clé brute jamais stockée/loguée
+    attempt_number              INTEGER NOT NULL,
+    amount_minor                BIGINT NOT NULL,               -- > 0 (jamais 0 : commande gratuite = 0 paiement)
+    currency                    VARCHAR(3) NOT NULL,
+    status                      TEXT NOT NULL DEFAULT 'pending',
+    provider_status             TEXT,                          -- métadonnées FILTRÉES uniquement
+    provider_method             TEXT,
+    provider_metadata           JSONB,                         -- allowlist stricte, jamais de brut
+    failure_code                TEXT,
+    failure_message_sanitized   TEXT,
+    initiated_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    processing_at               TIMESTAMPTZ,
+    succeeded_at                TIMESTAMPTZ,
+    failed_at                   TIMESTAMPTZ,
+    cancelled_at                TIMESTAMPTZ,
+    expired_at                  TIMESTAMPTZ,
+    last_verified_at            TIMESTAMPTZ,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX ON payments (order_id);
--- Référence fournisseur unique quand elle existe :
-CREATE UNIQUE INDEX ON payments (provider, provider_ref) WHERE provider_ref IS NOT NULL;
--- 🔐 Un seul encaissement final valide par commande :
-CREATE UNIQUE INDEX ON payments (order_id) WHERE status = 'succeeded';
+ALTER TABLE payments ADD CONSTRAINT payments_public_id_unique UNIQUE (public_id);
+ALTER TABLE payments ADD CONSTRAINT payments_idempotency_key_hash_unique UNIQUE (idempotency_key_hash);
+ALTER TABLE payments ADD CONSTRAINT payments_order_attempt_unique UNIQUE (order_id, attempt_number);
+ALTER TABLE payments ADD CONSTRAINT payments_provider_format_check       CHECK (provider ~ '^[a-z0-9][a-z0-9_-]{0,31}$');
+ALTER TABLE payments ADD CONSTRAINT payments_idempotency_hash_format_check CHECK (idempotency_key_hash ~ '^[0-9a-f]{64}$');
+ALTER TABLE payments ADD CONSTRAINT payments_attempt_positive_check      CHECK (attempt_number >= 1);
+ALTER TABLE payments ADD CONSTRAINT payments_amount_positive_check       CHECK (amount_minor > 0);
+ALTER TABLE payments ADD CONSTRAINT payments_currency_format_check       CHECK (char_length(currency) = 3 AND currency = upper(currency));
+ALTER TABLE payments ADD CONSTRAINT payments_status_check                CHECK (status IN ('pending','processing','requires_review','succeeded','failed','cancelled','expired'));
+ALTER TABLE payments ADD CONSTRAINT payments_cycle_dates_check CHECK (
+    (processing_at    IS NULL OR processing_at    >= initiated_at) AND
+    (succeeded_at     IS NULL OR succeeded_at     >= initiated_at) AND
+    (failed_at        IS NULL OR failed_at        >= initiated_at) AND
+    (cancelled_at     IS NULL OR cancelled_at     >= initiated_at) AND
+    (expired_at       IS NULL OR expired_at       >= initiated_at) AND
+    (last_verified_at IS NULL OR last_verified_at >= initiated_at)
+);
+-- 🔐 Un seul encaissement final ET une seule revue par commande (D-028.2) :
+CREATE UNIQUE INDEX payments_one_succeeded_per_order       ON payments (order_id) WHERE status = 'succeeded';
+CREATE UNIQUE INDEX payments_one_requires_review_per_order ON payments (order_id) WHERE status = 'requires_review';
+CREATE UNIQUE INDEX payments_provider_reference_unique     ON payments (provider, provider_payment_reference) WHERE provider_payment_reference IS NOT NULL;
+CREATE INDEX payments_order_id_index         ON payments (order_id);
+CREATE INDEX payments_order_id_status_index  ON payments (order_id, status);
+CREATE INDEX payments_status_initiated_index ON payments (status, initiated_at DESC);
 
--- Idempotence des webhooks : un événement fournisseur rejoué est refusé en base.
--- JAMAIS de secret fournisseur, signature brute, PAN, ni token de paiement réutilisable.
+-- Journal d'événements fournisseur. SEULE table P3C purgeable (rétention contrôlée).
+-- Événement invalide (signature KO) conservé MINIMAL : hash seul, sans payload (D-028.4).
+-- JAMAIS de signature brute, secret, payload brut, PAN, CVV, token réutilisable.
 CREATE TABLE payment_webhook_events (
-    id                BIGSERIAL PRIMARY KEY,
-    provider          TEXT   NOT NULL,
-    external_event_id TEXT   NOT NULL,
-    payment_id        BIGINT REFERENCES payments(id) ON DELETE SET NULL,
-    signature_valid   BOOLEAN NOT NULL,
-    payload_sha256    TEXT,                         -- empreinte du brut, pour audit
-    payload_filtered  JSONB,                        -- allowlist stricte uniquement
-    received_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    processed_at      TIMESTAMPTZ,
-    process_status    TEXT NOT NULL DEFAULT 'received'
-                      CHECK (process_status IN ('received','processed','ignored','failed')),
-    purge_after       TIMESTAMPTZ,                  -- politique de rétention documentée
-    UNIQUE (provider, external_event_id)            -- 🔐 anti double-webhook
+    id                          BIGSERIAL PRIMARY KEY,
+    provider                    VARCHAR(32) NOT NULL,          -- canonique lowercase
+    external_event_id           TEXT,                          -- NULL toléré si invalide/absent
+    payment_id                  BIGINT REFERENCES payments(id) ON DELETE RESTRICT,  -- NULL->valeur
+    event_type                  TEXT,
+    payload_hash                VARCHAR(64) NOT NULL,          -- SHA-256 du corps BRUT (audit/dédup)
+    filtered_payload            JSONB,                         -- allowlist ; NULL si invalide
+    signature_verified          BOOLEAN NOT NULL,
+    processing_status           TEXT NOT NULL DEFAULT 'received',
+    received_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+    processed_at                TIMESTAMPTZ,
+    failed_at                   TIMESTAMPTZ,
+    retention_until             TIMESTAMPTZ,
+    processing_error_sanitized  TEXT
 );
-CREATE INDEX ON payment_webhook_events (payment_id);
+ALTER TABLE payment_webhook_events ADD CONSTRAINT pwe_provider_format_check     CHECK (provider ~ '^[a-z0-9][a-z0-9_-]{0,31}$');
+ALTER TABLE payment_webhook_events ADD CONSTRAINT pwe_payload_hash_format_check CHECK (payload_hash ~ '^[0-9a-f]{64}$');
+ALTER TABLE payment_webhook_events ADD CONSTRAINT pwe_processing_status_check   CHECK (processing_status IN ('received','processed','ignored','failed'));  -- PAS de 'duplicate'
+-- Signé valide => identifiant externe obligatoire :
+ALTER TABLE payment_webhook_events ADD CONSTRAINT pwe_signed_requires_external_id_check CHECK (signature_verified = false OR external_event_id IS NOT NULL);
+-- Invalide => forme minimale imposée (D-028.4) :
+ALTER TABLE payment_webhook_events ADD CONSTRAINT pwe_invalid_minimal_shape_check CHECK (
+    signature_verified = true OR (
+        processing_status = 'failed' AND filtered_payload IS NULL AND payment_id IS NULL AND failed_at IS NOT NULL
+    )
+);
+-- Anti double-webhook signé (rejeu => ligne existante => réponse idempotente, pas de statut 'duplicate') :
+CREATE UNIQUE INDEX pwe_provider_external_event_unique ON payment_webhook_events (provider, external_event_id) WHERE external_event_id IS NOT NULL;
+-- Dédup des invalides sans identifiant externe :
+CREATE UNIQUE INDEX pwe_provider_payload_hash_unique   ON payment_webhook_events (provider, payload_hash) WHERE signature_verified = false;
+CREATE INDEX pwe_payment_id_index          ON payment_webhook_events (payment_id);
+CREATE INDEX pwe_processing_received_index ON payment_webhook_events (processing_status, received_at DESC);
+CREATE INDEX pwe_retention_until_index     ON payment_webhook_events (retention_until);
 
--- Remboursements partiels et multiples possibles. Devise = celle du paiement.
+-- Remboursements partiels et multiples. Provider ET devise = ceux du paiement (triggers).
 CREATE TABLE refunds (
-    id                  BIGSERIAL PRIMARY KEY,
-    payment_id          BIGINT NOT NULL REFERENCES payments(id) ON DELETE RESTRICT,
-    amount_minor        BIGINT NOT NULL CHECK (amount_minor > 0),
-    currency            VARCHAR(3) NOT NULL
-                        CHECK (char_length(currency)=3 AND currency=upper(currency)),
-    provider_refund_ref TEXT,
-    status              TEXT NOT NULL DEFAULT 'pending'
-                        CHECK (status IN ('pending','succeeded','failed')),
-    reason              TEXT,
-    created_by          BIGINT REFERENCES users(id) ON DELETE SET NULL,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                          BIGSERIAL PRIMARY KEY,
+    public_id                   UUID   NOT NULL,
+    payment_id                  BIGINT NOT NULL REFERENCES payments(id) ON DELETE RESTRICT,
+    provider                    VARCHAR(32) NOT NULL,
+    provider_refund_reference   TEXT,                          -- NULL->valeur puis figé
+    idempotency_key_hash        VARCHAR(64) NOT NULL,          -- SHA-256 ; clé brute jamais stockée
+    amount_minor                BIGINT NOT NULL,
+    currency                    VARCHAR(3) NOT NULL,
+    status                      TEXT NOT NULL DEFAULT 'pending',
+    reason_code                 TEXT,
+    reason_note_sanitized       TEXT,
+    initiated_by_user_id        BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    provider_status             TEXT,
+    provider_metadata           JSONB,
+    requested_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    processing_at               TIMESTAMPTZ,
+    succeeded_at                TIMESTAMPTZ,
+    failed_at                   TIMESTAMPTZ,
+    cancelled_at                TIMESTAMPTZ,
+    last_verified_at            TIMESTAMPTZ,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX ON refunds (payment_id);
-CREATE UNIQUE INDEX ON refunds (payment_id, provider_refund_ref) WHERE provider_refund_ref IS NOT NULL;
--- ⚠️ SUM(refunds.amount_minor WHERE status='succeeded') <= payments.amount_minor et
--- refunds.currency = payments.currency : NON exprimables par CHECK mono-ligne. Garantie
--- par un trigger PostgreSQL transactionnel (SELECT ... FOR UPDATE sur payments) + le
--- futur RefundService + tests de concurrence. À ne pas confier à PHP seul.
+ALTER TABLE refunds ADD CONSTRAINT refunds_public_id_unique            UNIQUE (public_id);
+ALTER TABLE refunds ADD CONSTRAINT refunds_idempotency_key_hash_unique UNIQUE (idempotency_key_hash);
+ALTER TABLE refunds ADD CONSTRAINT refunds_provider_format_check       CHECK (provider ~ '^[a-z0-9][a-z0-9_-]{0,31}$');
+ALTER TABLE refunds ADD CONSTRAINT refunds_idempotency_hash_format_check CHECK (idempotency_key_hash ~ '^[0-9a-f]{64}$');
+ALTER TABLE refunds ADD CONSTRAINT refunds_amount_positive_check       CHECK (amount_minor > 0);
+ALTER TABLE refunds ADD CONSTRAINT refunds_currency_format_check       CHECK (char_length(currency) = 3 AND currency = upper(currency));
+ALTER TABLE refunds ADD CONSTRAINT refunds_status_check                CHECK (status IN ('pending','processing','succeeded','failed','cancelled'));  -- PAS de requires_review
+ALTER TABLE refunds ADD CONSTRAINT refunds_cycle_dates_check CHECK (
+    (processing_at    IS NULL OR processing_at    >= requested_at) AND
+    (succeeded_at     IS NULL OR succeeded_at     >= requested_at) AND
+    (failed_at        IS NULL OR failed_at        >= requested_at) AND
+    (cancelled_at     IS NULL OR cancelled_at     >= requested_at) AND
+    (last_verified_at IS NULL OR last_verified_at >= requested_at)
+);
+CREATE UNIQUE INDEX refunds_provider_reference_unique ON refunds (provider, provider_refund_reference) WHERE provider_refund_reference IS NOT NULL;
+CREATE INDEX refunds_payment_id_index        ON refunds (payment_id);
+CREATE INDEX refunds_payment_id_status_index ON refunds (payment_id, status);
+CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DESC);
+-- refunds.provider = payments.provider et refunds.currency = payments.currency :
+-- comparaisons inter-lignes -> garanties par trigger (une FK/CHECK ne compare pas deux tables).
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- CATALOGUE DES FONCTIONS/TRIGGERS P3C (noms stables ; à créer dans les migrations)
+-- Principe : les triggers refusent, ne mutent jamais ; le service exécute les mutations.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PAIEMENTS
+--  T1 prevent_payments_delete()            / payments_prevent_delete_trigger
+--        BEFORE DELETE -> RAISE (suppression physique toujours interdite).
+--  T2 enforce_payments_immutability()      / payments_enforce_immutability_trigger
+--        BEFORE UPDATE. Figés : public_id, order_id, provider, idempotency_key_hash,
+--        attempt_number, amount_minor, currency, initiated_at, created_at.
+--        provider_payment_reference : NULL->valeur puis figé.
+--        Mutables : status (selon machine à états), provider_status/method/metadata,
+--        failure_code, failure_message_sanitized, dates de cycle, last_verified_at, updated_at.
+--        Transitions autorisées (D-028.5) :
+--          pending    -> processing|requires_review|failed|cancelled|expired
+--          processing -> succeeded|requires_review|failed|cancelled|expired
+--          failed     -> requires_review            (confirmation fournisseur tardive)
+--          cancelled  -> requires_review            (confirmation fournisseur tardive)
+--          expired    -> requires_review            (paiement tardif)
+--          requires_review -> succeeded|failed|cancelled|expired
+--          succeeded = TERMINAL. Interdits : failed/cancelled/expired -> succeeded,
+--          succeeded -> tout autre statut.
+--  T3 validate_payment_order_amount()      / payments_validate_order_amount_trigger
+--        BEFORE INSERT (immédiat ; orders immuable, ni verrou ni deferral) :
+--        amount_minor = orders.total_minor, currency = orders.currency, orders.total_minor > 0.
+--  T4 validate_payment_order_consistency() / DEFERRABLE INITIALLY DEFERRED, monté sur
+--        payments_validate_order_consistency_trigger (AFTER INSERT/UPDATE ON payments)
+--        ET orders_validate_payment_consistency_trigger (AFTER INSERT/UPDATE ON orders).
+--        Au COMMIT (accepte tout ordre d'insertion transactionnel) — D-028.2 :
+--          * un payment 'succeeded' => order.status IN (paid,partially_refunded,refunded)
+--          * order.status IN (paid,partially_refunded,refunded) ET total_minor>0 => EXACTEMENT un payment 'succeeded'
+--          * order.total_minor = 0 => AUCUNE ligne payments (jamais de 'succeeded')
+--          * payment 'requires_review' <=> order.status = 'payment_review' (exactement un)
+-- WEBHOOKS
+--  T5 enforce_webhook_event_immutability() / payment_webhook_events_enforce_immutability_trigger
+--        BEFORE UPDATE. Figés : provider, external_event_id, payload_hash, signature_verified,
+--        received_at. Mutables : payment_id (NULL->valeur), processing_status (received ->
+--        processed|ignored|failed ; états terminaux, non réactivables), processed_at, failed_at,
+--        processing_error_sanitized, retention_until, event_type (NULL->valeur).
+--  T6 validate_webhook_payment_provider() / payment_webhook_events_provider_match_trigger
+--        BEFORE INSERT/UPDATE : si payment_id NOT NULL => provider = payments.provider.
+--  T7 enforce_webhook_retention_delete()  / payment_webhook_events_retention_delete_trigger
+--        BEFORE DELETE : suppression AUTORISÉE uniquement si retention_until < now() ET
+--        processing_status terminal (processed|ignored|failed). Sinon RAISE. (Job de purge
+--        NON implémenté en P3C ; seule la garde existe.) -> unique table P3C non "prevent-delete".
+-- REMBOURSEMENTS
+--  T8 prevent_refunds_delete()             / refunds_prevent_delete_trigger  (BEFORE DELETE -> RAISE)
+--  T9 enforce_refunds_immutability()       / refunds_enforce_immutability_trigger
+--        BEFORE UPDATE. Figés : public_id, payment_id, provider, idempotency_key_hash,
+--        amount_minor, currency, initiated_by_user_id, reason_code, requested_at, created_at.
+--        provider_refund_reference : NULL->valeur puis figé.
+--        Mutables : status, provider_status/metadata, reason_note_sanitized, dates de cycle,
+--        last_verified_at, updated_at. Transitions (D-028.5) :
+--          pending -> processing|failed|cancelled ; processing -> succeeded|failed|cancelled
+--          Terminaux : succeeded|failed|cancelled. Aucune transition terminal -> autre.
+--  T10 enforce_refund_within_capture()     / refunds_enforce_capture_cap_trigger   IMMÉDIAT (D-028.6)
+--        BEFORE INSERT (déjà 'succeeded') OU BEFORE UPDATE faisant passer status -> 'succeeded' :
+--          1. SELECT ... FROM payments WHERE id = NEW.payment_id FOR UPDATE   (sérialise la concurrence)
+--          2. payment existe ET payment.status = 'succeeded'
+--          3. NEW.provider = payment.provider ET NEW.currency = payment.currency
+--          4. somme = SUM(amount_minor) des refunds 'succeeded' du paiement EXCLUANT la ligne courante
+--             (WHERE id <> NEW.id) + NEW.amount_minor
+--          5. RAISE si somme > payments.amount_minor
+--        (≠ trigger différé P3B : les refunds naissent dans des transactions séparées ;
+--         seul un verrou de ligne immédiat empêche le dépassement concurrent.)
+--  T11 validate_refund_order_status()      / DEFERRABLE INITIALLY DEFERRED, monté sur
+--        refunds_validate_order_consistency_trigger  (AFTER INSERT/UPDATE ON refunds),
+--        payments_validate_refund_consistency_trigger (AFTER UPDATE ON payments),
+--        orders_validate_refund_consistency_trigger  (AFTER INSERT/UPDATE ON orders).
+--        Au COMMIT, pour l'unique paiement 'succeeded' de la commande (D-028.3) :
+--          somme refunds 'succeeded' = 0                     => order.status = 'paid'
+--          0 < somme < payments.amount_minor                 => order.status = 'partially_refunded'
+--          somme = payments.amount_minor                     => order.status = 'refunded'
+--        (Trigger de STATUT distinct du trigger de PLAFOND T10. Aucune récursion : les triggers
+--         ne réécrivent pas orders ; le RefundService met à jour order.status, le trigger vérifie.)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ORCHESTRATIONS SERVEUR P3C (documentées, NON implémentées en P3C)
+-- ─────────────────────────────────────────────────────────────────────────────
+-- (a) PAIEMENT CONFIRMÉ : 1) vérif fournisseur HORS transaction (webhook signé OU getStatus) ;
+--     2) BEGIN ; 3) orders FOR UPDATE ; 4) payment FOR UPDATE ; 5) idempotence ;
+--     6) revalider montant/devise ; 7) coupon FOR UPDATE si présent ; 8) contrôle plafonds ;
+--     9) INSERT coupon_redemptions ; 10) payment -> succeeded ; 11) order -> paid (paid_at) ;
+--     12) COMMIT (constraint triggers différés valident l'état final ; UNIQUE(order_id) bloque un 2e débit).
+-- (b) COMMANDE GRATUITE (total_minor = 0) : aucune ligne payments ; validation métier d'éligibilité ;
+--     order -> paid par flux gratuit distinct ; aucun webhook ; aucune redemption à remise incohérente.
+-- (c) PAIEMENT TARDIF : aucune transition expired/failed/cancelled -> succeeded ;
+--     payment -> requires_review ; order -> payment_review ; décision humaine ; aucune livraison auto.
+-- (d) REMBOURSEMENT RÉUSSI : BEGIN ; orders FOR UPDATE ; payment FOR UPDATE ; refund -> succeeded
+--     (T10 plafond immédiat) ; calcul cumul ; MAJ EXPLICITE order (partiel->partially_refunded,
+--     complet->refunded) ; COMMIT (T11 différé vérifie l'état final).
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PLAN DE TESTS PostgreSQL RÉEL P3C (jamais SQLite ; SET CONSTRAINTS ALL IMMEDIATE pour forcer les différés)
+-- ─────────────────────────────────────────────────────────────────────────────
+-- FOURNISSEUR : casse uppercase refusée ; espaces refusés ; refund.provider ≠ payment refusé ;
+--   webhook.provider ≠ payment refusé ; unicité provider/référence insensible aux variantes interdites.
+-- PAIEMENT/COMMANDE : montant ≠ commande refusé ; devise ≠ refusée ; paiement d'une commande gratuite
+--   refusé ; commande gratuite 'paid' sans paiement acceptée ; un seul 'succeeded' ; un seul
+--   'requires_review' ; payment 'succeeded' + commande non payée refusé au commit ; commande payée
+--   non gratuite sans paiement réussi refusée au commit ; 'requires_review' sans 'payment_review'
+--   refusé ; 'payment_review' sans paiement en revue refusé.
+-- TRANSITIONS : autorisées acceptées ; failed/cancelled/expired -> succeeded refusés ; passage via
+--   requires_review accepté ; succeeded terminal ; refund succeeded terminal ; webhook terminal non réactivable.
+-- WEBHOOKS : signé sans external_event_id refusé ; invalide minimal accepté ; invalide avec
+--   filtered_payload refusé ; invalide lié à un payment refusé ; rejeu même external_event_id
+--   idempotent ; rejeu invalide même payload_hash idempotent ; aucun statut 'duplicate' ;
+--   suppression avant retention refusée ; suppression après retention terminale acceptée.
+-- REMBOURSEMENTS : partiel réussi ; plusieurs réussis ; cumul exact accepté ; dépassement refusé ;
+--   MAJ vers succeeded exclut la ligne courante (WHERE id <> NEW.id) ; paiement non réussi refusé ;
+--   devise ≠ refusée ; provider ≠ refusé ; deux remboursements concurrents ne dépassent jamais la
+--   capture (2 connexions) ; statut commande partiel cohérent ; complet cohérent ; divergence
+--   somme/statut refusée au commit.
+-- RÉGRESSION P3B : confirmation + redemption + commande payée en une transaction ; double
+--   consommation coupon bloquée ; triggers P3B inchangés ; aucun download_grant ; aucune table P4/P5.
 
 -- ===== P4 LIVRAISON (HORS P3 — référence uniquement, non migré en P3) =====
 

@@ -40,10 +40,11 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
 - **P0 Fondations** ✅ terminé · **SITE-00** ✅ mergé · **P1 Identité** ✅ mergé
 - **P2 Catalogue** ✅ mergé (PR #3 → `aff4d05`)
 - **P3 Commerce** 🟡 P3A mergé (PR #4) · P3B Commandes mergé (PR #5 →
-  `f07d225`, D-027) · P3C non démarré
+  `f07d225`, D-027) · P3C Paiements/Remboursements : **plan BDD finalisé (D-028,
+  choix 1A–5A), 0 % code**
 
-Prochaine étape : plan P3C Paiements/Remboursements uniquement, dans une exécution
-séparée et avec validation humaine avant tout code.
+Prochaine étape : implémenter P3C sur une branche dédiée, dans une exécution séparée,
+en réutilisant les patterns P3B (prevent-delete + immutabilité + constraint triggers).
 
 ## 🔄 EN FIN DE TÂCHE
 

@@ -430,6 +430,71 @@ validé post-merge : 19 migrations, 62 tests / 650 assertions, six fonctions, hu
 triggers dont quatre différés, rollback isolé automatisé et contrainte coupon durcie
 contre `CHECK = UNKNOWN`. P3C reste non démarré et soumis à un plan séparé validé.
 
+### D-028 : Intégrité P3C Paiements, Webhooks et Remboursements ✅
+CONTEXTE : KingKouda a validé les choix `1A`–`5A` du plan P3C avant toute migration.
+P3C ne crée que trois tables (`payments`, `payment_webhook_events`, `refunds`) ;
+`coupon_redemptions` (P3B) est seulement alimentée. Argent `BIGINT`, devise `VARCHAR(3)`
+uppercase, provider canonique, hash SHA-256, aucune ligne de paiement pour une commande
+gratuite, aucune validation sur retour navigateur. Plan documenté dans
+`DigiTrove_Schema_BDD_v1.md` (bloc P3C : tables + catalogue de triggers T1–T11).
+CHOIX :
+1. **Fournisseur canonique (`1A`)** : `provider VARCHAR(32)` identique dans les trois
+   tables, minuscules, sans espace, indépendant du nom commercial, `CHECK ~
+   '^[a-z0-9][a-z0-9_-]{0,31}$'`. La normalisation empêche le contournement des
+   contraintes uniques par variation de casse. `refunds.provider` = `payments.provider`
+   et `payment_webhook_events.provider` = `payments.provider` (si `payment_id`) garantis
+   par trigger.
+2. **Cohérence paiement ↔ commande (`2A`)** : garantie au commit par une fonction
+   `validate_payment_order_consistency()` sur constraint triggers `DEFERRABLE INITIALLY
+   DEFERRED` (montés sur `payments` et `orders`). Règles : un `succeeded` ⇒ commande
+   `paid|partially_refunded|refunded` ; une commande non gratuite dans ces états ⇒
+   exactement un `succeeded` ; commande `total_minor = 0` ⇒ aucune ligne `payments`,
+   jamais de `succeeded`, `paid` atteint par un flux gratuit distinct ; `requires_review`
+   ⇔ `payment_review` (exactement un). Index partiels : `UNIQUE(order_id) WHERE
+   status='succeeded'` ET `UNIQUE(order_id) WHERE status='requires_review'`. Revalidé par
+   le service (montant/devise) et par un trigger immédiat à l'INSERT (`= orders.total_minor`,
+   `= orders.currency`, `orders.total_minor > 0`).
+3. **Cohérence remboursements ↔ commande (`3A`)** : au commit, pour l'unique paiement
+   capturé : somme des refunds `succeeded` `= 0` ⇒ `paid` ; `0 < somme < capture` ⇒
+   `partially_refunded` ; `= capture` ⇒ `refunded`. Constraint triggers différés distincts
+   du trigger immédiat de plafond. Le `RefundService` met à jour `orders.status` ; le
+   trigger vérifie et refuse, sans jamais muter.
+4. **Webhook à signature invalide (`4A`)** : conservé sous forme minimale — provider,
+   `external_event_id` si disponible, `payload_hash` SHA-256, `signature_verified=false`,
+   `processing_status='failed'`, `received_at`, `failed_at`, erreur générique sanitizée.
+   Interdits : `filtered_payload`, signature brute, secret, token, données bancaires,
+   `payment_id` déduit d'un contenu non fiable. `external_event_id` nullable ; signé valide
+   ⇒ non NULL. Index partiels : `UNIQUE(provider, external_event_id)` si non NULL ;
+   `UNIQUE(provider, payload_hash) WHERE signature_verified=false`. **Pas de statut
+   `duplicate`** : un rejeu retrouve la ligne existante et répond de façon idempotente.
+5. **Transitions minimales (`5A`)** : protégées par triggers. Paiement :
+   `pending→processing|requires_review|failed|cancelled|expired` ;
+   `processing→succeeded|requires_review|failed|cancelled|expired` ;
+   `failed|cancelled|expired→requires_review` (confirmation fournisseur tardive) ;
+   `requires_review→succeeded|failed|cancelled|expired` ; `succeeded` terminal ; interdits
+   `failed|cancelled|expired→succeeded` et `succeeded→autre`. Remboursement :
+   `pending→processing|failed|cancelled` ; `processing→succeeded|failed|cancelled` ;
+   terminaux `succeeded|failed|cancelled`. Webhook : `received→processed|ignored|failed`,
+   terminaux non réactivables.
+RECOMMANDATIONS RETENUES : aucun statut `refunded` dans `payments.status` (état dérivé
+des lignes `refunds` réussies) ; un seul `succeeded` par commande ; immutabilité hybride
+BDD + service ; montant/devise paiement↔commande garantis en BDD et revalidés service ;
+cumul remboursements protégé par trigger IMMÉDIAT `enforce_refund_within_capture()` avec
+`SELECT … payments … FOR UPDATE` (excluant la ligne courante via `id <> NEW.id`), ≠ des
+triggers différés P3B ; webhook valide = `payload_hash` + `filtered_payload` allowlisté ;
+rétention configurable (recommandée 90 j) via `retention_until` + fonction de suppression
+contrôlée (uniquement après rétention et statut terminal, job non implémenté en P3C) ;
+paiement tardif → revue manuelle. Ordre de verrouillage global :
+`orders → payments → coupons → refunds/agrégats` (anti-deadlock).
+ALTERNATIVES REJETÉES : `payments.status='refunded'` (double source de vérité) ; cumul
+remboursements par trigger différé (course inter-transactions) ou par service seul ;
+statut webhook `duplicate` ; `external_event_id` obligatoire pour les invalides ;
+`prevent-delete` total sur `payment_webhook_events` (empêcherait la purge légale) ;
+provider en casse libre ; triggers qui mutent au lieu de refuser.
+IMPACT : futures migrations P3C `create_payments_table`,
+`create_payment_webhook_events_table`, `create_refunds_table`, fonctions/triggers T1–T11
+et tests PostgreSQL. Aucune implémentation en cette exécution (plan documentaire).
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
@@ -444,11 +509,11 @@ contre `CHECK = UNKNOWN`. P3C reste non démarré et soumis à un plan séparé 
 - **P2 Catalogue** : ✅ mergé dans `p0-foundations-laravel13` via PR #3 (`aff4d05`).
   Clos (voir D-022).
 - **P3 Commerce** : P3A Coupons et Paniers mergé via PR #4 (`234e303`, D-024 à
-  D-026). P3B Commandes mergé via PR #5 (`f07d225`, D-027) ; P3C reste non démarré
-  et exige un plan séparé avant toute implémentation.
-  Les durées
-  d'expiration métier, l'anonymisation invité et le paiement tardif restent à
-  confirmer avant les tranches concernées.
+  D-026). P3B Commandes mergé via PR #5 (`f07d225`, D-027). **P3C Paiements &
+  Remboursements : plan BDD finalisé (D-028, choix 1A–5A validés), implémentation non
+  démarrée** — à réaliser sur une branche dédiée dans une exécution séparée.
+  Les durées d'expiration métier, l'anonymisation invité et la valeur exacte de
+  rétention webhook (90 j recommandé) restent à confirmer avant les tranches concernées.
 
 ---
 
