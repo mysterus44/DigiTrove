@@ -240,9 +240,13 @@ contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret, SDK,
 Note régression P3C-A (transparence) : ajouter `payments` a rendu obsolètes des
 assertions « table interdite » dans `IdentitySchemaTest`, `CatalogSchemaTest`,
 `P3ACouponsCartsSchemaTest` et `P3BOrdersSchemaTest` — `payments` retiré de ces listes
-(webhooks/refunds restent interdits). Les fixtures P3B `paid`/`payment_review`
-reçoivent désormais un paiement cohérent (choix humain « strict + adapter fixtures »).
-Aucun trigger/fonction P3B modifié ; le rollback P3B passe à `--step=4` (payments au-dessus).
+(webhooks/refunds restent interdits). La cohérence bidirectionnelle paiement↔commande
+est **imposée par D-028.2** (pas un nouveau choix) ; l'utilisateur a seulement retenu,
+via question interactive, l'**option d'adaptation des fixtures** (plutôt qu'affaiblir la
+règle) : les fixtures P3B `paid`/`payment_review` reçoivent désormais un paiement cohérent.
+Aucun trigger/fonction P3B modifié ; les tests de rollback P3B/P3C-A calculent leur
+`--step` dynamiquement depuis la position de la migration du gate (stable si une phase
+ultérieure ajoute des migrations).
 
 Points reportés sans bloquer la structure : durée métier `pending` (30 min recommandé),
 anonymisation invité, rotation des secrets HMAC, valeur de rétention webhook
@@ -302,15 +306,16 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
   `payments` et `orders`). Enum `PaymentStatus`, modèle `Payment` (hash masqué), relation
   `Order::payments()`, `PaymentFactory` (états, hash factices valides, aucun secret).
 - Tests : `tests/Feature/P3CAPaymentsSchemaTest.php` (16 tests / 209 assertions),
-  incluant rollback isolé (`--step=1`, aucun objet résiduel), transitions, cohérence
-  différée, commande gratuite, unicité, immutabilité, concurrence non traitée ici.
+  incluant rollback isolé (step dynamique = migrations au niveau/au-dessus du gate,
+  aucun objet résiduel), transitions, cohérence différée, commande gratuite, unicité,
+  immutabilité, concurrence non traitée ici.
 - Régression : suite complète **78 tests / 855 assertions** verte, Pint 88 fichiers,
-  `git diff --check` propre. Adapté (choix humain « strict + fixtures ») : fixtures P3B
-  `paid`/`payment_review` reçoivent un paiement cohérent ; `payments` retiré des listes
-  « table interdite » de P1/P2/P3A/P3B (webhooks/refunds restent interdits) ; rollback
-  P3B `--step=4`. Aucun trigger/fonction P3B modifié.
-- Décisions : aucune nouvelle (implémentation fidèle à D-028). Choix humain confirmé :
-  cohérence bidirectionnelle stricte D-028.2 + adaptation des fixtures P3B.
+  `git diff --check` propre. La cohérence bidirectionnelle est **imposée par D-028.2** ;
+  seule l'**option d'adaptation des fixtures** a été retenue par l'utilisateur (question
+  interactive) : fixtures P3B `paid`/`payment_review` reçoivent un paiement cohérent ;
+  `payments` retiré des listes « table interdite » de P1/P2/P3A/P3B (webhooks/refunds
+  restent interdits). Rollback P3B/P3C-A : `--step` dynamique. Aucun trigger/fonction P3B modifié.
+- Décisions : aucune nouvelle (implémentation fidèle à D-028 ; strictness = D-028.2).
 - Laisse à : review humaine + merge de `p3c-a-payments` ; puis P3C-B webhooks (branche
   dédiée). Aucun webhook HTTP, fournisseur concret, SDK, contrôleur, route créés.
 

@@ -734,7 +734,16 @@ it('rolls back the P3C-A migration without leaving payments objects behind', fun
         $admin->exec("CREATE DATABASE {$quotedDatabaseName}");
 
         $runArtisan(['migrate:fresh', '--env=testing', '--force']);
-        $runArtisan(['migrate:rollback', '--env=testing', '--force', '--step=1']);
+        // Roll back exactly the migrations at or after the P3C-A gate, computed from the
+        // migration filenames so the test stays correct when later phases (P3C-B/C, …)
+        // add migrations on top of `payments` instead of relying on a fixed --step.
+        $migrationFiles = collect(scandir(database_path('migrations')))
+            ->filter(fn (string $file): bool => str_ends_with($file, '.php'))
+            ->sort()
+            ->values();
+        $gateIndex = $migrationFiles->search('2026_07_14_000004_create_payments_table.php');
+        $rollbackStep = $migrationFiles->count() - $gateIndex;
+        $runArtisan(['migrate:rollback', '--env=testing', '--force', '--step='.$rollbackStep]);
 
         $testDsn = sprintf(
             'pgsql:host=%s;port=%s;dbname=%s',

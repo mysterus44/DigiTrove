@@ -398,9 +398,16 @@ it('rolls back P3B migrations without leaving PostgreSQL tables, functions, or t
         $admin->exec("CREATE DATABASE {$quotedDatabaseName}");
 
         $runArtisan(['migrate:fresh', '--env=testing', '--force']);
-        // The P3C-A payments migration now sits on top of the three P3B migrations;
-        // roll back four steps to reach and exercise the P3B down() methods.
-        $runArtisan(['migrate:rollback', '--env=testing', '--force', '--step=4']);
+        // Roll back exactly the migrations at or after the first P3B migration, computed
+        // from the migration filenames so the test stays correct when later phases add
+        // migrations on top of P3B (P3C-A payments, future P3C-B/C, …).
+        $migrationFiles = collect(scandir(database_path('migrations')))
+            ->filter(fn (string $file): bool => str_ends_with($file, '.php'))
+            ->sort()
+            ->values();
+        $gateIndex = $migrationFiles->search('2026_07_14_000001_create_orders_table.php');
+        $rollbackStep = $migrationFiles->count() - $gateIndex;
+        $runArtisan(['migrate:rollback', '--env=testing', '--force', '--step='.$rollbackStep]);
 
         $testDsn = sprintf(
             'pgsql:host=%s;port=%s;dbname=%s',
