@@ -231,7 +231,8 @@ Ordre de migration révisé (D-024/D-027) : `coupons` → `coupon_currency_rules
 | Modèles/enums/factories P3B | ✅ DONE — sans logique checkout/paiement |
 | Tests PostgreSQL P3B (contraintes, immutabilité, cohérence différée) | ✅ DONE — 18 tests, 337 assertions |
 | Plan BDD P3C + décisions d'intégrité (D-028) | ✅ DONE — validé (1A–5A) |
-| P3C-A `payments` (migration + enum + modèle + factory + 4 fn / 5 triggers) | ✅ DONE — branche `p3c-a-payments`, 16 tests / 209 assertions |
+| P3C-A `payments` (migration + enum + modèle + factory + 4 fn / 5 triggers) | ✅ DONE — branche `p3c-a-payments`, 16 tests |
+| P3C-A tests de rollback isolés par frontière (`tests/Support/PhaseMigrationHarness`) | ✅ DONE — `migrate --path` jusqu'au gate + `migrate:rollback --path` du gate seul ; plus de `--step` |
 | P3C-B `payment_webhook_events` | ⬜ TODO — branche dédiée après merge P3C-A |
 | P3C-C `refunds` (cumul par trigger immédiat + verrou) | ⬜ TODO — branche dédiée |
 | OrderService (snapshot prix + nom) | ⬜ TODO |

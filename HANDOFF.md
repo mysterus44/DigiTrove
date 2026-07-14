@@ -244,9 +244,14 @@ assertions « table interdite » dans `IdentitySchemaTest`, `CatalogSchemaTest`,
 est **imposée par D-028.2** (pas un nouveau choix) ; l'utilisateur a seulement retenu,
 via question interactive, l'**option d'adaptation des fixtures** (plutôt qu'affaiblir la
 règle) : les fixtures P3B `paid`/`payment_review` reçoivent désormais un paiement cohérent.
-Aucun trigger/fonction P3B modifié ; les tests de rollback P3B/P3C-A calculent leur
-`--step` dynamiquement depuis la position de la migration du gate (stable si une phase
-ultérieure ajoute des migrations).
+Aucun trigger/fonction P3B modifié. Isolation des tests de rollback : le correctif
+`0d04f77` (step dynamique) corrigeait le symptôme mais **pas l'isolation** (base
+temporaire migrée entièrement puis rollback « gate → fin », rollbackant les gates
+ultérieurs). Corrigé via `tests/Support/PhaseMigrationHarness` : chaque test de rollback
+applique **uniquement** les migrations jusqu'à la frontière du gate (`migrate --path=…`,
+aucune migration postérieure exécutée) puis rollbacke **uniquement** les migrations du
+gate (`migrate:rollback --path=…`), en vérifiant les objets antérieurs préservés.
+Plus aucun `--step`, `migrate:fresh` ni `count - gateIndex` dans ces tests.
 
 Points reportés sans bloquer la structure : durée métier `pending` (30 min recommandé),
 anonymisation invité, rotation des secrets HMAC, valeur de rétention webhook
@@ -293,6 +298,32 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
 
+### 2026-07-14 — Claude Code (isolation des tests de rollback P3B/P3C-A)
+- Contexte : le correctif précédent `0d04f77` (calcul dynamique du `--step`) corrigeait
+  le **symptôme** (faux échec dû à un `--step` figé obsolète) mais **pas la cause** :
+  la base temporaire exécutait toutes les migrations (`migrate:fresh`) puis rollbackait
+  « du gate jusqu'à la fin » — donc le test P3B rollbackait déjà `payments`, et les deux
+  tests rollbackeraient les gates P3C-B/C futurs. Isolation de phase **non prouvée**.
+- Fait : nouveau helper `tests/Support/PhaseMigrationHarness.php`. Chaque test de rollback
+  applique **uniquement** les migrations jusqu'à la frontière du gate via
+  `migrate --path=<fichiers>` (aucune migration postérieure exécutée ; refus explicite si
+  une migration au-delà de la frontière apparaît) puis rollbacke **uniquement** les
+  migrations du gate via `migrate:rollback --path=<fichiers du gate>`. Preuves réelles
+  depuis la table `migrations` : liste appliquée (se termine à la frontière), liste des
+  `down()` exécutés (exactement le gate), `current_database()` = base temporaire, objets
+  antérieurs préservés, nettoyage garanti dans `finally`. **Plus aucun `--step`,
+  `migrate:fresh` ni `count - gateIndex`** dans les deux tests.
+  - P3B : frontière `…000003_coupon_redemptions` ; down() = orders, order_items,
+    coupon_redemptions ; `payments` jamais créée ; P1/P2/P3A préservés.
+  - P3C-A : frontière `…000004_payments` ; down() = payments seul ; P3B préservé
+    (6 fonctions, 8 triggers, `orders_coupon_snapshot_consistency_check`) ; aucune table
+    webhook/refund appliquée.
+- Validations : rollbacks isolés 2/54 · suite complète **78 tests / 896 assertions** ·
+  Pint **89 fichiers** · `git diff --check` propre · aucune base temporaire résiduelle.
+- Périmètre : uniquement 2 tests + 1 helper + docs. **Aucune migration, fonction, trigger,
+  modèle, enum, factory ou relation modifié. D-028.2 inchangée.**
+- Laisse à : review finale de l'isolation, puis merge de `p3c-a-payments` ; ensuite P3C-B.
+
 ### 2026-07-14 — Claude Code (P3C-A Payments implémenté)
 - Fait : gate technique **P3C-A** sur branche `p3c-a-payments` (depuis `be1af7f`).
   Migration `2026_07_14_000004_create_payments_table.php` : table `payments` (identité
@@ -306,15 +337,15 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
   `payments` et `orders`). Enum `PaymentStatus`, modèle `Payment` (hash masqué), relation
   `Order::payments()`, `PaymentFactory` (états, hash factices valides, aucun secret).
 - Tests : `tests/Feature/P3CAPaymentsSchemaTest.php` (16 tests / 209 assertions),
-  incluant rollback isolé (step dynamique = migrations au niveau/au-dessus du gate,
-  aucun objet résiduel), transitions, cohérence différée, commande gratuite, unicité,
+  incluant rollback isolé de phase (harness de frontière — voir entrée du 2026-07-14
+  ci-dessus), transitions, cohérence différée, commande gratuite, unicité,
   immutabilité, concurrence non traitée ici.
-- Régression : suite complète **78 tests / 855 assertions** verte, Pint 88 fichiers,
-  `git diff --check` propre. La cohérence bidirectionnelle est **imposée par D-028.2** ;
-  seule l'**option d'adaptation des fixtures** a été retenue par l'utilisateur (question
-  interactive) : fixtures P3B `paid`/`payment_review` reçoivent un paiement cohérent ;
-  `payments` retiré des listes « table interdite » de P1/P2/P3A/P3B (webhooks/refunds
-  restent interdits). Rollback P3B/P3C-A : `--step` dynamique. Aucun trigger/fonction P3B modifié.
+- Régression : suite complète verte, `git diff --check` propre. La cohérence
+  bidirectionnelle est **imposée par D-028.2** ; seule l'**option d'adaptation des
+  fixtures** a été retenue par l'utilisateur (question interactive) : fixtures P3B
+  `paid`/`payment_review` reçoivent un paiement cohérent ; `payments` retiré des listes
+  « table interdite » de P1/P2/P3A/P3B (webhooks/refunds restent interdits).
+  Isolation des rollbacks : voir l'entrée dédiée. Aucun trigger/fonction P3B modifié.
 - Décisions : aucune nouvelle (implémentation fidèle à D-028 ; strictness = D-028.2).
 - Laisse à : review humaine + merge de `p3c-a-payments` ; puis P3C-B webhooks (branche
   dédiée). Aucun webhook HTTP, fournisseur concret, SDK, contrôleur, route créés.

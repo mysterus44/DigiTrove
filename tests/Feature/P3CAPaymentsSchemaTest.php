@@ -11,7 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
+use Tests\Support\PhaseMigrationHarness;
 
 uses(RefreshDatabase::class);
 
@@ -700,87 +700,76 @@ it('accepts a free order marked paid without any payment', function () {
         ->and(DB::table('payments')->where('order_id', $freeOrder->id)->count())->toBe(0);
 });
 
-it('rolls back the P3C-A migration without leaving payments objects behind', function () {
-    $connection = config('database.connections.pgsql');
-    $databaseName = 'digitrove_p3ca_rollback_'.strtolower(Str::random(10));
-    $quotedDatabaseName = '"'.$databaseName.'"';
-    $adminDsn = sprintf(
-        'pgsql:host=%s;port=%s;dbname=postgres',
-        $connection['host'],
-        $connection['port'] ?? 5432,
-    );
-    $admin = new PDO(
-        $adminDsn,
-        $connection['username'],
-        $connection['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-    );
+it('rolls back only the P3C-A payments migration while preserving P3B', function () {
+    $harness = new PhaseMigrationHarness('digitrove_p3ca_rollback_'.strtolower(Str::random(10)));
 
-    $runArtisan = function (array $arguments) use ($databaseName): void {
-        $process = new Process([PHP_BINARY, 'artisan', ...$arguments], base_path(), [
-            'APP_ENV' => 'testing',
-            'DB_CONNECTION' => 'pgsql',
-            'DB_DATABASE' => $databaseName,
-        ]);
-        $process->setTimeout(120);
-        $process->run();
-
-        expect($process->isSuccessful())
-            ->toBeTrue($process->getOutput().$process->getErrorOutput());
-    };
+    $boundary = '2026_07_14_000004_create_payments_table.php';
+    $gateMigrations = ['2026_07_14_000004_create_payments_table.php'];
+    $p3caFunctions = [
+        'prevent_payments_delete',
+        'enforce_payments_immutability',
+        'validate_payment_order_amount',
+        'validate_payment_order_consistency',
+    ];
+    $p3caTriggers = [
+        'payments_prevent_delete_trigger',
+        'payments_enforce_immutability_trigger',
+        'payments_validate_order_amount_trigger',
+        'payments_validate_order_consistency_trigger',
+        'orders_validate_payment_consistency_trigger',
+    ];
+    $p3bFunctions = [
+        'prevent_orders_delete', 'enforce_orders_immutability',
+        'prevent_order_items_delete', 'enforce_order_items_immutability',
+        'validate_order_items_consistency', 'validate_coupon_redemption_consistency',
+    ];
+    $p3bTriggers = [
+        'orders_prevent_delete_trigger', 'orders_enforce_immutability_trigger',
+        'orders_validate_items_consistency_trigger', 'orders_validate_redemption_consistency_trigger',
+        'order_items_prevent_delete_trigger', 'order_items_enforce_immutability_trigger',
+        'order_items_validate_order_consistency_trigger', 'coupon_redemptions_validate_order_consistency_trigger',
+    ];
 
     try {
-        $admin->exec("DROP DATABASE IF EXISTS {$quotedDatabaseName} WITH (FORCE)");
-        $admin->exec("CREATE DATABASE {$quotedDatabaseName}");
+        $harness->create();
+        $applied = $harness->applyMigrationsThrough($boundary);
 
-        $runArtisan(['migrate:fresh', '--env=testing', '--force']);
-        // Roll back exactly the migrations at or after the P3C-A gate, computed from the
-        // migration filenames so the test stays correct when later phases (P3C-B/C, …)
-        // add migrations on top of `payments` instead of relying on a fixed --step.
-        $migrationFiles = collect(scandir(database_path('migrations')))
-            ->filter(fn (string $file): bool => str_ends_with($file, '.php'))
-            ->sort()
-            ->values();
-        $gateIndex = $migrationFiles->search('2026_07_14_000004_create_payments_table.php');
-        $rollbackStep = $migrationFiles->count() - $gateIndex;
-        $runArtisan(['migrate:rollback', '--env=testing', '--force', '--step='.$rollbackStep]);
+        // Stops exactly at the payments gate: no webhook/refund/later migration is applied.
+        expect($harness->currentDatabase())->toBe($harness->databaseName())
+            ->and($applied)->toContain('2026_07_14_000004_create_payments_table')
+            ->and(end($applied))->toBe('2026_07_14_000004_create_payments_table');
 
-        $testDsn = sprintf(
-            'pgsql:host=%s;port=%s;dbname=%s',
-            $connection['host'],
-            $connection['port'] ?? 5432,
-            $databaseName,
-        );
-        $testPdo = new PDO(
-            $testDsn,
-            $connection['username'],
-            $connection['password'],
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-        );
+        // Before rollback: P1/P2/P3A/P3B applied, payments present, no later-phase tables.
+        expect($harness->hasTable('payments'))->toBeTrue()
+            ->and($harness->hasTable('orders'))->toBeTrue()
+            ->and($harness->hasTable('carts'))->toBeTrue()
+            ->and($harness->hasTable('payment_webhook_events'))->toBeFalse()
+            ->and($harness->hasTable('refunds'))->toBeFalse()
+            ->and($harness->countFunctions($p3caFunctions))->toBe(4)
+            ->and($harness->countTriggers($p3caTriggers))->toBe(5);
 
-        expect($testPdo->query("SELECT to_regclass('public.payments')")->fetchColumn())->toBeNull();
+        // Roll back ONLY the payments migration; assert exactly it ran down().
+        $downed = $harness->rollbackExactMigrations($gateMigrations);
+        expect($downed)->toBe(['2026_07_14_000004_create_payments_table']);
 
-        $functionList = implode("','", [
-            'prevent_payments_delete',
-            'enforce_payments_immutability',
-            'validate_payment_order_amount',
-            'validate_payment_order_consistency',
-        ]);
-        expect((int) $testPdo->query("SELECT COUNT(*) FROM pg_proc WHERE proname IN ('{$functionList}')")->fetchColumn())->toBe(0);
+        // After rollback: every P3C-A object is gone.
+        expect($harness->hasTable('payments'))->toBeFalse()
+            ->and($harness->countFunctions($p3caFunctions))->toBe(0)
+            ->and($harness->countTriggers($p3caTriggers))->toBe(0);
 
-        $triggerList = implode("','", [
-            'payments_prevent_delete_trigger',
-            'payments_enforce_immutability_trigger',
-            'payments_validate_order_amount_trigger',
-            'payments_validate_order_consistency_trigger',
-            'orders_validate_payment_consistency_trigger',
-        ]);
-        expect((int) $testPdo->query("SELECT COUNT(*) FROM pg_trigger WHERE tgname IN ('{$triggerList}')")->fetchColumn())->toBe(0);
+        // P3B is fully preserved: tables, six functions, eight triggers, hardened constraint.
+        expect($harness->hasTable('orders'))->toBeTrue()
+            ->and($harness->hasTable('order_items'))->toBeTrue()
+            ->and($harness->hasTable('coupon_redemptions'))->toBeTrue()
+            ->and($harness->countFunctions($p3bFunctions))->toBe(6)
+            ->and($harness->countTriggers($p3bTriggers))->toBe(8)
+            ->and($harness->hasConstraint('orders_coupon_snapshot_consistency_check'))->toBeTrue();
 
-        // P3B objects survive the isolated P3C-A rollback.
-        expect($testPdo->query("SELECT to_regclass('public.orders')")->fetchColumn())->not->toBeNull();
+        // No later-phase migration was ever applied or rolled back.
+        expect($harness->hasTable('payment_webhook_events'))->toBeFalse()
+            ->and($harness->hasTable('refunds'))->toBeFalse();
     } finally {
-        $admin->exec("DROP DATABASE IF EXISTS {$quotedDatabaseName} WITH (FORCE)");
+        $harness->drop();
     }
 });
 
