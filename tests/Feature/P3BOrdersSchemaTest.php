@@ -6,6 +6,7 @@ use App\Models\Coupon;
 use App\Models\CouponRedemption;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Visitor;
@@ -93,6 +94,15 @@ function createP3BOrder(
                 'line_total_minor' => $subtotalMinor - $discountMinor,
                 'currency' => $currency,
             ], $itemAttributes));
+
+        // P3C-A: the deferred payment/order consistency trigger requires a coherent
+        // payment for paid/refunded/payment_review orders. Attach one in the same
+        // transaction so existing P3B fixtures satisfy the new invariant.
+        if (in_array($order->status, [OrderStatus::Paid, OrderStatus::PartiallyRefunded, OrderStatus::Refunded], true)) {
+            Payment::factory()->forOrder($order)->succeeded()->create();
+        } elseif ($order->status === OrderStatus::PaymentReview) {
+            Payment::factory()->forOrder($order)->requiresReview()->create();
+        }
 
         forceP3BConstraints();
 
@@ -388,7 +398,9 @@ it('rolls back P3B migrations without leaving PostgreSQL tables, functions, or t
         $admin->exec("CREATE DATABASE {$quotedDatabaseName}");
 
         $runArtisan(['migrate:fresh', '--env=testing', '--force']);
-        $runArtisan(['migrate:rollback', '--env=testing', '--force', '--step=3']);
+        // The P3C-A payments migration now sits on top of the three P3B migrations;
+        // roll back four steps to reach and exercise the P3B down() methods.
+        $runArtisan(['migrate:rollback', '--env=testing', '--force', '--step=4']);
 
         $testDsn = sprintf(
             'pgsql:host=%s;port=%s;dbname=%s',
@@ -731,8 +743,12 @@ it('allows lifecycle updates and controlled nullification but rejects commercial
     $user = User::factory()->create();
     ['order' => $order] = createP3BOrder(['user_id' => $user->id]);
 
-    $order->update(['status' => OrderStatus::PaymentReview]);
-    forceP3BConstraints();
+    DB::transaction(function () use ($order): void {
+        $order->update(['status' => OrderStatus::PaymentReview]);
+        // P3C-A: a payment_review order requires exactly one requires_review payment.
+        Payment::factory()->forOrder($order)->requiresReview()->create();
+        forceP3BConstraints();
+    });
 
     expect($order->refresh()->status)->toBe(OrderStatus::PaymentReview);
 
@@ -987,6 +1003,9 @@ it('allows the future deferred redemption sequence and preserves snapshots after
             'paid_at' => now(),
         ]);
 
+        // P3C-A: a paid non-free order requires exactly one succeeded payment.
+        Payment::factory()->forOrder($order)->succeeded()->create();
+
         forceP3BConstraints();
 
         return $redemption;
@@ -1002,9 +1021,10 @@ it('allows the future deferred redemption sequence and preserves snapshots after
         ->and($redemption->coupon_code_snapshot)->toBe($codeSnapshot);
 });
 
-it('does not create P3C, delivery, analytics, or affiliation tables', function () {
+it('does not create later P3C, delivery, analytics, or affiliation tables', function () {
+    // `payments` is introduced by the P3C-A gate; only the remaining P3C-B/P3C-C
+    // and downstream phase tables must still be absent here.
     $forbiddenTables = [
-        'payments',
         'payment_webhook_events',
         'refunds',
         'download_grants',

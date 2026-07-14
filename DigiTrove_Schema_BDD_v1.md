@@ -561,6 +561,11 @@ CREATE INDEX coupon_redemptions_redeemed_at_index ON coupon_redemptions (redeeme
 
 -- ============================================================================
 -- 🅲.P3C PAIEMENTS & REMBOURSEMENTS — PLAN FINALISÉ (D-028 ; choix 1A–5A validés)
+-- ÉTAT : P3C-A `payments` IMPLÉMENTÉ (branche p3c-a-payments, 4 fonctions / 5 triggers,
+--        décisions D-028 inchangées) ; P3C-B `payment_webhook_events` et P3C-C `refunds`
+--        restent à implémenter. À l'implémentation, `payments.status` est un VARCHAR(20)
+--        contraint ; provider est VARCHAR(32) ; les checks amount/currency sont doublés
+--        par le trigger immédiat validate_payment_order_amount (défense en profondeur).
 -- Ordre migrations : create_payments_table -> create_payment_webhook_events_table
 --                    -> create_refunds_table.
 -- `coupon_redemptions` existe déjà (P3B) : ALIMENTÉE en P3C, jamais recréée.
