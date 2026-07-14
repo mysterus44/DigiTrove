@@ -8,7 +8,8 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-14
-- **Branche git active** : `p0-foundations-laravel13` (P3B mergé ; plan P3C finalisé)
+- **Branche git active** : `p3c-a-payments` (P3C-A implémenté, non mergé ; basée sur
+  `be1af7f` de `p0-foundations-laravel13`)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -221,25 +222,39 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Le plan BDD P3C Paiements & Remboursements est FINALISÉ et validé (D-028, choix
-1A–5A), documenté dans `DigiTrove_Schema_BDD_v1.md` (tables + index partiels + triggers
-T1–T11). Action suivante : IMPLÉMENTER P3C sur une branche dédiée, dans une exécution
-séparée**, en réutilisant les patterns P3B (prevent-delete + immutability + constraint
-triggers différés) et en respectant les divergences P3C (provider `VARCHAR(32)`
-lowercase, hash `VARCHAR(64)`, cumul remboursements par trigger IMMÉDIAT avec verrou de
-ligne, webhook purgeable).
+**P3C-A Payments est implémenté sur la branche `p3c-a-payments` (non mergée, en attente
+de review humaine).** Table `payments` + enum `PaymentStatus` + modèle + factory + 4
+fonctions / 5 triggers PostgreSQL + tests (16 tests / 209 assertions). Suite complète
+verte (78 tests / 855 assertions), Pint 88 fichiers, diff-check propre.
 
-Ordre des migrations P3C : `create_payments_table` → `create_payment_webhook_events_table`
-→ `create_refunds_table`. `coupon_redemptions` (P3B) est seulement alimentée, jamais
-recréée. Une table/feature à la fois, BDD avant logique.
+Action suivante, après review et merge de `p3c-a-payments` : **P3C-B — `payment_webhook_events`**
+(sur une nouvelle branche dédiée `p3c-b-webhooks`, exécution séparée), puis **P3C-C —
+`refunds`** (`p3c-c-refunds`). Suivre le plan D-028 / `DigiTrove_Schema_BDD_v1.md`
+(webhook purgeable, dédup `(provider, external_event_id)` + `(provider, payload_hash)`
+si signature invalide ; refunds avec cumul par trigger IMMÉDIAT + verrou `FOR UPDATE`).
 
-Gate : tant que la branche P3C n'est pas ouverte et validée, aucune migration
-`payments`/`payment_webhook_events`/`refunds`, aucun modèle/enum/factory/test/trigger,
-aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement, Filament,
+Gate : ne pas démarrer P3C-B/P3C-C tant que P3C-A n'est pas review/mergé. Aucun
+contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret, SDK, Filament,
 `download_grant`, téléchargement ou déploiement Azure. Ne jamais pousser sur `main`.
 
+Note régression P3C-A (transparence) : ajouter `payments` a rendu obsolètes des
+assertions « table interdite » dans `IdentitySchemaTest`, `CatalogSchemaTest`,
+`P3ACouponsCartsSchemaTest` et `P3BOrdersSchemaTest` — `payments` retiré de ces listes
+(webhooks/refunds restent interdits). La cohérence bidirectionnelle paiement↔commande
+est **imposée par D-028.2** (pas un nouveau choix) ; l'utilisateur a seulement retenu,
+via question interactive, l'**option d'adaptation des fixtures** (plutôt qu'affaiblir la
+règle) : les fixtures P3B `paid`/`payment_review` reçoivent désormais un paiement cohérent.
+Aucun trigger/fonction P3B modifié. Isolation des tests de rollback : le correctif
+`0d04f77` (step dynamique) corrigeait le symptôme mais **pas l'isolation** (base
+temporaire migrée entièrement puis rollback « gate → fin », rollbackant les gates
+ultérieurs). Corrigé via `tests/Support/PhaseMigrationHarness` : chaque test de rollback
+applique **uniquement** les migrations jusqu'à la frontière du gate (`migrate --path=…`,
+aucune migration postérieure exécutée) puis rollbacke **uniquement** les migrations du
+gate (`migrate:rollback --path=…`), en vérifiant les objets antérieurs préservés.
+Plus aucun `--step`, `migrate:fresh` ni `count - gateIndex` dans ces tests.
+
 Points reportés sans bloquer la structure : durée métier `pending` (30 min recommandé),
-anonymisation invité, rotation des secrets HMAC avant P3C, valeur de rétention webhook
+anonymisation invité, rotation des secrets HMAC, valeur de rétention webhook
 (90 j recommandé), gestion du paiement tardif `requires_review`.
 
 Toujours respecter : BDD avant logique, plan avant code, une seule feature à la fois.
@@ -282,6 +297,58 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-14 — Claude Code (isolation des tests de rollback P3B/P3C-A)
+- Contexte : le correctif précédent `0d04f77` (calcul dynamique du `--step`) corrigeait
+  le **symptôme** (faux échec dû à un `--step` figé obsolète) mais **pas la cause** :
+  la base temporaire exécutait toutes les migrations (`migrate:fresh`) puis rollbackait
+  « du gate jusqu'à la fin » — donc le test P3B rollbackait déjà `payments`, et les deux
+  tests rollbackeraient les gates P3C-B/C futurs. Isolation de phase **non prouvée**.
+- Fait : nouveau helper `tests/Support/PhaseMigrationHarness.php`. Chaque test de rollback
+  applique **uniquement** les migrations jusqu'à la frontière du gate via
+  `migrate --path=<fichiers>` (aucune migration postérieure exécutée ; refus explicite si
+  une migration au-delà de la frontière apparaît) puis rollbacke **uniquement** les
+  migrations du gate via `migrate:rollback --path=<fichiers du gate>`. Preuves réelles
+  depuis la table `migrations` : liste appliquée (se termine à la frontière), liste des
+  `down()` exécutés (exactement le gate), `current_database()` = base temporaire, objets
+  antérieurs préservés, nettoyage garanti dans `finally`. **Plus aucun `--step`,
+  `migrate:fresh` ni `count - gateIndex`** dans les deux tests.
+  - P3B : frontière `…000003_coupon_redemptions` ; down() = orders, order_items,
+    coupon_redemptions ; `payments` jamais créée ; P1/P2/P3A préservés.
+  - P3C-A : frontière `…000004_payments` ; down() = payments seul ; P3B préservé
+    (6 fonctions, 8 triggers, `orders_coupon_snapshot_consistency_check`) ; aucune table
+    webhook/refund appliquée.
+- Validations : rollbacks isolés 2/54 · suite complète **78 tests / 896 assertions** ·
+  Pint **89 fichiers** · `git diff --check` propre · aucune base temporaire résiduelle.
+- Périmètre : uniquement 2 tests + 1 helper + docs. **Aucune migration, fonction, trigger,
+  modèle, enum, factory ou relation modifié. D-028.2 inchangée.**
+- Laisse à : review finale de l'isolation, puis merge de `p3c-a-payments` ; ensuite P3C-B.
+
+### 2026-07-14 — Claude Code (P3C-A Payments implémenté)
+- Fait : gate technique **P3C-A** sur branche `p3c-a-payments` (depuis `be1af7f`).
+  Migration `2026_07_14_000004_create_payments_table.php` : table `payments` (identité
+  `public_id`/`order_id RESTRICT`/`provider VARCHAR(32)` lowercase/`idempotency_key_hash
+  VARCHAR(64)`/`attempt_number`, montants `BIGINT` > 0, devise `VARCHAR(3)`, statut
+  contraint 7 valeurs, métadonnées fournisseur FILTRÉES, dates de cycle). Contraintes
+  nommées, index partiels (`one_succeeded`/`one_requires_review` par commande, réf
+  fournisseur), FK RESTRICT. **4 fonctions / 5 triggers** : prevent-delete, immutabilité
+  + machine à états, cohérence immédiate montant/devise (free/amount/currency), cohérence
+  différée paiement↔commande (constraint triggers DEFERRABLE INITIALLY DEFERRED sur
+  `payments` et `orders`). Enum `PaymentStatus`, modèle `Payment` (hash masqué), relation
+  `Order::payments()`, `PaymentFactory` (états, hash factices valides, aucun secret).
+- Tests : `tests/Feature/P3CAPaymentsSchemaTest.php` (16 tests / 209 assertions),
+  incluant rollback isolé de phase (harness de frontière — voir entrée du 2026-07-14
+  ci-dessus), transitions, cohérence différée, commande gratuite, unicité,
+  immutabilité, concurrence non traitée ici.
+- Régression : suite complète verte, `git diff --check` propre. La cohérence
+  bidirectionnelle est **imposée par D-028.2** ; seule l'**option d'adaptation des
+  fixtures** a été retenue par l'utilisateur (question interactive) : fixtures P3B
+  `paid`/`payment_review` reçoivent un paiement cohérent ; `payments` retiré des listes
+  « table interdite » de P1/P2/P3A/P3B (webhooks/refunds restent interdits).
+  Isolation des rollbacks : voir l'entrée dédiée. Aucun trigger/fonction P3B modifié.
+- Décisions : aucune nouvelle (implémentation fidèle à D-028 ; strictness = D-028.2).
+- Laisse à : review humaine + merge de `p3c-a-payments` ; puis P3C-B webhooks (branche
+  dédiée). Aucun webhook HTTP, fournisseur concret, SDK, contrôleur, route créés.
 
 ### 2026-07-14 — Claude Code (plan final P3C Paiements & Remboursements)
 - Fait : **finalisation documentaire du plan BDD P3C** après validation humaine des

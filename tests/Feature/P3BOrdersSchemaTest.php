@@ -6,6 +6,7 @@ use App\Models\Coupon;
 use App\Models\CouponRedemption;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Visitor;
@@ -14,7 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
+use Tests\Support\PhaseMigrationHarness;
 
 uses(RefreshDatabase::class);
 
@@ -93,6 +94,15 @@ function createP3BOrder(
                 'line_total_minor' => $subtotalMinor - $discountMinor,
                 'currency' => $currency,
             ], $itemAttributes));
+
+        // P3C-A: the deferred payment/order consistency trigger requires a coherent
+        // payment for paid/refunded/payment_review orders. Attach one in the same
+        // transaction so existing P3B fixtures satisfy the new invariant.
+        if (in_array($order->status, [OrderStatus::Paid, OrderStatus::PartiallyRefunded, OrderStatus::Refunded], true)) {
+            Payment::factory()->forOrder($order)->succeeded()->create();
+        } elseif ($order->status === OrderStatus::PaymentReview) {
+            Payment::factory()->forOrder($order)->requiresReview()->create();
+        }
 
         forceP3BConstraints();
 
@@ -354,89 +364,81 @@ it('creates the required indexes, FK actions, functions, and deferred constraint
     expect($immediateTriggers)->toBe(4);
 });
 
-it('rolls back P3B migrations without leaving PostgreSQL tables, functions, or triggers behind', function () {
-    $connection = config('database.connections.pgsql');
-    $databaseName = 'digitrove_p3b_rollback_'.strtolower(Str::random(10));
-    $quotedDatabaseName = '"'.$databaseName.'"';
-    $adminDsn = sprintf(
-        'pgsql:host=%s;port=%s;dbname=postgres',
-        $connection['host'],
-        $connection['port'] ?? 5432,
-    );
-    $admin = new PDO(
-        $adminDsn,
-        $connection['username'],
-        $connection['password'],
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-    );
+it('rolls back only the P3B gate migrations while preserving earlier phases', function () {
+    $harness = new PhaseMigrationHarness('digitrove_p3b_rollback_'.strtolower(Str::random(10)));
 
-    $runArtisan = function (array $arguments) use ($databaseName): void {
-        $process = new Process([PHP_BINARY, 'artisan', ...$arguments], base_path(), [
-            'APP_ENV' => 'testing',
-            'DB_CONNECTION' => 'pgsql',
-            'DB_DATABASE' => $databaseName,
-        ]);
-        $process->setTimeout(120);
-        $process->run();
-
-        expect($process->isSuccessful())
-            ->toBeTrue($process->getOutput().$process->getErrorOutput());
-    };
+    $boundary = '2026_07_14_000003_create_coupon_redemptions_table.php';
+    $gateMigrations = [
+        '2026_07_14_000001_create_orders_table.php',
+        '2026_07_14_000002_create_order_items_table.php',
+        '2026_07_14_000003_create_coupon_redemptions_table.php',
+    ];
+    $p3bFunctions = [
+        'prevent_orders_delete',
+        'enforce_orders_immutability',
+        'prevent_order_items_delete',
+        'enforce_order_items_immutability',
+        'validate_order_items_consistency',
+        'validate_coupon_redemption_consistency',
+    ];
+    $p3bTriggers = [
+        'orders_prevent_delete_trigger',
+        'orders_enforce_immutability_trigger',
+        'orders_validate_items_consistency_trigger',
+        'orders_validate_redemption_consistency_trigger',
+        'order_items_prevent_delete_trigger',
+        'order_items_enforce_immutability_trigger',
+        'order_items_validate_order_consistency_trigger',
+        'coupon_redemptions_validate_order_consistency_trigger',
+    ];
+    $priorTables = [
+        'users', 'customer_profiles', 'visitors', 'categories', 'products',
+        'product_prices', 'product_files', 'product_category', 'product_bundles',
+        'coupons', 'coupon_currency_rules', 'coupon_products', 'coupon_categories',
+        'carts', 'cart_items',
+    ];
 
     try {
-        $admin->exec("DROP DATABASE IF EXISTS {$quotedDatabaseName} WITH (FORCE)");
-        $admin->exec("CREATE DATABASE {$quotedDatabaseName}");
+        $harness->create();
+        $applied = $harness->applyMigrationsThrough($boundary);
 
-        $runArtisan(['migrate:fresh', '--env=testing', '--force']);
-        $runArtisan(['migrate:rollback', '--env=testing', '--force', '--step=3']);
+        // The temporary database is the one under test, and it stops exactly at the boundary:
+        // no P3C-A payments (or any later) migration is ever applied.
+        expect($harness->currentDatabase())->toBe($harness->databaseName())
+            ->and($applied)->toContain('2026_07_14_000003_create_coupon_redemptions_table')
+            ->and($applied)->not->toContain('2026_07_14_000004_create_payments_table')
+            ->and(end($applied))->toBe('2026_07_14_000003_create_coupon_redemptions_table');
 
-        $testDsn = sprintf(
-            'pgsql:host=%s;port=%s;dbname=%s',
-            $connection['host'],
-            $connection['port'] ?? 5432,
-            $databaseName,
-        );
-        $testPdo = new PDO(
-            $testDsn,
-            $connection['username'],
-            $connection['password'],
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-        );
+        // Before rollback: the full P3B surface exists and payments was never created.
+        expect($harness->hasTable('orders'))->toBeTrue()
+            ->and($harness->hasTable('order_items'))->toBeTrue()
+            ->and($harness->hasTable('coupon_redemptions'))->toBeTrue()
+            ->and($harness->hasTable('payments'))->toBeFalse()
+            ->and($harness->countFunctions($p3bFunctions))->toBe(6)
+            ->and($harness->countTriggers($p3bTriggers))->toBe(8);
 
-        foreach (['orders', 'order_items', 'coupon_redemptions'] as $tableName) {
-            $statement = $testPdo->query("SELECT to_regclass('public.{$tableName}')");
-            expect($statement->fetchColumn())->toBeNull();
+        // Roll back ONLY the three P3B gate migrations; assert exactly those ran down().
+        $downed = $harness->rollbackExactMigrations($gateMigrations);
+        expect($downed)->toEqualCanonicalizing([
+            '2026_07_14_000001_create_orders_table',
+            '2026_07_14_000002_create_order_items_table',
+            '2026_07_14_000003_create_coupon_redemptions_table',
+        ]);
+
+        // After rollback: every P3B object is gone.
+        expect($harness->hasTable('orders'))->toBeFalse()
+            ->and($harness->hasTable('order_items'))->toBeFalse()
+            ->and($harness->hasTable('coupon_redemptions'))->toBeFalse()
+            ->and($harness->countFunctions($p3bFunctions))->toBe(0)
+            ->and($harness->countTriggers($p3bTriggers))->toBe(0);
+
+        // Earlier phases (P1/P2/P3A) are preserved; payments never existed here.
+        foreach ($priorTables as $table) {
+            expect($harness->hasTable($table))->toBeTrue("Prior-phase table was dropped: {$table}");
         }
-
-        $functionList = implode("','", [
-            'prevent_orders_delete',
-            'enforce_orders_immutability',
-            'prevent_order_items_delete',
-            'enforce_order_items_immutability',
-            'validate_order_items_consistency',
-            'validate_coupon_redemption_consistency',
-        ]);
-        $functionCount = $testPdo
-            ->query("SELECT COUNT(*) FROM pg_proc WHERE proname IN ('{$functionList}')")
-            ->fetchColumn();
-        expect((int) $functionCount)->toBe(0);
-
-        $triggerList = implode("','", [
-            'orders_prevent_delete_trigger',
-            'orders_enforce_immutability_trigger',
-            'orders_validate_items_consistency_trigger',
-            'orders_validate_redemption_consistency_trigger',
-            'order_items_prevent_delete_trigger',
-            'order_items_enforce_immutability_trigger',
-            'order_items_validate_order_consistency_trigger',
-            'coupon_redemptions_validate_order_consistency_trigger',
-        ]);
-        $triggerCount = $testPdo
-            ->query("SELECT COUNT(*) FROM pg_trigger WHERE tgname IN ('{$triggerList}')")
-            ->fetchColumn();
-        expect((int) $triggerCount)->toBe(0);
+        expect($harness->hasTable('payments'))->toBeFalse();
     } finally {
-        $admin->exec("DROP DATABASE IF EXISTS {$quotedDatabaseName} WITH (FORCE)");
+        $harness->drop();
     }
 });
 
@@ -731,8 +733,12 @@ it('allows lifecycle updates and controlled nullification but rejects commercial
     $user = User::factory()->create();
     ['order' => $order] = createP3BOrder(['user_id' => $user->id]);
 
-    $order->update(['status' => OrderStatus::PaymentReview]);
-    forceP3BConstraints();
+    DB::transaction(function () use ($order): void {
+        $order->update(['status' => OrderStatus::PaymentReview]);
+        // P3C-A: a payment_review order requires exactly one requires_review payment.
+        Payment::factory()->forOrder($order)->requiresReview()->create();
+        forceP3BConstraints();
+    });
 
     expect($order->refresh()->status)->toBe(OrderStatus::PaymentReview);
 
@@ -987,6 +993,9 @@ it('allows the future deferred redemption sequence and preserves snapshots after
             'paid_at' => now(),
         ]);
 
+        // P3C-A: a paid non-free order requires exactly one succeeded payment.
+        Payment::factory()->forOrder($order)->succeeded()->create();
+
         forceP3BConstraints();
 
         return $redemption;
@@ -1002,9 +1011,10 @@ it('allows the future deferred redemption sequence and preserves snapshots after
         ->and($redemption->coupon_code_snapshot)->toBe($codeSnapshot);
 });
 
-it('does not create P3C, delivery, analytics, or affiliation tables', function () {
+it('does not create later P3C, delivery, analytics, or affiliation tables', function () {
+    // `payments` is introduced by the P3C-A gate; only the remaining P3C-B/P3C-C
+    // and downstream phase tables must still be absent here.
     $forbiddenTables = [
-        'payments',
         'payment_webhook_events',
         'refunds',
         'download_grants',
