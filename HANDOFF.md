@@ -7,8 +7,8 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Codex
-- **Date** : 2026-07-13
-- **Branche git active** : `p0-foundations-laravel13` (P3A mergé ; gate P3B)
+- **Date** : 2026-07-14
+- **Branche git active** : `p0-foundations-laravel13` (plan P3B finalisé ; gate humain)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -68,6 +68,10 @@
     - `php artisan test` OK → 44 tests, 322 assertions
     - tests P3A ciblés OK → 15 tests, 147 assertions
     - `./vendor/bin/pint --test` et `git diff --check` OK
+  - Plan final P3B documentaire (D-027, aucun code P3B/P3C) :
+    - `php artisan test` OK sur PostgreSQL réel → 44 tests, 322 assertions
+    - `./vendor/bin/pint --test` OK → 72 fichiers
+    - `git diff --check` OK
 
 ---
 
@@ -178,23 +182,35 @@
   - aucun contrôleur, route, API, service, Filament, checkout, commande, paiement,
     webhook, remboursement, téléchargement, import legacy ou déploiement Azure
   - P3B/P3C non démarrés
+- **Plan P3B Commandes finalisé, sans implémentation** :
+  - décision D-027 enregistrée après validation humaine des choix `1A`, `2A`, `3A`
+  - ordre prévu : `orders` → `order_items` → `coupon_redemptions`
+  - suppression et mutations commerciales des commandes/lignes bloquées par triggers
+    PostgreSQL ; seules transitions de cycle de vie et nullifications FK contrôlées
+  - une ligne maximum par produit non NULL via index unique partiel
+  - cohérence lignes/commande et commande/redemption validée au commit par constraint
+    triggers différés ; `SET CONSTRAINTS ALL IMMEDIATE` obligatoire dans les tests
+  - consommation coupon seulement après paiement serveur confirmé en P3C, sous verrou,
+    avec identité `HMAC-SHA-256` versionnée ; aucune réservation pendant `pending`
+  - remises P3 limitées aux coupons ; `discount_minor = 0` sans snapshots coupon
+  - aucune migration, modèle, enum, factory, test ou trigger P3B/P3C créé
 
 ---
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Action suivante : préparer uniquement le plan d'implémentation BDD de
-`P3B — Commandes`. Ne créer aucune migration, aucun modèle ni logique P3B avant
-validation humaine de ce plan. P3C Paiements reste non démarré.**
+**Action suivante : faire valider humainement le plan final D-027 de
+`P3B — Commandes`. Après validation seulement, préparer une branche P3B dédiée et
+implémenter strictement les trois migrations prévues. P3C Paiements reste interdit.**
 
-Gate actuel : aucune migration `orders`, `order_items`, `payments`,
-`payment_webhook_events`, `refunds` ou `coupon_redemptions` ; aucun contrôleur/route,
-checkout, webhook, fournisseur de paiement, Filament, `download_grant`, téléchargement
-ou déploiement Azure. Ne jamais pousser sur `main`.
+Gate actuel : D-027 est documentée mais aucune migration `orders`, `order_items`,
+`coupon_redemptions`, `payments`, `payment_webhook_events` ou `refunds` n'existe ;
+aucun contrôleur/route, checkout, webhook, fournisseur de paiement, Filament,
+`download_grant`, téléchargement ou déploiement Azure. Ne jamais pousser sur `main`.
 
-Points à trancher AVANT les migrations concernées : durées d'expiration (panier invité
-7 j, commande pending 30 min — recommandées), anonymisation des données invité, gestion
-du paiement tardif (`requires_review` recommandé).
+Points reportés sans bloquer la structure P3B : durée métier `pending` recommandée à
+30 minutes (`expires_at` reste immuable), politique légale d'anonymisation invité,
+rotation des secrets HMAC avant P3C et gestion du paiement tardif `requires_review`.
 
 Toujours respecter : BDD avant logique, plan avant code, une seule feature à la fois.
 
@@ -236,6 +252,18 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-14 — Codex (plan final P3B Commandes)
+- Fait : garde-fous Git confirmés sur `p0-foundations-laravel13` à `ba48b5d`, local
+  synchronisé `0/0` avec origin, `main` intact et aucun artefact P3B/P3C existant.
+- Fait : D-027 et le schéma P3B final consignés : immutabilité PostgreSQL, une ligne
+  par produit, HMAC client versionné, consommation après paiement, trois migrations et
+  constraint triggers différés. `CLAUDE.md` a été réaligné sur l'état P3A réel.
+- État build/tests : `git diff --check` OK ; suite PostgreSQL complète OK (44 tests,
+  322 assertions) ; Pint OK (72 fichiers). Aucune migration ni logique P3B/P3C créée.
+- Décisions prises (→ DECISIONS_LOG.md) : D-027 ; remises P3 limitées aux coupons,
+  `expires_at` immuable et compromis `SET NULL` protégé par triggers + permissions BDD.
+- Laisse à : validation humaine du plan P3B final avant toute branche ou migration.
 
 ### 2026-07-13 — Codex (clôture post-merge P3A)
 - Fait : PR #4 confirmée et mergée dans `p0-foundations-laravel13` via

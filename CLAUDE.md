@@ -39,7 +39,8 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
 
 - **P0 Fondations** ✅ terminé · **SITE-00** ✅ mergé · **P1 Identité** ✅ mergé
 - **P2 Catalogue** ✅ mergé (PR #3 → `aff4d05`)
-- **P3 Commerce** ⬜ non démarré — en attente du plan BDD P3 validé par KingKouda
+- **P3 Commerce** 🟡 P3A mergé (PR #4) · plan P3B Commandes finalisé (D-027),
+  en attente de validation humaine avant migrations · P3C non démarré
 
 ## 🔄 EN FIN DE TÂCHE
 

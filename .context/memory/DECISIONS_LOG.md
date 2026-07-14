@@ -374,6 +374,58 @@ paiements ou webhooks, supprimer la branche distante P3A, ou toucher à `main`.
 IMPACT : mémoire projet et gate P3B. P3A fournit uniquement le socle coupons/paniers ;
 aucun checkout, commande, paiement, webhook ou téléchargement n'est encore livré.
 
+### D-027 : Immutabilité et consommation des commandes ✅
+CONTEXTE : KingKouda a validé les choix finaux `1A`, `2A` et `3A` avant toute
+migration P3B. Le plan Commandes doit préserver l'historique commercial même face à
+une suppression ou une écriture SQL accidentelle, sans anticiper P3C Paiements.
+CHOIX :
+1. **Commandes immuables en PostgreSQL** : tout `DELETE` de `orders` est refusé par
+   trigger. Après insertion, seules les colonnes de cycle de vie `status`, `paid_at`,
+   `cancelled_at` et `updated_at` peuvent évoluer ; `expires_at`, identités publiques,
+   idempotence, snapshots client/coupon, montants, devise, attribution, `placed_at` et
+   `created_at` restent figés. Les transitions de statut restent à valider par le futur
+   service, sans machine à états SQL excessivement rigide.
+2. **Nullification référentielle contrôlée** : les FK `cart_id`, `user_id`,
+   `visitor_id` et `coupon_id` restent `ON DELETE SET NULL`. Le trigger autorise
+   uniquement leur transition non-NULL → NULL sans altérer un snapshot ou montant.
+   Cette exception permet aussi techniquement une nullification SQL directe ; les
+   permissions BDD minimales, l'absence d'API de mutation et les SoftDeletes ou la
+   désactivation normale complètent la protection.
+3. **Lignes immuables** : tout `DELETE` de `order_items` est refusé et toute mise à
+   jour commerciale est interdite. Seule l'exception `product_id` non-NULL → NULL,
+   sans autre changement hors `updated_at`, rend `ON DELETE SET NULL` compatible avec
+   les suppressions physiques exceptionnelles ; les produits sont normalement
+   SoftDeleted. `order_id` utilise `ON DELETE RESTRICT`.
+4. **Une ligne par produit et commande** : `quantity` porte plusieurs unités/licences.
+   Un index unique partiel `(order_id, product_id) WHERE product_id IS NOT NULL` évite
+   les doublons sans empêcher plusieurs lignes historiques NULL issues de produits
+   distincts supprimés.
+5. **Coupon consommé après paiement uniquement** : aucune réservation de quota pour
+   une commande `pending` et aucune insertion P3B dans `coupon_redemptions`. P3C
+   insérera la consommation uniquement après confirmation serveur du paiement, jamais
+   depuis un retour navigateur, sous verrou transactionnel du coupon. `UNIQUE(order_id)`
+   empêchera la double consommation d'une commande.
+6. **Identité client versionnée** : `customer_key_hash` est un HMAC-SHA-256 de
+   `email:v1:<email normalisé>`, avec secret dédié hors BDD et logs.
+   `customer_key_version SMALLINT NOT NULL DEFAULT 1 CHECK (> 0)` accompagne le hash ;
+   l'index de plafond inclut `(coupon_id, customer_key_version, customer_key_hash)`.
+   Une rotation devra conserver les anciennes clés ou recalculer toutes les versions
+   actives avant P3C afin de ne pas réinitialiser implicitement les plafonds client.
+7. **Remises P3 limitées aux coupons** : `discount_minor` reste la seule remise
+   appliquée et vaut zéro en l'absence de snapshots coupon. Promotions automatiques et
+   remises manuelles sont reportées ; leur arrivée exigera une décision et une migration
+   explicites plutôt qu'un `discount_source` prématuré.
+8. **Cohérence comptable différée** : des constraint triggers PostgreSQL différés
+   valident au commit la présence des lignes, leur devise et leurs sommes, puis la
+   cohérence commande/consommation. Les tests forcent `SET CONSTRAINTS ALL IMMEDIATE`.
+ALTERNATIVES REJETÉES : protections Laravel seules, `ON DELETE CASCADE` sur l'historique,
+unicité simple des lignes, réservation de coupon pendant `pending`, email ou secret HMAC
+stocké en clair, hash non versionné, remises génériques non modélisées, suppression des
+FK historiques ou triggers comptables immédiats empêchant la création transactionnelle.
+IMPACT : plan final des futures migrations P3B `orders`, `order_items`,
+`coupon_redemptions`, triggers et tests PostgreSQL associés. Aucun code P3B/P3C n'est
+créé par cette décision ; une validation humaine reste obligatoire avant implémentation.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA

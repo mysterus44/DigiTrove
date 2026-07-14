@@ -287,14 +287,14 @@ CREATE INDEX ON reviews (product_id, status);
 
 ## 🅲 BLOC COMMERCE — P3 (carts → orders → order_items → payments → refunds)
 
-> **Révisé P3 (D-024).** Argent en `BIGINT`, devise `VARCHAR(3)` uppercase (jamais
+> **Révisé P3 (D-024/D-027).** Argent en `BIGINT`, devise `VARCHAR(3)` uppercase (jamais
 > CHAR(3)/FLOAT/REAL/DOUBLE/DECIMAL/NUMERIC). Prix recalculé dynamiquement (aucun prix
 > dans `cart_items`), snapshot définitif uniquement dans `order_items`. Un seul coupon
 > par panier et par commande (aucun cumul, aucune notion `is_cumulative`). Panier invité
 > = UUID public opaque + `SHA-256(secret)` (secret jamais stocké). Ordre de migration :
 > `coupons` → `coupon_currency_rules` → `coupon_products` → `coupon_categories` →
-> `carts` → `cart_items` → `orders` → `order_items` → `payments` →
-> `payment_webhook_events` → `refunds` → `coupon_redemptions`.
+> `carts` → `cart_items` → `orders` → `order_items` → `coupon_redemptions`, puis P3C :
+> `payments` → `payment_webhook_events` → `refunds`.
 
 ```sql
 -- ===== P3 COMMERCE =====
@@ -389,67 +389,173 @@ CREATE TABLE cart_items (
 );
 CREATE INDEX ON cart_items (cart_id);
 
--- Checkout invité autorisé : user_id nullable, visitor_id + email snapshot suffisent.
--- Le statut `failed` ne représente PAS une tentative de paiement échouée (celle-ci vit
--- dans payments.status) : une commande dont le paiement échoue reste `pending`/`payment_review`.
+-- P3B COMMANDES (D-027). Checkout invité autorisé : user_id et visitor_id sont
+-- nullable ; le snapshot customer_email est toujours obligatoire. `failed` reste
+-- un statut de tentative de paiement P3C, jamais un statut de commande.
 CREATE TABLE orders (
-    id              BIGSERIAL PRIMARY KEY,
-    order_number    TEXT NOT NULL UNIQUE,           -- DGT-2026-000123, jamais l'id
-    user_id         BIGINT REFERENCES users(id) ON DELETE SET NULL,  -- NULL = invité
-    visitor_id      UUID   REFERENCES visitors(id) ON DELETE SET NULL,
-    email           CITEXT NOT NULL,                -- snapshot client, même en invité
-    status          TEXT NOT NULL DEFAULT 'pending'
-                    CHECK (status IN ('pending','payment_review','paid','partially_refunded','refunded','cancelled','expired')),
-    currency        VARCHAR(3) NOT NULL
-                    CHECK (char_length(currency)=3 AND currency=upper(currency)),
-    subtotal_minor  BIGINT NOT NULL DEFAULT 0 CHECK (subtotal_minor >= 0),
-    discount_minor  BIGINT NOT NULL DEFAULT 0 CHECK (discount_minor >= 0),
-    tax_minor       BIGINT NOT NULL DEFAULT 0 CHECK (tax_minor >= 0),
-    total_minor     BIGINT NOT NULL DEFAULT 0 CHECK (total_minor >= 0),
-    coupon_id       BIGINT REFERENCES coupons(id) ON DELETE SET NULL,  -- un seul coupon (D-024)
-    coupon_code_snapshot           TEXT,            -- figés à la commande
-    coupon_type_snapshot           TEXT CHECK (coupon_type_snapshot IS NULL OR coupon_type_snapshot IN ('percent','fixed')),
-    coupon_discount_minor_snapshot BIGINT CHECK (coupon_discount_minor_snapshot IS NULL OR coupon_discount_minor_snapshot >= 0),
-    -- 📊 Attribution figée AU MOMENT DE L'ACHAT. Ne jamais la recalculer.
-    utm_source      TEXT,
-    utm_medium      TEXT,
-    utm_campaign    TEXT,
-    placed_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    paid_at         TIMESTAMPTZ,
-    expires_at      TIMESTAMPTZ,                    -- péremption d'une commande pending
-    ip_hash         TEXT,                           -- haché, RGPD
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (total_minor = subtotal_minor - discount_minor + tax_minor)
+    id                        BIGSERIAL PRIMARY KEY,
+    public_id                 UUID NOT NULL UNIQUE,
+    order_number              VARCHAR(19) NOT NULL UNIQUE
+                              CHECK (order_number ~ '^DGT-[0-9]{4}-[0-9A-HJKMNP-TV-Z]{10}$'),
+    cart_id                   BIGINT UNIQUE REFERENCES carts(id) ON DELETE SET NULL,
+    checkout_idempotency_hash VARCHAR(64) NOT NULL UNIQUE
+                              CHECK (checkout_idempotency_hash ~ '^[0-9a-f]{64}$'),
+    user_id                   BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    visitor_id                UUID REFERENCES visitors(id) ON DELETE SET NULL,
+    customer_email            CITEXT NOT NULL
+                              CHECK (btrim(customer_email::text) <> '' AND char_length(customer_email::text) <= 320),
+    customer_name_snapshot    TEXT CHECK (customer_name_snapshot IS NULL OR btrim(customer_name_snapshot) <> ''),
+    billing_country_code      VARCHAR(2)
+                              CHECK (billing_country_code IS NULL OR billing_country_code ~ '^[A-Z]{2}$'),
+    coupon_id                 BIGINT REFERENCES coupons(id) ON DELETE SET NULL,
+    coupon_code_snapshot                  TEXT,
+    coupon_discount_type_snapshot         TEXT,
+    coupon_percent_basis_points_snapshot  INT,
+    coupon_fixed_amount_minor_snapshot    BIGINT,
+    subtotal_minor            BIGINT NOT NULL CHECK (subtotal_minor >= 0),
+    discount_minor            BIGINT NOT NULL DEFAULT 0 CHECK (discount_minor >= 0),
+    tax_minor                 BIGINT NOT NULL DEFAULT 0 CHECK (tax_minor >= 0),
+    total_minor               BIGINT NOT NULL CHECK (total_minor >= 0),
+    currency                  VARCHAR(3) NOT NULL
+                              CHECK (char_length(currency) = 3 AND currency = upper(currency)),
+    status                    TEXT NOT NULL DEFAULT 'pending'
+                              CHECK (status IN ('pending','payment_review','paid','partially_refunded','refunded','cancelled','expired')),
+    placed_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at                TIMESTAMPTZ NOT NULL,
+    paid_at                   TIMESTAMPTZ,
+    cancelled_at              TIMESTAMPTZ,
+    -- Attribution minimale figée à la création ; aucune IP brute.
+    utm_source                VARCHAR(255),
+    utm_medium                VARCHAR(255),
+    utm_campaign              VARCHAR(255),
+    referrer_host             VARCHAR(253),
+    ip_hash                   VARCHAR(64) CHECK (ip_hash IS NULL OR ip_hash ~ '^[0-9a-f]{64}$'),
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (discount_minor <= subtotal_minor),
+    CHECK (total_minor = subtotal_minor - discount_minor + tax_minor),
+    CHECK (expires_at > placed_at),
+    CHECK (paid_at IS NULL OR paid_at >= placed_at),
+    CHECK (cancelled_at IS NULL OR cancelled_at >= placed_at),
+    CHECK (status NOT IN ('paid','partially_refunded','refunded') OR paid_at IS NOT NULL),
+    CHECK (status <> 'cancelled' OR cancelled_at IS NOT NULL),
+    -- En P3, discount_minor représente uniquement une remise coupon. L'absence de
+    -- coupon se déduit des snapshots, pas de coupon_id qui peut devenir NULL après
+    -- suppression exceptionnelle du coupon référencé.
+    CHECK (
+        (
+            coupon_id IS NULL AND coupon_code_snapshot IS NULL
+            AND coupon_discount_type_snapshot IS NULL
+            AND coupon_percent_basis_points_snapshot IS NULL
+            AND coupon_fixed_amount_minor_snapshot IS NULL
+            AND discount_minor = 0
+        ) OR (
+            coupon_code_snapshot IS NOT NULL AND btrim(coupon_code_snapshot) <> ''
+            AND coupon_discount_type_snapshot = 'percent'
+            AND coupon_percent_basis_points_snapshot IS NOT NULL
+            AND coupon_percent_basis_points_snapshot BETWEEN 1 AND 10000
+            AND coupon_fixed_amount_minor_snapshot IS NULL
+        ) OR (
+            coupon_code_snapshot IS NOT NULL AND btrim(coupon_code_snapshot) <> ''
+            AND coupon_discount_type_snapshot = 'fixed'
+            AND coupon_percent_basis_points_snapshot IS NULL
+            AND coupon_fixed_amount_minor_snapshot IS NOT NULL
+            AND coupon_fixed_amount_minor_snapshot >= 0
+        )
+    ),
+    CHECK (coupon_id IS NULL OR coupon_code_snapshot IS NOT NULL)
 );
-CREATE INDEX ON orders (user_id, placed_at DESC);
-CREATE INDEX ON orders (status, placed_at DESC);
-CREATE INDEX ON orders (email);
-CREATE INDEX ON orders (visitor_id);
--- Un seul coupon par commande via coupon_id (pas de pivot commande/coupons).
+CREATE INDEX orders_status_expires_at_index ON orders (status, expires_at);
+CREATE INDEX orders_status_placed_at_index ON orders (status, placed_at DESC);
+CREATE INDEX orders_user_id_placed_at_index ON orders (user_id, placed_at DESC);
+CREATE INDEX orders_visitor_id_placed_at_index ON orders (visitor_id, placed_at DESC);
+CREATE INDEX orders_customer_email_placed_at_index ON orders (customer_email, placed_at DESC);
+CREATE INDEX orders_coupon_id_placed_at_index ON orders (coupon_id, placed_at DESC);
+-- UNIQUE(cart_id) autorise plusieurs NULL mais une seule commande par panier réel.
+-- Le format DGT-YYYY-XXXXXXXXXX utilise 10 caractères aléatoires Crockford Base32 :
+-- lisible et non séquentiel, avec l'unicité BDD comme dernier garde-fou. Ce numéro
+-- n'est jamais un secret ; public_id reste l'identifiant public opaque.
 
--- 🔴 LE POINT LE PLUS IMPORTANT DU SCHÉMA : on SNAPSHOT nom, slug, type et prix.
--- Si tu changes/archives/supprimes le produit demain, les factures d'hier NE BOUGENT
--- PAS. Jamais de JOIN sur products pour un prix historique. product_id nullable.
+-- Snapshot commercial complet. Une ligne maximum par produit non NULL et commande ;
+-- quantity porte le nombre d'unités/licences. Plusieurs anciennes lignes devenues
+-- product_id NULL restent possibles après suppression de produits distincts.
 CREATE TABLE order_items (
     id                    BIGSERIAL PRIMARY KEY,
-    order_id              BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    product_id            BIGINT REFERENCES products(id) ON DELETE SET NULL,  -- nullable (D-024)
-    product_name_snapshot TEXT   NOT NULL,
-    product_slug_snapshot TEXT,
-    product_type_snapshot TEXT   NOT NULL,
+    order_id              BIGINT NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
+    product_id            BIGINT REFERENCES products(id) ON DELETE SET NULL,
+    product_name_snapshot TEXT NOT NULL CHECK (btrim(product_name_snapshot) <> ''),
+    product_slug_snapshot TEXT NOT NULL CHECK (btrim(product_slug_snapshot) <> ''),
+    product_type_snapshot TEXT NOT NULL
+                          CHECK (product_type_snapshot IN ('software','course','ebook','bundle','template')),
     unit_price_minor      BIGINT NOT NULL CHECK (unit_price_minor >= 0),
-    quantity              INT    NOT NULL DEFAULT 1 CHECK (quantity >= 1),
+    quantity              INT NOT NULL DEFAULT 1 CHECK (quantity >= 1),
     line_subtotal_minor   BIGINT NOT NULL CHECK (line_subtotal_minor >= 0),
     line_discount_minor   BIGINT NOT NULL DEFAULT 0 CHECK (line_discount_minor >= 0),
     line_total_minor      BIGINT NOT NULL CHECK (line_total_minor >= 0),
     currency              VARCHAR(3) NOT NULL
-                          CHECK (char_length(currency)=3 AND currency=upper(currency)),
+                          CHECK (char_length(currency) = 3 AND currency = upper(currency)),
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (line_subtotal_minor = unit_price_minor * quantity),
-    CHECK (line_total_minor    = line_subtotal_minor - line_discount_minor)
+    CHECK (line_discount_minor <= line_subtotal_minor),
+    CHECK (line_total_minor = line_subtotal_minor - line_discount_minor)
 );
-CREATE INDEX ON order_items (order_id);
-CREATE INDEX ON order_items (product_id);
+CREATE INDEX order_items_order_id_index ON order_items (order_id);
+CREATE INDEX order_items_product_id_index ON order_items (product_id);
+CREATE UNIQUE INDEX order_items_order_id_product_id_unique
+    ON order_items (order_id, product_id) WHERE product_id IS NOT NULL;
+
+-- Historique de consommation créé en P3B, mais alimenté uniquement en P3C après
+-- confirmation serveur du paiement. Aucune commande pending ne réserve un quota.
+CREATE TABLE coupon_redemptions (
+    id                   BIGSERIAL PRIMARY KEY,
+    coupon_id            BIGINT REFERENCES coupons(id) ON DELETE SET NULL,
+    order_id             BIGINT NOT NULL UNIQUE REFERENCES orders(id) ON DELETE RESTRICT,
+    customer_key_version SMALLINT NOT NULL DEFAULT 1 CHECK (customer_key_version > 0),
+    customer_key_hash    VARCHAR(64) NOT NULL CHECK (customer_key_hash ~ '^[0-9a-f]{64}$'),
+    coupon_code_snapshot TEXT NOT NULL CHECK (btrim(coupon_code_snapshot) <> ''),
+    discount_type_snapshot TEXT NOT NULL CHECK (discount_type_snapshot IN ('percent','fixed')),
+    discount_minor       BIGINT NOT NULL CHECK (discount_minor >= 0),
+    currency             VARCHAR(3) NOT NULL
+                         CHECK (char_length(currency) = 3 AND currency = upper(currency)),
+    redeemed_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX coupon_redemptions_coupon_customer_index
+    ON coupon_redemptions (coupon_id, customer_key_version, customer_key_hash);
+CREATE INDEX coupon_redemptions_coupon_redeemed_at_index
+    ON coupon_redemptions (coupon_id, redeemed_at DESC);
+CREATE INDEX coupon_redemptions_redeemed_at_index ON coupon_redemptions (redeemed_at DESC);
+
+-- PLAN DES TRIGGERS P3B (créés dans les trois futures migrations, pas dans cette doc) :
+-- 1. orders_reject_delete : BEFORE DELETE, lève toujours une exception explicite.
+-- 2. orders_enforce_immutable_update : BEFORE UPDATE, seules status, paid_at,
+--    cancelled_at et updated_at peuvent évoluer. expires_at reste figé. Exception
+--    référentielle strictement limitée à cart_id/user_id/visitor_id/coupon_id passant
+--    de non-NULL à NULL, sans autre changement commercial, pour rendre SET NULL viable.
+-- 3. order_items_reject_delete : BEFORE DELETE, lève toujours une exception.
+-- 4. order_items_enforce_immutable_update : BEFORE UPDATE, autorise uniquement
+--    product_id non-NULL -> NULL, toutes les autres colonnes identiques sauf updated_at.
+-- 5. orders_validate_items_deferred et order_items_validate_order_deferred :
+--    CONSTRAINT TRIGGER AFTER ROW, DEFERRABLE INITIALLY DEFERRED, sur INSERT/UPDATE
+--    d'orders et INSERT/UPDATE/DELETE d'order_items. Au commit : au moins une ligne,
+--    devises identiques, sommes des sous-totaux/remises/totaux cohérentes avec orders.
+-- 6. coupon_redemptions_validate_order_deferred et orders_validate_redemption_deferred :
+--    CONSTRAINT TRIGGER AFTER ROW, DEFERRABLE INITIALLY DEFERRED. Au commit : commande
+--    avec snapshots coupon, code/type/remise/devise identiques et statut dans
+--    paid/partially_refunded/refunded. L'ordre d'insertion interne à la transaction
+--    P3C reste donc libre ; seul l'état final au COMMIT est contrôlé.
+-- Les exceptions SET NULL permettent techniquement une nullification SQL directe :
+-- permissions BDD minimales, aucune API de mutation et SoftDeletes/désactivation en
+-- fonctionnement normal complètent la défense. RESTRICT bloquerait les purges légales ;
+-- supprimer les FK ferait perdre l'intégrité référentielle. SET NULL reste le compromis.
+-- Flux futur P3C compatible : vérifier le paiement serveur-à-serveur avant de conserver
+-- des verrous réseau longs, puis ouvrir une transaction, verrouiller order FOR UPDATE,
+-- verrouiller coupon FOR UPDATE, revalider paiement/montant/idempotence, compter les
+-- consommations globales et par (version, hash), insérer coupon_redemptions, marquer le
+-- paiement succeeded puis la commande paid avec paid_at, et COMMIT. Les triggers
+-- différés observent l'état final cohérent ; UNIQUE(order_id) bloque un second débit.
+-- Une rotation HMAC doit calculer les identités de toutes les versions encore retenues
+-- lors du contrôle par client, sinon le changement de clé contournerait le plafond.
 
 -- Une commande peut avoir PLUSIEURS tentatives de paiement. Séparer paiement et
 -- commande, sinon les retries corrompent l'état. Aucune validation sur retour navigateur.
@@ -515,24 +621,6 @@ CREATE UNIQUE INDEX ON refunds (payment_id, provider_refund_ref) WHERE provider_
 -- refunds.currency = payments.currency : NON exprimables par CHECK mono-ligne. Garantie
 -- par un trigger PostgreSQL transactionnel (SELECT ... FOR UPDATE sur payments) + le
 -- futur RefundService + tests de concurrence. À ne pas confier à PHP seul.
-
--- Consommation de coupon : 1 seule par commande (UNIQUE order_id). Permet le contrôle
--- des plafonds global / par email. L'incrément SÛR (course entre 2 commandes) exige un
--- verrou transactionnel dans CouponService ; la BDD garantit l'unicité par commande.
-CREATE TABLE coupon_redemptions (
-    id             BIGSERIAL PRIMARY KEY,
-    coupon_id      BIGINT NOT NULL REFERENCES coupons(id) ON DELETE RESTRICT,
-    order_id       BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    email          CITEXT NOT NULL,                 -- client normalisé (plafond par email)
-    user_id        BIGINT REFERENCES users(id) ON DELETE SET NULL,
-    discount_minor BIGINT NOT NULL CHECK (discount_minor >= 0),
-    currency       VARCHAR(3) NOT NULL
-                   CHECK (char_length(currency)=3 AND currency=upper(currency)),
-    redeemed_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (order_id)                               -- 🔐 un seul coupon consommé par commande
-);
-CREATE INDEX ON coupon_redemptions (coupon_id);
-CREATE INDEX ON coupon_redemptions (coupon_id, email);
 
 -- ===== P4 LIVRAISON (HORS P3 — référence uniquement, non migré en P3) =====
 
@@ -744,11 +832,12 @@ Ordre technique des migrations à respecter avant P1 :
 2. P1 strictement limité à `users`, `customer_profiles`, `visitors` + extension `citext`. ✅ mergé
 3. P2 : `categories`, `products`, `product_prices`, `product_files`, `product_category`,
    `product_bundles`. ✅ mergé (PR #3).
-4. P3 Commerce — ordre exact (D-024) :
+4. P3 Commerce — ordre exact révisé (D-024/D-027) :
    `coupons` → `coupon_currency_rules` → `coupon_products` → `coupon_categories` →
-   `carts` → `cart_items` → `orders` → `order_items` → `payments` →
-   `payment_webhook_events` → `refunds` → `coupon_redemptions`.
-   (Coupons avant `orders` car `orders.coupon_id` est une FK ; `orders` avant `order_items`.)
+   `carts` → `cart_items` → `orders` → `order_items` → `coupon_redemptions` →
+   `payments` → `payment_webhook_events` → `refunds`.
+   (P3B crée `orders`, `order_items`, puis `coupon_redemptions`; cette dernière reste
+   vide jusqu'à la confirmation serveur d'un paiement en P3C.)
 5. `licenses` après `order_items` (P4, optionnel).
 
 1. `users` + `customer_profiles` + `visitors` (fondation identité) ✅
