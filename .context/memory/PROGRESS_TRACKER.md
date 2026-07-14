@@ -11,7 +11,7 @@ P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
-P3 COMMERCE         : ███░░░░░░░  P3A mergé ; plan P3B finalisé (D-024 à D-027)
+P3 COMMERCE         : █████░░░░░  P3A mergé ; P3B corrigé après review, non mergé
 P4 LIVRAISON        : ░░░░░░░░░░  0%
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
@@ -20,8 +20,9 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 
 > Rappel : **aucune logique métier avant que P1→P4 soient migrés et testés.**
 > P1, P2 et P3A sont mergés dans `p0-foundations-laravel13` (P3A via PR #4 →
-> `234e303`). P3A reste limité aux coupons et paniers ; le plan P3B est finalisé
-> dans la documentation mais aucune implémentation P3B/P3C n'est démarrée.
+> `234e303`). P3B Commandes est implémenté et corrigé après review sur `p3b-orders`,
+> mais non mergé ;
+> P3C Paiements reste strictement non démarré.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -208,8 +209,9 @@ Vérifications post-merge P2 sur `p0-foundations-laravel13` (`aff4d05`) :
 
 ## P3 — COMMERCE
 Statut : ✅ **P3A Coupons et Paniers mergé dans `p0-foundations-laravel13`** via
-PR #4 (`234e303`). Le plan BDD P3B Commandes est finalisé (D-027) et attend sa
-validation humaine avant code. P3B et P3C ne sont pas implémentés.
+PR #4 (`234e303`). P3B Commandes est implémenté sur `p3b-orders` conformément à
+D-027, corrigé après review technique et en attente de review finale. P3C n'est pas
+implémenté.
 
 Ordre de migration révisé (D-024/D-027) : `coupons` → `coupon_currency_rules` →
 `coupon_products` → `coupon_categories` → `carts` → `cart_items` → `orders` →
@@ -223,8 +225,10 @@ Ordre de migration révisé (D-024/D-027) : `coupons` → `coupon_currency_rules
 | Migrations P3A (`coupons` → `cart_items`, 6 tables) | ✅ DONE — mergé PR #4 |
 | Modèles/enums/factories P3A | ✅ DONE — sans logique métier |
 | Tests PostgreSQL P3A (contraintes, relations, sécurité) | ✅ DONE — 15 tests, 147 assertions |
-| Plan d'implémentation P3B Commandes | ✅ DONE — D-027, attente validation humaine avant code |
-| Migrations P3B (`orders`, `order_items`, `coupon_redemptions`) | ⬜ TODO — aucune créée |
+| Plan d'implémentation P3B Commandes | ✅ DONE — D-027 validée humainement |
+| Migrations P3B (`orders`, `order_items`, `coupon_redemptions`) | ✅ DONE — branche `p3b-orders`, non mergée |
+| Modèles/enums/factories P3B | ✅ DONE — sans logique checkout/paiement |
+| Tests PostgreSQL P3B (contraintes, immutabilité, cohérence différée) | ✅ DONE — 18 tests, 337 assertions |
 | Migrations P3C (`payments`, webhooks, `refunds`) | ⬜ TODO — aucune créée |
 | OrderService (snapshot prix + nom) | ⬜ TODO |
 | CouponService (règle par devise, plafonds, verrou transactionnel) | ⬜ TODO |
@@ -241,16 +245,21 @@ Décisions bloquantes tranchées (D-024) : prix panier dynamique, coupon fixe pa
 Durcissements P3A (D-025) : limites d'usage nulles ou strictement positives,
 `secret_hash` obligatoire/unique au format SHA-256 minuscule, `expires_at` obligatoire,
 suppression physique d'un produit référencé par un panier refusée.
-Plan final P3B (D-027) : commandes et lignes immuables par triggers PostgreSQL,
+P3B implémenté selon D-027 : commandes et lignes immuables par triggers PostgreSQL,
 nullifications FK strictement encadrées, une ligne par produit via index unique partiel,
 cohérence comptable par constraint triggers différés, coupon consommé uniquement après
 paiement serveur confirmé, identité client HMAC versionnée et remises P3 limitées aux
 coupons. `orders.expires_at` reste immuable ; aucune réservation de quota pendant
-`pending`. La validation humaine de ce plan reste le gate avant migrations.
+`pending`. Correctif post-review : la contrainte
+`orders_coupon_snapshot_consistency_check` ferme le cas PostgreSQL `CHECK = UNKNOWN`,
+les tests ciblent SQLSTATE + contrainte/message, les scénarios coupon NULL sont couverts
+et le rollback des trois migrations P3B est automatisé en base isolée. Les trois
+migrations sont réversibles et rejouables via `migrate:fresh`.
 Couverture de régression : cascades réelles `carts` → `cart_items` et `coupons` →
 `coupon_currency_rules`/pivots testées ; produits et catégories préservés ; types
 PostgreSQL `citext`, `uuid` et `varchar(3)` verrouillés par introspection. Suite
-complète : 44 tests, 322 assertions. P3A est mergé ; P3B/P3C non démarrés.
+complète P3A : 44 tests, 322 assertions. P3A est mergé ; P3B est non mergé et P3C
+reste non démarré.
 Décisions non bloquantes à confirmer à l'implémentation : durées d'expiration (7 j / 30 min),
 anonymisation invité, paiement tardif `requires_review`.
 
@@ -267,6 +276,16 @@ Vérifications post-merge P3A sur `p0-foundations-laravel13` (`234e303`) :
 
 Validation documentaire D-027 : suite PostgreSQL inchangée et verte (44 tests,
 322 assertions), Pint vert (72 fichiers), diff-check vert. Aucun artefact P3B/P3C.
+
+Vérifications P3B sur `p3b-orders` :
+- `php artisan migrate:fresh --env=testing` : PASS, 19 migrations (P1 + P2 + P3A + P3B)
+- rollback automatisé des trois migrations P3B : PASS ; tables, fonctions et triggers
+  P3B absents après rollback isolé
+- `php artisan test --filter=P3BOrdersSchemaTest` : PASS, 18 tests, 337 assertions
+- `php artisan test` : PASS, 62 tests, 650 assertions
+- `./vendor/bin/pint --test` : PASS, 83 fichiers ; `git diff --check` : PASS
+- tables P3B uniquement : `orders`, `order_items`, `coupon_redemptions`
+- aucune table P3C/P4/P5, aucun paiement, webhook, checkout ou téléchargement
 
 ## P4 — LIVRAISON (⚠️ cœur sécurité)
 | Tâche | Statut |

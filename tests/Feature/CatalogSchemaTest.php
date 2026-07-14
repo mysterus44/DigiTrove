@@ -95,14 +95,11 @@ it('has explicit indexes for reverse catalog lookups', function () {
         ->toContain('product_bundles_child_product_id_index');
 });
 
-it('does not create P3B, P3C, payment, delivery, analytics, or affiliation tables', function () {
+it('does not create P3C, payment, delivery, analytics, or affiliation tables', function () {
     $forbiddenTables = [
-        'orders',
-        'order_items',
         'payments',
         'payment_webhook_events',
         'refunds',
-        'coupon_redemptions',
         'download_grants',
         'download_logs',
         'affiliate_profiles',
