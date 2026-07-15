@@ -8,8 +8,8 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-15
-- **Branche git active** : `p3c-c-refunds` (basée sur stable `be74854` ; P3C-C
-  implémenté, validé localement, non mergé)
+- **Branche git active** : `p0-foundations-laravel13` à `122332a` (synchronisée avec
+  `origin/p0-foundations-laravel13` ; P3C-C mergé et clôturé)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -31,7 +31,11 @@
 - **Merge P3C-B.1 hardening** : [PR #9](https://github.com/mysterus44/DigiTrove/pull/9)
   `13932ac Merge pull request #9 from mysterus44/p3c-b1-webhook-replay-hardening`
   (SHA complet `13932ac11c59be366b859916bd5f15948d7d2cdf`, parents `51c4847` + `c772ac1`)
-- **`origin/main`** : `11130f4` (intact pendant P3C-C ; aucun push direct)
+- **Merge P3C-C Refunds** : [PR #10](https://github.com/mysterus44/DigiTrove/pull/10)
+  `122332a Merge pull request #10 from mysterus44/p3c-c-refunds`
+  (SHA complet `122332aa5cc9fc25e9bf1898224f5a1da30f6446`, parents `be74854` +
+  `1270c53` ; commit final P3C-C intégré `1270c530124fc605ade299f441277edbbf1c5534`)
+- **`origin/main`** : `11130f4` (intact après P3C-C ; aucun push direct)
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
   - `php artisan --version` OK via `digitrove-php:dev` → Laravel Framework 13.19.0
@@ -231,30 +235,21 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**P3C-B `payment_webhook_events` + durcissement P3C-B.1 sont mergés** dans
-`p0-foundations-laravel13` (PR #8 `51c4847`, puis PR #9 `13932ac`). Post-merge vert :
-22 migrations, index de rejeu durci (`… AND signature_verified = true`), P3C-B 13/191,
-suite complète 91/1081, Pint 95, diff-check propre. `origin/main` intact `1e41b92`… →
-`11130f4` (promu via PR #7). Branches locales P3C-B/P3C-B.1 supprimées, distantes conservées.
+**P3C-C `refunds` est mergé** dans `p0-foundations-laravel13` via
+[PR #10](https://github.com/mysterus44/DigiTrove/pull/10), merge `122332a` (parents
+`be74854` + `1270c53`). La migration `000007`, l'enum, le modèle/factory, cinq fonctions,
+six triggers et les deux constraint triggers différés sont confirmés dans PostgreSQL.
 
-P3C-C — `refunds` est implémenté sur `p3c-c-refunds` : migration `000007`, enum,
-modèle/factory, relation `Payment::refunds()`, cinq fonctions et six triggers. Le cumul
-des seuls refunds `succeeded` est protégé immédiatement sous verrou Payment
-`FOR UPDATE`; la cohérence `paid` / `partially_refunded` / `refunded` est vérifiée au
-commit par deux constraint triggers différés. L'audit adversarial a réservé la
-nullification de l'initiateur à l'action FK imbriquée `ON DELETE SET NULL` (un UPDATE
-manuel est refusé) et rendu les states de factory composables. Rollback isolé à la
-frontière `000007`.
+Validation post-merge réelle : 23 migrations ; P3C-C 16 tests / 461 assertions ; P3C-B
+13/189 ; P3C-A 16/221 ; P3B 18/359 ; suite complète 107/1534 ; Pint 100 fichiers ;
+`git diff --check` propre. Le plafond des seuls refunds `succeeded` est sérialisé sous
+verrou Payment `FOR UPDATE`; les courses 6000 + 6000 sur capture 10000 échouent en
+`23514` pour la seconde transaction, sans blocage global entre Payments distincts. La
+matrice `paid` / `partially_refunded` / `refunded`, la nullification FK contrôlée de
+l'initiateur et le rollback isolé `000007` sont verts. Aucune base temporaire résiduelle.
 
-Validation réelle : 23 migrations ; P3C-C 16 tests / 461 assertions ; P3C-B 13/189 ;
-P3C-A 16/221 ; P3B 18/359 ; suite complète 107/1534 ; Pint 100 fichiers ; diff-check
-propre. Les scénarios concurrents 6000 + 6000 sur capture 10000, par INSERT puis par
-transition simultanée `processing -> succeeded`, sérialisent sur Payment : une
-transaction réussit, l'autre échoue en `23514`; deux Payments distincts ne se bloquent
-pas. Aucune base temporaire résiduelle.
-
-Action suivante : **review/PR puis merge humain de `p3c-c-refunds` vers
-`p0-foundations-laravel13`**. Ne jamais merger automatiquement. P4/P5 restent bloqués.
+Action suivante : **plan P4 — intégrité de livraison et téléchargements**, dans une
+exécution séparée, avant toute migration ou logique P4. P5 reste non démarré.
 
 Gate : aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret,
 SDK, Filament, job de purge, `download_grant`, téléchargement ou déploiement Azure.
@@ -320,6 +315,20 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-15 — Codex (clôture post-merge P3C-C Refunds)
+- Fait : **P3C-C mergé** via [PR #10](https://github.com/mysterus44/DigiTrove/pull/10),
+  merge `122332aa5cc9fc25e9bf1898224f5a1da30f6446` (parents `be74854` + `1270c53`).
+  Le commit final audité `1270c530124fc605ade299f441277edbbf1c5534` est intégré.
+- PostgreSQL réel : 23 migrations ; table `refunds`, cinq fonctions, six triggers dont
+  deux constraint triggers `DEFERRABLE INITIALLY DEFERRED`; plafond cumulatif sous
+  verrou Payment, concurrence réelle, mapping Refund↔Order et nullification contrôlée
+  de l'initiateur confirmés. Rollback isolé `000007` sans objet/base résiduel.
+- Validation : P3C-C **16/461**, P3C-B **13/189**, P3C-A **16/221**, P3B **18/359**,
+  suite complète **107/1534**, Pint **100**, `git diff --check` propre.
+- Nettoyage : branche locale `p3c-c-refunds` supprimée ; branche distante conservée à
+  `1270c53`. `origin/main` intact à `11130f4`. Aucune nouvelle décision D-028.
+- Laisse à : **plan P4 — intégrité delivery/download**, exécution séparée. Aucun code P4/P5.
 
 ### 2026-07-15 — Claude Code (clôture post-merge P3C-B.1)
 - Fait : **durcissement P3C-B.1 mergé** via [PR #9](https://github.com/mysterus44/DigiTrove/pull/9)

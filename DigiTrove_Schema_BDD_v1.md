@@ -560,14 +560,15 @@ CREATE INDEX coupon_redemptions_redeemed_at_index ON coupon_redemptions (redeeme
 -- lors du contrôle par client, sinon le changement de clé contournerait le plafond.
 
 -- ============================================================================
--- 🅲.P3C PAIEMENTS & REMBOURSEMENTS — PLAN FINALISÉ (D-028 ; choix 1A–5A validés)
+-- 🅲.P3C PAIEMENTS & REMBOURSEMENTS — SCHÉMA MERGÉ (D-028 ; choix 1A–5A validés)
 -- ÉTAT : P3C-A `payments` MERGÉ (PR #6 -> 4a077db ; 4 fonctions / 5 triggers dont 2
 --        constraint triggers différés). P3C-B `payment_webhook_events` MERGÉ (PR #8
 --        -> 51c4847 ; 3 fonctions / 3 triggers immédiats : immutabilité+transitions,
 --        cohérence webhook↔paiement, suppression contrôlée par rétention ; pas de statut
 --        'duplicate'). Durcissement P3C-B.1 MERGÉ (PR #9 -> 13932ac) : index de rejeu
 --        `(provider, external_event_id)` restreint aux signés (D-028.4). P3C-C `refunds`
---        reste à implémenter.
+--        MERGÉ (PR #10 -> 122332a ; migration 000007 ; 5 fonctions / 6 triggers dont
+--        2 constraint triggers différés ; commit final intégré 1270c53).
 --        Pour payments : `payments.status` est un VARCHAR(20)
 --        contraint ; provider est VARCHAR(32) ; les checks amount/currency sont doublés
 --        par le trigger immédiat validate_payment_order_amount (défense en profondeur).
@@ -666,7 +667,7 @@ ALTER TABLE payment_webhook_events ADD CONSTRAINT pwe_invalid_minimal_shape_chec
     )
 );
 -- Anti double-webhook signé (rejeu => ligne existante => réponse idempotente, pas de statut 'duplicate') :
-CREATE UNIQUE INDEX pwe_provider_external_event_unique ON payment_webhook_events (provider, external_event_id) WHERE external_event_id IS NOT NULL;
+CREATE UNIQUE INDEX pwe_provider_external_event_unique ON payment_webhook_events (provider, external_event_id) WHERE external_event_id IS NOT NULL AND signature_verified = true;
 -- Dédup des invalides sans identifiant externe :
 CREATE UNIQUE INDEX pwe_provider_payload_hash_unique   ON payment_webhook_events (provider, payload_hash) WHERE signature_verified = false;
 CREATE INDEX pwe_payment_id_index          ON payment_webhook_events (payment_id);
@@ -725,7 +726,7 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 -- comparaisons inter-lignes -> garanties par trigger (une FK/CHECK ne compare pas deux tables).
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- CATALOGUE DES FONCTIONS/TRIGGERS P3C (noms stables ; à créer dans les migrations)
+-- CATALOGUE DES FONCTIONS/TRIGGERS P3C (noms stables ; implémentés dans les migrations)
 -- Principe : les triggers refusent, ne mutent jamais ; le service exécute les mutations.
 -- ─────────────────────────────────────────────────────────────────────────────
 -- PAIEMENTS
@@ -1063,7 +1064,7 @@ Ordre technique des migrations à respecter avant P1 :
 
 1. `users` + `customer_profiles` + `visitors` (fondation identité) ✅
 2. `categories` + `products` + `product_prices` + `product_files` + pivots catalogue ✅
-3. Commerce P3 (bloc ci-dessus) — plan validé, aucune migration écrite tant que non validé
+3. Commerce P3 (bloc ci-dessus) — schéma complet mergé jusqu'à P3C-C (PR #10) ✅
 4. `download_grants` + `download_logs` (P4, livraison sécurisée)
 5. `events` partitionnée + rollups (analytique)
 6. `campaigns` + `customer_segments` (marketing)

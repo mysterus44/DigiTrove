@@ -39,15 +39,15 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
 
 - **P0 Fondations** ✅ terminé · **SITE-00** ✅ mergé · **P1 Identité** ✅ mergé
 - **P2 Catalogue** ✅ mergé (PR #3 → `aff4d05`)
-- **P3 Commerce** 🟡 P3A/P3B/P3C-A mergés · P3C plan finalisé (D-028, 1A–5A) ·
+- **P3 Commerce** ✅ schéma P3A/P3B/P3C mergé · P3C plan finalisé (D-028, 1A–5A) ·
   **P3C-B `payment_webhook_events` mergé** (PR #8 → `51c4847`) + **durcissement P3C-B.1**
-  (PR #9 → `13932ac`, index de rejeu réservé aux signés) · **P3C-C `refunds`
-  implémenté et durci par audit adversarial sur `p3c-c-refunds`, non mergé**
+  (PR #9 → `13932ac`, index de rejeu réservé aux signés) · **P3C-C `refunds` mergé**
+  (PR #10 → `122332a`, commit final `1270c53`)
 
-Prochaine étape : **review puis merge humain de P3C-C** vers
-`p0-foundations-laravel13`. Aucun P4/P5 avant ce merge. Migration `000007`, cinq
-fonctions, six triggers dont deux différés, plafond concurrent sous verrou `FOR UPDATE`.
-La nullification de l'initiateur est réservée à la FK `ON DELETE SET NULL`.
+Prochaine étape : **plan P4 — intégrité delivery/download**, dans une exécution séparée.
+Ne créer aucune migration ou logique P4 avant validation du plan. P5 reste non démarré.
+P3C-C est validé post-merge : 23 migrations, 107 tests / 1534 assertions, cinq fonctions,
+six triggers dont deux différés, plafond concurrent sous verrou Payment `FOR UPDATE`.
 
 ## 🔄 EN FIN DE TÂCHE
 

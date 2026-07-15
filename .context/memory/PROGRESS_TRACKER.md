@@ -11,7 +11,7 @@ P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
-P3 COMMERCE         : █████████░  P3C-C refunds implémenté sur branche, review/merge requis
+P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
 P4 LIVRAISON        : ░░░░░░░░░░  0%
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
@@ -22,8 +22,8 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > P1, P2, P3A et P3B sont mergés dans `p0-foundations-laravel13` (P3B via PR #5 →
 > `f07d225`).
 > P3C Paiements : plan BDD finalisé (D-028, 1A–5A). **P3C-A `payments` mergé via PR #6
-> (`4a077db`)**, P3C-B + hardening mergés via PR #8/#9 ; P3C-C `refunds` implémenté
-> sur `p3c-c-refunds`, non mergé.
+> (`4a077db`)**, P3C-B + hardening mergés via PR #8/#9 et P3C-C `refunds` mergé via
+> PR #10 (`122332a`).
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -209,10 +209,10 @@ Vérifications post-merge P2 sur `p0-foundations-laravel13` (`aff4d05`) :
 - `git diff --check` : PASS
 
 ## P3 — COMMERCE
-Statut : ✅ **P3A Coupons et Paniers** et **P3B Commandes** mergés dans
-`p0-foundations-laravel13` via PR #4 (`234e303`) et PR #5 (`f07d225`). **P3C-A et
-P3C-B mergés ; P3C-C Refunds implémenté sur `p3c-c-refunds`, non mergé**. Les tables,
-index et triggers suivent D-028 et `DigiTrove_Schema_BDD_v1.md`.
+Statut : ✅ schéma P3 Commerce complet et mergé dans `p0-foundations-laravel13` : P3A
+via PR #4 (`234e303`), P3B via PR #5 (`f07d225`), P3C-A via PR #6 (`4a077db`), P3C-B
+et son hardening via PR #8/#9, P3C-C Refunds via PR #10 (`122332a`). Les tables, index
+et triggers suivent D-028 et `DigiTrove_Schema_BDD_v1.md`.
 
 Ordre de migration révisé (D-024/D-027) : `coupons` → `coupon_currency_rules` →
 `coupon_products` → `coupon_categories` → `carts` → `cart_items` → `orders` →
@@ -235,7 +235,7 @@ Ordre de migration révisé (D-024/D-027) : `coupons` → `coupon_currency_rules
 | P3C-A tests de rollback isolés par frontière (`tests/Support/PhaseMigrationHarness`) | ✅ DONE — `migrate --path` jusqu'au gate + `migrate:rollback --path` du gate seul ; plus de `--step` |
 | P3C-B `payment_webhook_events` (migration + enum + modèle + factory + 3 fn / 3 triggers) | ✅ DONE — **mergé PR #8 → `51c4847`**, 13 tests ; rollback isolé par frontière |
 | P3C-B.1 durcissement rejeu (index unique réservé aux signés, migration `000006`) | ✅ DONE — **mergé PR #9 → `13932ac`** ; test adversarial |
-| P3C-C `refunds` (cumul par trigger immédiat + verrou) | ✅ DONE branche — migration `000007`, 5 fonctions / 6 triggers, review/merge requis |
+| P3C-C `refunds` (cumul par trigger immédiat + verrou) | ✅ DONE — **mergé PR #10 → `122332a`**, migration `000007`, 5 fonctions / 6 triggers |
 | OrderService (snapshot prix + nom) | ⬜ TODO |
 | CouponService (règle par devise, plafonds, verrou transactionnel) | ⬜ TODO |
 | PaymentGateway (interface) + 1 provider | ⬜ TODO |
@@ -246,12 +246,13 @@ Ordre de migration révisé (D-024/D-027) : `coupons` → `coupon_currency_rules
 | Job expiration paniers (7 j) + commandes pending (30 min) | ⬜ TODO |
 | Tests (snapshot, idempotence, montant falsifié, double webhook, remboursement partiel) | ⬜ TODO |
 
-Validation P3C-C sur PostgreSQL réel après audit adversarial : 23 migrations ; tests
+Validation P3C-C post-merge sur PostgreSQL réel : 23 migrations ; tests
 P3C-C 16/461 ; régressions P3C-B 13/189, P3C-A 16/221 et P3B 18/359 ; suite complète
 107 tests, 1534 assertions ; Pint 100 fichiers. Nullification manuelle de l'initiateur
 refusée mais `ON DELETE SET NULL` conservé, states factory composables, matrice différée
 complète, rollback isolé `000007` et courses INSERT/transition à deux connexions validés.
-P4/P5 non démarrés.
+Branche locale `p3c-c-refunds` supprimée après preuve du merge ; distante conservée à
+`1270c53`. `origin/main` intact à `11130f4`. P4/P5 non démarrés ; prochaine étape : plan P4.
 
 Décisions bloquantes tranchées (D-024) : prix panier dynamique, coupon fixe par devise,
 `product_id` nullable + snapshot, quantité ≥ 1, panier invité UUID+hash, un seul coupon.
@@ -271,8 +272,8 @@ migrations sont réversibles et rejouables via `migrate:fresh`.
 Couverture de régression : cascades réelles `carts` → `cart_items` et `coupons` →
 `coupon_currency_rules`/pivots testées ; produits et catégories préservés ; types
 PostgreSQL `citext`, `uuid` et `varchar(3)` verrouillés par introspection. Suite
-complète P3A : 44 tests, 322 assertions. P3A et P3B sont mergés ; P3C reste non
-démarré.
+complète P3A : 44 tests, 322 assertions. P3A, P3B et les trois gates P3C sont mergés ;
+aucune logique fournisseur, livraison ou téléchargement n'est démarrée.
 Décisions non bloquantes à confirmer à l'implémentation : durées d'expiration (7 j / 30 min),
 anonymisation invité, paiement tardif `requires_review`.
 

@@ -464,7 +464,8 @@ CHOIX :
    `processing_status='failed'`, `received_at`, `failed_at`, erreur générique sanitizée.
    Interdits : `filtered_payload`, signature brute, secret, token, données bancaires,
    `payment_id` déduit d'un contenu non fiable. `external_event_id` nullable ; signé valide
-   ⇒ non NULL. Index partiels : `UNIQUE(provider, external_event_id)` si non NULL ;
+   ⇒ non NULL. Index partiels : `UNIQUE(provider, external_event_id)` pour les événements
+   signés avec identifiant non NULL ;
    `UNIQUE(provider, payload_hash) WHERE signature_verified=false`. **Pas de statut
    `duplicate`** : un rejeu retrouve la ligne existante et répond de façon idempotente.
 5. **Transitions minimales (`5A`)** : protégées par triggers. Paiement :
@@ -510,14 +511,16 @@ ne doit pas réserver ce créneau ni bloquer un événement signé légitime (po
 restent dédupliqués par `(provider, payload_hash) WHERE signature_verified = false`.
 Correctif = migration additive `2026_07_14_000006_harden_webhook_external_event_unique`
 (jamais d'édition de la migration mergée), **mergé via PR #9 (`13932ac`)**. P3C-B mergé
-via PR #8 (`51c4847`). **P3C-C `refunds` est implémenté sur `p3c-c-refunds`, non
-mergé**, dans l'unique migration `000007` : enum `pending|processing|succeeded|failed|
-cancelled`, cinq fonctions, six triggers dont deux constraint triggers différés,
-plafond immédiat sous verrou Payment `FOR UPDATE`, rollback isolé et concurrence réelle
-testée. L'audit adversarial réserve la nullification de `initiated_by_user_id` à l'action
-FK imbriquée `ON DELETE SET NULL`, refuse la même mutation par UPDATE direct et couvre
-également la concurrence lors de transitions simultanées vers `succeeded`. Aucun
-changement de décision D-028, aucun remboursement HTTP ni fournisseur réel.
+via PR #8 (`51c4847`). **P3C-C `refunds` est implémenté et mergé** via
+[PR #10](https://github.com/mysterus44/DigiTrove/pull/10), merge
+`122332aa5cc9fc25e9bf1898224f5a1da30f6446` (parents `be74854` + `1270c53`), dans
+l'unique migration `000007` : enum `pending|processing|succeeded|failed|cancelled`, cinq
+fonctions, six triggers dont deux constraint triggers différés, plafond immédiat sous
+verrou Payment `FOR UPDATE`, rollback isolé et concurrence réelle testée. L'audit
+post-merge confirme la nullification de `initiated_by_user_id` réservée à l'action FK
+imbriquée `ON DELETE SET NULL`, le refus de la mutation par UPDATE direct et les courses
+par INSERT ou transition simultanée vers `succeeded`. Aucun changement de décision D-028,
+aucun remboursement HTTP ni fournisseur réel. P4/P5 restent non démarrés.
 
 ---
 
@@ -533,9 +536,9 @@ changement de décision D-028, aucun remboursement HTTP ni fournisseur réel.
 - **P2 Catalogue** : ✅ mergé dans `p0-foundations-laravel13` via PR #3 (`aff4d05`).
   Clos (voir D-022).
 - **P3 Commerce** : P3A Coupons et Paniers mergé via PR #4 (`234e303`, D-024 à
-  D-026). P3B Commandes mergé via PR #5 (`f07d225`, D-027). **P3C Paiements &
-  Remboursements : plan BDD finalisé (D-028, choix 1A–5A validés), implémentation non
-  démarrée** — à réaliser sur une branche dédiée dans une exécution séparée.
+  D-026). P3B Commandes mergé via PR #5 (`f07d225`, D-027). **P3C Paiements,
+  Webhooks et Remboursements mergé** via PR #6/#8/#9/#10 conformément à D-028 ; le
+  dernier merge P3C-C est `122332a`.
   Les durées d'expiration métier, l'anonymisation invité et la valeur exacte de
   rétention webhook (90 j recommandé) restent à confirmer avant les tranches concernées.
 
