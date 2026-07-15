@@ -12,7 +12,7 @@ SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
-P4 LIVRAISON        : ░░░░░░░░░░  0%
+P4 LIVRAISON        : █░░░░░░░░░  Plan BDD finalisé (D-029) — aucune migration
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
@@ -24,6 +24,9 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > P3C Paiements : plan BDD finalisé (D-028, 1A–5A). **P3C-A `payments` mergé via PR #6
 > (`4a077db`)**, P3C-B + hardening mergés via PR #8/#9 et P3C-C `refunds` mergé via
 > PR #10 (`122332a`).
+> **P4 Livraison : plan BDD finalisé (D-029)** — sous-gates P4-A `download_grants`
+> (`000008`) puis P4-B `download_logs` (`000009`) ; `licenses` exclu. Aucune
+> migration/logique P4 créée ; implémentation après validation humaine.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -310,17 +313,30 @@ Vérifications post-merge P3B sur `p0-foundations-laravel13` (`f07d225`) :
 - aucune table P3C/P4/P5, aucun paiement, webhook, checkout ou téléchargement
 
 ## P4 — LIVRAISON (⚠️ cœur sécurité)
+Statut : plan BDD finalisé (D-029), schéma cible + catalogue de triggers G1–G6 et
+plan de tests consignés dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`. Découpage :
+P4-A `download_grants` (migration `2026_07_14_000008`, branche `p4-a-download-grants`)
+puis P4-B `download_logs` (migration `2026_07_14_000009`). `licenses` exclu de P4
+(décision produit ouverte). Aucune migration ni logique P4 créée à ce jour ;
+implémentation P4-A après validation humaine du plan.
+
 | Tâche | Statut |
 |-------|--------|
-| Migrations download_grants / download_logs | ⬜ TODO |
-| Listener IssueDownloadGrants (sur OrderPaid) | ⬜ TODO |
-| DownloadService (token haché, expiration, quota atomique) | ⬜ TODO |
-| DownloadController + rate limiting | ⬜ TODO |
+| Plan BDD P4 + décision D-029 (unité du grant, token haché, invariants) | ✅ DONE — validé côté plan, migration après validation humaine |
+| P4-A migration `download_grants` (G1–G4, index partiels, rollback isolé `000008`) | ⬜ TODO |
+| P4-A modèle `DownloadGrant` + factory + relations (`OrderItem::downloadGrants()`, `ProductFile::downloadGrants()`) | ⬜ TODO |
+| P4-A tests PostgreSQL (token, autorisation, quota, concurrence 2 connexions, refund total différé) | ⬜ TODO |
+| P4-B migration `download_logs` (G5–G6, rétention contrôlée, rollback isolé `000009`) | ⬜ TODO |
+| P4-B enum `DownloadLogStatus` + modèle + factory + tests | ⬜ TODO |
+| Listener IssueDownloadGrants (sur OrderPaid) | ⬜ TODO — après schéma P4 |
+| DownloadService (token haché, expiration, quota atomique) | ⬜ TODO — après schéma P4 |
+| DownloadController + rate limiting | ⬜ TODO — après schéma P4 |
 | Stratégie gros fichiers (X-Accel-Redirect ou URL S3 pré-signée) | ⬜ TODO |
 | E-mail de livraison (double canal : écran + e-mail) | ⬜ TODO |
-| Révocation sur remboursement | ⬜ TODO |
-| Détection de partage de lien (> 3 IP / 24h) | ⬜ TODO |
+| Révocation sur remboursement (RefundService, même transaction que `refunded`) | ⬜ TODO — invariant BDD prévu par D-029 |
+| Détection de partage de lien (> 3 IP / 24h) | ⬜ TODO — requête sur `download_logs` |
 | Tests sécurité (lien expiré, quota, révoqué, 404 générique) | ⬜ TODO |
+| Phase licences (`licenses`) | ❌ BLOCKED — hors P4, décision produit KingKouda requise |
 
 ## P5 — ANALYTIQUE
 | Tâche | Statut |

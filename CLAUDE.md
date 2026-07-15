@@ -44,10 +44,15 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   (PR #9 → `13932ac`, index de rejeu réservé aux signés) · **P3C-C `refunds` mergé**
   (PR #10 → `122332a`, commit final `1270c53`)
 
-Prochaine étape : **plan P4 — intégrité delivery/download**, dans une exécution séparée.
-Ne créer aucune migration ou logique P4 avant validation du plan. P5 reste non démarré.
-P3C-C est validé post-merge : 23 migrations, 107 tests / 1534 assertions, cinq fonctions,
-six triggers dont deux différés, plafond concurrent sous verrou Payment `FOR UPDATE`.
+- **Plan P4 Livraison** ✅ finalisé (**D-029**) : P4-A `download_grants` (`000008`)
+  puis P4-B `download_logs` (`000009`) ; `licenses` exclu de P4. Schéma cible +
+  triggers G1–G6 + tests dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
+
+Prochaine étape : **validation humaine du plan P4 par KingKouda**, puis implémentation
+P4-A (`p4-a-download-grants`) dans une exécution séparée. Aucune migration ou logique
+P4 avant cette validation. P5 reste non démarré. P3C-C est validé post-merge :
+23 migrations, 107 tests / 1534 assertions, plafond concurrent sous verrou Payment
+`FOR UPDATE`.
 
 ## 🔄 EN FIN DE TÂCHE
 

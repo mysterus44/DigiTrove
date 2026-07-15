@@ -844,37 +844,180 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 -- RÉGRESSION P3B : confirmation + redemption + commande payée en une transaction ; double
 --   consommation coupon bloquée ; triggers P3B inchangés ; aucun download_grant ; aucune table P4/P5.
 
--- ===== P4 LIVRAISON (HORS P3 — référence uniquement, non migré en P3) =====
+-- ============================================================================
+-- ===== P4 LIVRAISON — PLAN FINALISÉ (D-029 ; schéma cible, NON migré) =====
+-- Sous-gates : P4-A `download_grants` (migration `2026_07_14_000008`) puis
+--              P4-B `download_logs` (migration `2026_07_14_000009`), chacun sur
+--              branche dédiée avec rollback isolé par frontière (harness).
+-- `licenses` est EXCLU de P4 (option produit non décidée — cf. D-029 ; ne pas créer).
+-- Unité du grant : order_item × product_file (D-009 + SECURITE_TELECHARGEMENT.md).
+-- Token brut = random_bytes(32), envoyé UNE fois (e-mail) ; en BDD UNIQUEMENT son
+-- hash SHA-256 (VARCHAR(64) hex lowercase). Jamais dans logs/exceptions/metadata.
+-- La possession du token livré à orders.customer_email est la preuve d'accès
+-- (checkout invité inclus) ; user_id est un rattachement d'AUDIT optionnel,
+-- jamais une preuve d'autorisation. Rotation = révocation + réémission d'un
+-- grant frais (aucun compteur de version de token).
+-- Précondition de création : commande en statut LIVRABLE (paid|partially_refunded)
+-- après confirmation SERVEUR (D-010). pending/payment_review/cancelled/expired/
+-- refunded ne livrent jamais. Commande gratuite paid : livrable sans ligne
+-- payments (flux gratuit D-028.2).
+-- Remboursement TOTAL : la transaction qui passe la commande à `refunded` doit
+-- révoquer tous les grants actifs (invariant différé bidirectionnel ci-dessous).
+-- Remboursement PARTIEL : AUCUNE révocation automatique possible — `refunds` ne
+-- porte qu'un payment_id, aucune allocation par ligne (limite P3C-C assumée) ;
+-- révocation manuelle/support seulement. Un ciblage par ligne exigerait une table
+-- d'allocation refund→order_item et une décision dédiée (hors P4).
+-- Versionnement : le grant pointe la ligne product_files ACHETÉE (version achetée,
+-- jamais d'upgrade implicite) ; remplacement critique => révocation explicite +
+-- réémission vers le nouveau fichier. Émission exigée sur fichier is_active.
+-- Statut du grant DÉRIVÉ (revoked_at / expires_at / downloads_count) : AUCUN enum
+-- stocké — `expired` dépend de l'horloge, PostgreSQL ne pourrait pas garantir la
+-- cohérence d'un statut matérialisé. Seul download_logs.status est un enum stocké.
+-- Suppression physique des grants INTERDITE (révocation seulement, trace à vie).
+-- download_logs est la SEULE table P4 purgeable (rétention contrôlée, RGPD).
 
--- 🔐 LIVRAISON SÉCURISÉE : le cœur de ton business digital.
--- On ne donne JAMAIS l'URL du fichier. On donne un token, dont on ne stocke
--- que le HASH (exactement comme un mot de passe).
+-- P4-A — DROITS DE TÉLÉCHARGEMENT
 CREATE TABLE download_grants (
-    id              BIGSERIAL PRIMARY KEY,
-    order_item_id   BIGINT NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-    product_file_id BIGINT NOT NULL REFERENCES product_files(id) ON DELETE CASCADE,
-    user_id         BIGINT REFERENCES users(id) ON DELETE SET NULL,
-    token_hash      TEXT   NOT NULL UNIQUE,        -- SHA-256 du token envoyé
-    expires_at      TIMESTAMPTZ NOT NULL,          -- ex: +72h
-    max_downloads   INT    NOT NULL DEFAULT 5,
-    downloads_count INT    NOT NULL DEFAULT 0,
-    revoked_at      TIMESTAMPTZ,                   -- révocation si fraude/remboursement
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                  BIGSERIAL PRIMARY KEY,
+    public_id           UUID   NOT NULL,               -- identifiant public ≠ secret
+    order_item_id       BIGINT NOT NULL REFERENCES order_items(id) ON DELETE RESTRICT,
+    product_file_id     BIGINT NOT NULL REFERENCES product_files(id) ON DELETE RESTRICT,
+    user_id             BIGINT REFERENCES users(id) ON DELETE SET NULL,  -- audit seul
+    token_hash          VARCHAR(64) NOT NULL,          -- SHA-256 ; token brut JAMAIS stocké
+    expires_at          TIMESTAMPTZ NOT NULL,          -- TTL recommandé 72 h (config, à confirmer)
+    max_downloads       BIGINT NOT NULL DEFAULT 5,
+    downloads_count     BIGINT NOT NULL DEFAULT 0,
+    revoked_at          TIMESTAMPTZ,                   -- set-once, apparié au motif
+    revoked_reason_code VARCHAR(100),                  -- ex: refund|fraud|file_replaced|support
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX ON download_grants (order_item_id);
-CREATE INDEX ON download_grants (expires_at);
+ALTER TABLE download_grants ADD CONSTRAINT download_grants_public_id_unique  UNIQUE (public_id);
+ALTER TABLE download_grants ADD CONSTRAINT download_grants_token_hash_unique UNIQUE (token_hash);
+ALTER TABLE download_grants ADD CONSTRAINT download_grants_token_hash_format_check CHECK (token_hash ~ '^[0-9a-f]{64}$');
+ALTER TABLE download_grants ADD CONSTRAINT download_grants_expires_after_created_check CHECK (expires_at > created_at);
+ALTER TABLE download_grants ADD CONSTRAINT download_grants_max_downloads_positive_check CHECK (max_downloads >= 1);
+ALTER TABLE download_grants ADD CONSTRAINT download_grants_count_within_quota_check CHECK (downloads_count >= 0 AND downloads_count <= max_downloads);
+-- Révocation appariée, stricte face à CHECK = UNKNOWN :
+ALTER TABLE download_grants ADD CONSTRAINT download_grants_revocation_pair_check CHECK (
+    (CASE
+        WHEN revoked_at IS NULL THEN revoked_reason_code IS NULL
+        ELSE revoked_reason_code IS NOT NULL AND length(btrim(revoked_reason_code)) > 0
+    END) IS TRUE
+);
+-- Un seul grant ACTIF par couple (réémission possible après révocation, quantité
+-- multi-unités gérée par max_downloads, licences hors P4) :
+CREATE UNIQUE INDEX download_grants_active_pair_unique
+    ON download_grants (order_item_id, product_file_id) WHERE revoked_at IS NULL;
+CREATE INDEX download_grants_order_item_id_index   ON download_grants (order_item_id);
+CREATE INDEX download_grants_product_file_id_index ON download_grants (product_file_id);
+CREATE INDEX download_grants_user_id_index         ON download_grants (user_id);
+CREATE INDEX download_grants_active_expiry_index   ON download_grants (expires_at) WHERE revoked_at IS NULL;
 
--- Journal de téléchargement : détection d'abus (partage de lien)
+-- P4-B — JOURNAL DE CONSOMMATION (append-only, purgeable après rétention)
 CREATE TABLE download_logs (
-    id         BIGSERIAL PRIMARY KEY,
-    grant_id   BIGINT NOT NULL REFERENCES download_grants(id) ON DELETE CASCADE,
-    ip_hash    TEXT,
-    user_agent TEXT,
-    bytes_sent BIGINT,
-    status     TEXT NOT NULL CHECK (status IN ('started','completed','denied')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                 BIGSERIAL PRIMARY KEY,
+    download_grant_id  BIGINT NOT NULL REFERENCES download_grants(id) ON DELETE RESTRICT,
+    status             VARCHAR(20) NOT NULL CHECK (status IN ('started','completed','denied')),
+    ip_hash            VARCHAR(64),                    -- HMAC-SHA-256 (clé hors BDD) ; JAMAIS l'IP brute
+    user_agent         VARCHAR(500),                   -- tronqué côté service
+    bytes_sent         BIGINT,
+    retention_until    TIMESTAMPTZ,                    -- purge RGPD (365 j recommandé, à confirmer)
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX ON download_logs (grant_id, created_at DESC);
+ALTER TABLE download_logs ADD CONSTRAINT download_logs_ip_hash_format_check CHECK (ip_hash IS NULL OR ip_hash ~ '^[0-9a-f]{64}$');
+ALTER TABLE download_logs ADD CONSTRAINT download_logs_user_agent_not_blank_check CHECK (user_agent IS NULL OR length(btrim(user_agent)) > 0);
+ALTER TABLE download_logs ADD CONSTRAINT download_logs_bytes_sent_non_negative_check CHECK (bytes_sent IS NULL OR bytes_sent >= 0);
+CREATE INDEX download_logs_grant_created_index   ON download_logs (download_grant_id, created_at DESC);
+CREATE INDEX download_logs_retention_until_index ON download_logs (retention_until);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- CATALOGUE DES FONCTIONS/TRIGGERS P4 (noms stables ; les triggers REFUSENT,
+-- ne mutent jamais ; le futur DownloadService exécute les mutations).
+-- Ordre de verrouillage global étendu : orders -> payments -> coupons ->
+-- refunds/agrégats -> download_grants.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- P4-A
+--  G1 prevent_download_grants_delete()      / download_grants_prevent_delete_trigger
+--        BEFORE DELETE -> RAISE 23514 (un grant se révoque, ne se supprime jamais).
+--  G2 enforce_download_grants_immutability() / download_grants_enforce_immutability_trigger
+--        BEFORE UPDATE. Figés : id, public_id, order_item_id, product_file_id,
+--        token_hash, expires_at, max_downloads, created_at. user_id : non-NULL->NULL
+--        UNIQUEMENT via l'action FK imbriquée ON DELETE SET NULL (pattern refunds).
+--        downloads_count : monotone, +1 EXACTEMENT par UPDATE, refusé si
+--        OLD.revoked_at IS NOT NULL, si OLD.expires_at <= now() ou si le quota est
+--        atteint (défense en profondeur du CHECK). revoked_at + revoked_reason_code :
+--        set-once APPARIÉS (NULL->valeur ensemble), dé-révocation interdite ;
+--        consommation et révocation jamais combinées dans le même UPDATE.
+--  G3 validate_download_grant_delivery()    / download_grants_validate_delivery_trigger
+--        BEFORE INSERT (immédiat) :
+--          1. verrouille la commande du order_item : SELECT ... FROM orders ...
+--             FOR UPDATE (sérialise contre un remboursement/annulation concurrent ;
+--             respecte l'ordre de verrouillage global) ;
+--          2. order.status IN ('paid','partially_refunded') ;
+--          3. order_item.product_id NOT NULL (lignée non prouvable sinon -> refus) ;
+--          4. product_file.is_active = true à l'émission ;
+--          5. lignée fichier : product_file.product_id = order_item.product_id, OU
+--             order_item.product_type_snapshot = 'bundle' ET product_file.product_id
+--             IN (SELECT child_product_id FROM product_bundles WHERE bundle_id =
+--             order_item.product_id) ;
+--          6. NEW.downloads_count = 0 et NEW.revoked_at IS NULL à la naissance.
+--        L'inexistence du order_item/product_file reste au message FK (pattern P3C).
+--  G4 validate_download_grant_order_consistency() / DEFERRABLE INITIALLY DEFERRED,
+--        monté sur download_grants_validate_order_consistency_trigger
+--        (AFTER INSERT OR UPDATE OF revoked_at ON download_grants) ET
+--        orders_validate_download_consistency_trigger (AFTER UPDATE OF status ON orders).
+--        Au COMMIT : tout grant ACTIF (revoked_at IS NULL) => sa commande est en
+--        statut livrable (paid|partially_refunded). Une commande refunded/cancelled/
+--        expired/pending/payment_review ne conserve AUCUN grant actif au commit ;
+--        le RefundService révoque les grants et change orders.status dans la MÊME
+--        transaction (ordre des opérations réparable). Aucune mutation automatique
+--        de orders.status ; les téléchargements déjà consommés restent en historique.
+-- P4-B
+--  G5 enforce_download_logs_immutability()  / download_logs_enforce_immutability_trigger
+--        BEFORE UPDATE. Journal append-only : seuls status 'started' -> 'completed'|
+--        'denied' (terminal, non réactivable), bytes_sent NULL->valeur et
+--        retention_until NULL->valeur/extension sont autorisés ; tout le reste figé.
+--  G6 enforce_download_logs_retention_delete() / download_logs_retention_delete_trigger
+--        BEFORE DELETE : suppression AUTORISÉE uniquement si retention_until <= now()
+--        ET status terminal (completed|denied). Sinon RAISE. (Job de purge hors P4-B ;
+--        seule la garde existe — pattern T7 webhooks.)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PLAN DE TESTS PostgreSQL RÉEL P4 (jamais SQLite ; SET CONSTRAINTS ALL IMMEDIATE
+-- pour forcer les différés ; SQLSTATE + nom de contrainte/message exacts)
+-- ─────────────────────────────────────────────────────────────────────────────
+-- SCHÉMA : types physiques (uuid/bigint/varchar(64)/timestamptz), FK RESTRICT/SET NULL,
+--   CHECK nommés, index partiels, fonctions/triggers présents, différés confirmés,
+--   absence licenses/events/P5.
+-- TOKEN : hash 64 hex accepté ; hash invalide/majuscule refusé ; unicité ; token brut
+--   absent de toute colonne ; réémission après révocation OK ; deux grants actifs même
+--   couple refusés (index partiel).
+-- AUTORISATION : commande paid livrable ; partially_refunded livrable ; pending/
+--   payment_review/cancelled/expired/refunded refusés ; commande gratuite paid
+--   livrable sans payment ; order_item.product_id NULL refusé ; fichier inactif
+--   refusé ; fichier d'un autre produit refusé ; fichier enfant de bundle accepté ;
+--   fichier hors bundle refusé.
+-- LIMITES : consommation +1 OK ; dépassement quota refusé (CHECK + trigger) ;
+--   consommation après expiration refusée ; consommation après révocation refusée ;
+--   décrément/écart > 1 refusé ; révocation set-once appariée au motif ;
+--   dé-révocation refusée ; combinaison consommation+révocation refusée.
+-- CONCURRENCE (2 connexions réelles) : une seule utilisation restante -> une
+--   transaction réussit, l'autre échoue proprement ; aucun compteur > quota ;
+--   grants distincts sans blocage mutuel ; émission de grant vs remboursement total
+--   concurrent sérialisés par le verrou orders (aucun grant actif orphelin).
+-- REMBOURSEMENTS : refund partiel -> grants conservés ; refund total + révocation
+--   dans la même transaction -> commit OK ; refund total sans révocation -> refus au
+--   COMMIT ; révocation puis changement de statut dans tout ordre transactionnel -> réparable ;
+--   rollback préserve l'état antérieur.
+-- SUPPRESSION : DELETE grant refusé ; DELETE user -> user_id NULL, grant intact ;
+--   nullification manuelle user_id refusée ; DELETE product bloqué par RESTRICT
+--   (via product_files) ; DELETE log avant rétention refusé, après rétention +
+--   statut terminal accepté.
+-- ROLLBACK ISOLÉ (PhaseMigrationHarness) : P4-A frontière exacte `..._000008`,
+--   down() du seul gate, P3C-C/P3C-B/P3C-A/P3B préservés, aucune migration P4-B/P5
+--   appliquée ; P4-B frontière `..._000009`, download_grants préservée ; nettoyage
+--   dans finally, aucune base temporaire résiduelle.
 ```
 
 ---
@@ -1060,12 +1203,14 @@ Ordre technique des migrations à respecter avant P1 :
    `payments` → `payment_webhook_events` → `refunds`.
    (P3B crée `orders`, `order_items`, puis `coupon_redemptions`; cette dernière reste
    vide jusqu'à la confirmation serveur d'un paiement en P3C.)
-5. `licenses` après `order_items` (P4, optionnel).
+5. `licenses` : EXCLU de P4 (D-029) — option produit non décidée, à trancher par
+   KingKouda avant toute phase licences dédiée.
 
 1. `users` + `customer_profiles` + `visitors` (fondation identité) ✅
 2. `categories` + `products` + `product_prices` + `product_files` + pivots catalogue ✅
 3. Commerce P3 (bloc ci-dessus) — schéma complet mergé jusqu'à P3C-C (PR #10) ✅
-4. `download_grants` + `download_logs` (P4, livraison sécurisée)
+4. `download_grants` (P4-A, migration `000008`) puis `download_logs` (P4-B,
+   migration `000009`) — plan finalisé D-029, non migré
 5. `events` partitionnée + rollups (analytique)
 6. `campaigns` + `customer_segments` (marketing)
 7. Affiliation dédiée (`affiliate_profiles`, `affiliate_links`, `referrals`,

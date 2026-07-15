@@ -6,10 +6,10 @@
 
 ## 📍 ÉTAT ACTUEL
 
-- **Dernier agent** : Codex
+- **Dernier agent** : Claude Code
 - **Date** : 2026-07-15
-- **Branche git active** : `p0-foundations-laravel13` à `122332a` (synchronisée avec
-  `origin/p0-foundations-laravel13` ; P3C-C mergé et clôturé)
+- **Branche git active** : `p0-foundations-laravel13` à `94d0dec` (synchronisée avec
+  `origin/p0-foundations-laravel13` ; P3C-C clôturé, plan P4 finalisé D-029)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -235,24 +235,32 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**P3C-C `refunds` est mergé** dans `p0-foundations-laravel13` via
-[PR #10](https://github.com/mysterus44/DigiTrove/pull/10), merge `122332a` (parents
-`be74854` + `1270c53`). La migration `000007`, l'enum, le modèle/factory, cinq fonctions,
-six triggers et les deux constraint triggers différés sont confirmés dans PostgreSQL.
+**Le plan P4 — Delivery & Download Integrity est finalisé (D-029).** Schéma cible,
+catalogue de fonctions/triggers G1–G6, index partiels, threat model et plan de tests
+sont consignés dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`. Découpage validé côté
+plan : **P4-A `download_grants`** (migration `2026_07_14_000008`, branche
+`p4-a-download-grants`) puis **P4-B `download_logs`** (migration `2026_07_14_000009`).
+`licenses` est EXCLU de P4 (décision produit ouverte, liée à la question `usb`).
 
-Validation post-merge réelle : 23 migrations ; P3C-C 16 tests / 461 assertions ; P3C-B
-13/189 ; P3C-A 16/221 ; P3B 18/359 ; suite complète 107/1534 ; Pint 100 fichiers ;
-`git diff --check` propre. Le plafond des seuls refunds `succeeded` est sérialisé sous
-verrou Payment `FOR UPDATE`; les courses 6000 + 6000 sur capture 10000 échouent en
-`23514` pour la seconde transaction, sans blocage global entre Payments distincts. La
-matrice `paid` / `partially_refunded` / `refunded`, la nullification FK contrôlée de
-l'initiateur et le rollback isolé `000007` sont verts. Aucune base temporaire résiduelle.
-
-Action suivante : **plan P4 — intégrité de livraison et téléchargements**, dans une
-exécution séparée, avant toute migration ou logique P4. P5 reste non démarré.
+Action suivante : **validation humaine du plan P4 par KingKouda**, puis implémentation
+P4-A dans une exécution séparée. Points clés du contrat P4-A : unité
+`order_item × product_file`, `token_hash VARCHAR(64)` SHA-256 unique (token brut
+jamais stocké), `public_id UUID`, FK RESTRICT (jamais de cascade d'historique),
+un seul grant ACTIF par couple (index partiel `WHERE revoked_at IS NULL`),
+préconditions d'émission sous verrou `orders FOR UPDATE` (statut livrable
+`paid|partially_refunded`, fichier actif, lignée produit/bundle prouvée),
+consommation +1 atomique bornée par `max_downloads`, révocation set-once appariée
+à un motif, invariant différé bidirectionnel « grant actif ⇒ commande livrable »
+(remboursement TOTAL révoque tout dans la même transaction ; remboursement PARTIEL
+sans révocation automatique — `refunds` n'a pas d'allocation par ligne).
+À l'implémentation P4-A : retirer `download_grants` des seules assertions globales
+« table interdite », conserver les assertions des rollbacks isolés (frontières <
+`000008`) et l'interdiction `download_logs`/`licenses`/P5. Valeurs non bloquantes à
+confirmer : TTL 72 h, `max_downloads` 5, rétention logs 365 j.
 
 Gate : aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret,
-SDK, Filament, job de purge, `download_grant`, téléchargement ou déploiement Azure.
+SDK, Filament, job de purge, téléchargement réel, token réel ou déploiement Azure.
+Aucune migration P4 avant validation du plan. P5 reste non démarré.
 Ne jamais pousser sur `main`. Plan avant code, une feature à la fois, BDD avant logique.
 
 Note régression P3C-A (transparence) : ajouter `payments` a rendu obsolètes des
@@ -315,6 +323,31 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-15 — Claude Code (plan final P4 Delivery & Download Integrity)
+- Fait : **finalisation documentaire du plan P4** (exécution strictement documentaire,
+  décision **D-029**). Garde-fous Git confirmés : `p0-foundations-laravel13` à
+  `94d0dec` = distant, worktree propre, `122332a`/`1270c53` ancêtres, `origin/main`
+  intact à `11130f4`, aucune branche/migration/classe P4 existante. Bloc P4 de
+  `DigiTrove_Schema_BDD_v1.md` réécrit : schéma cible `download_grants` (P4-A,
+  `000008`) et `download_logs` (P4-B, `000009`), CHECK nommés anti-`CHECK = UNKNOWN`,
+  index partiels (un grant actif par couple), catalogue G1–G6 (prevent-delete,
+  immutabilité + consommation +1 bornée, préconditions d'émission sous verrou
+  `orders FOR UPDATE` avec lignée produit/bundle, cohérence différée bidirectionnelle
+  grant↔commande, journal append-only, purge contrôlée par rétention), threat model
+  et plan de tests (dont concurrence à 2 connexions sur la dernière utilisation).
+- Contrat prouvé sans nouvelle décision humaine : D-009/D-010/D-014/D-028 + schéma
+  v1 + `SECURITE_TELECHARGEMENT.md`. `licenses` exclu de P4 (option produit non
+  décidée). Limite P3C-C documentée : remboursement partiel non ciblable par ligne
+  ⇒ aucune révocation automatique en partiel ; révocation totale exigée au commit
+  quand la commande passe à `refunded`.
+- État build/tests : `git diff --check` OK ; **aucun fichier PHP touché** (docs
+  seuls : DECISIONS_LOG, schéma v1, PROGRESS_TRACKER, HANDOFF, CLAUDE.md). Baseline
+  inchangée : 23 migrations, 107 tests / 1534 assertions, Pint 100 fichiers.
+- Décisions prises (→ DECISIONS_LOG.md) : **D-029** plan P4.
+- Laisse à : **validation humaine du plan P4**, puis implémentation P4-A
+  (`p4-a-download-grants`, migration `000008`) dans une exécution séparée. Aucune
+  migration, modèle, enum, factory, route, service ou logique P4/P5 créés ici.
 
 ### 2026-07-15 — Codex (clôture post-merge P3C-C Refunds)
 - Fait : **P3C-C mergé** via [PR #10](https://github.com/mysterus44/DigiTrove/pull/10),

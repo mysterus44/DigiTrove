@@ -522,6 +522,108 @@ imbriquée `ON DELETE SET NULL`, le refus de la mutation par UPDATE direct et le
 par INSERT ou transition simultanée vers `succeeded`. Aucun changement de décision D-028,
 aucun remboursement HTTP ni fournisseur réel. P4/P5 restent non démarrés.
 
+### D-029 : P4 — Delivery & Download Integrity (plan finalisé, avant migration) ✅
+CONTEXTE : P3 Commerce est intégralement mergé (dernier merge P3C-C `122332a`).
+Le cœur sécurité du produit — livraison automatisée des fichiers digitaux — doit
+être planifié en BDD avant toute migration. Le contrat est intégralement dérivable
+des décisions existantes : D-009 (token haché, expiration/quota/révocation),
+D-010 (confirmation serveur stricte, jamais de livraison sur retour navigateur),
+D-014 (checkout invité), D-028.2/3 (statuts commande livrables, commande gratuite
+`paid` sans ligne payments, matrice refunds↔order), bloc P4 de référence du schéma
+v1 et `SECURITE_TELECHARGEMENT.md`. Aucune décision humaine nouvelle n'est requise.
+CHOIX :
+1. **Découpage minimal** : P4-A `download_grants` (migration `2026_07_14_000008`)
+   puis P4-B `download_logs` (migration `2026_07_14_000009`), chacun sur branche
+   dédiée avec rollback isolé par frontière (`PhaseMigrationHarness`). **`licenses`
+   est EXCLU de P4** : la table est marquée « optionnel selon catalogue » depuis v1 ;
+   aucune preuve d'un besoin MVP — décision produit à trancher séparément avant
+   toute phase licences. Aucune logique applicative (listener, service, contrôleur,
+   e-mail, purge) dans ces gates : BDD avant logique.
+2. **Unité du grant** : `order_item × product_file` (D-009). Un index unique
+   PARTIEL `(order_item_id, product_file_id) WHERE revoked_at IS NULL` garantit un
+   seul grant ACTIF par couple tout en permettant la réémission après révocation.
+   `quantity > 1` ne multiplie pas les grants (consommation via `max_downloads` ;
+   les licences par unité relèveraient de la phase licences exclue).
+3. **Acteurs et preuve d'accès** : la possession du token (envoyé UNE fois à
+   `orders.customer_email`) est la preuve d'accès — checkout invité couvert sans
+   compte (D-014). `user_id` est un rattachement d'audit nullable `ON DELETE SET
+   NULL` (nullification manuelle refusée, pattern refunds), JAMAIS une preuve
+   d'autorisation. La suppression de l'acheteur ne détruit ni ne réactive rien :
+   le grant reste ancré sur `order_item` (NOT NULL, RESTRICT).
+4. **Token** : brut = `random_bytes(32)`, jamais stocké/logué ; en BDD uniquement
+   `token_hash VARCHAR(64) UNIQUE CHECK '^[0-9a-f]{64}$'` (SHA-256, comparaison par
+   hash à longueur fixe) + `public_id UUID` (identifiant public séparé du secret).
+   Rotation = révocation + réémission d'un grant frais (pas de compteur de version).
+   `expires_at TIMESTAMPTZ NOT NULL` obligatoire (TTL recommandé 72 h, config env,
+   valeur à confirmer — non bloquant) ; `max_downloads` défaut 5 (idem).
+5. **Préconditions de création (trigger immédiat G3)** : commande en statut
+   livrable `paid|partially_refunded` (confirmation serveur D-010), verrou de la
+   ligne `orders` (`FOR UPDATE`, ordre global étendu : orders → payments → coupons
+   → refunds → download_grants) sérialisant l'émission contre un remboursement
+   concurrent ; `order_item.product_id NOT NULL` ; `product_file.is_active = true`
+   à l'émission ; lignée fichier prouvée (fichier du produit acheté, ou d'un enfant
+   `product_bundles` si la ligne est un bundle). `payment_review` ne livre JAMAIS
+   (paiement tardif D-028) ; commande gratuite `paid` livrable sans ligne payments.
+6. **Consommation et concurrence** : compteur `downloads_count BIGINT` protégé par
+   `CHECK (0 <= downloads_count <= max_downloads)` + trigger G2 (incrément +1
+   EXACT, refusé si révoqué, expiré ou quota atteint). Point de sérialisation = la
+   ligne grant elle-même (UPDATE conditionnel atomique côté service, pattern
+   SECURITE_TELECHARGEMENT) ; deux téléchargements simultanés sur la dernière
+   utilisation → un seul réussit, jamais de compteur négatif ni de dépassement ;
+   grants distincts sans blocage mutuel. Modèle HYBRIDE retenu : compteur protégé
+   sur le grant + journal `download_logs` (audit/détection de partage).
+7. **Remboursements** : total (`orders.status = refunded`) ⇒ AUCUN grant actif au
+   COMMIT — invariant différé bidirectionnel G4 (constraint triggers `DEFERRABLE
+   INITIALLY DEFERRED` sur `download_grants` et `orders`) ; le RefundService révoque
+   et change le statut dans la même transaction (ordre réparable). Partiel
+   (`partially_refunded`) ⇒ grants conservés, AUCUNE révocation automatique :
+   `refunds` ne porte qu'un `payment_id`, aucune allocation par ligne — limite
+   P3C-C assumée et documentée ; révocation manuelle/support possible. Un ciblage
+   par ligne exigerait une table d'allocation refund→order_item et une décision
+   dédiée. L'invariant couvre aussi cancelled/expired/pending/payment_review :
+   aucun grant actif hors statut livrable.
+8. **Versionnement fichier** : le grant pointe la ligne `product_files` achetée
+   (version achetée) ; jamais d'upgrade implicite vers un fichier non acheté ;
+   remplacement critique ⇒ révocation explicite (`revoked_reason_code =
+   'file_replaced'`) + réémission. FK `product_file_id ON DELETE RESTRICT` : la
+   suppression physique d'un produit vendu est refusée (la cascade
+   products→product_files se heurte au RESTRICT) — l'historique de livraison
+   survit ; les produits restent SoftDeleted en fonctionnement normal.
+9. **Statut dérivé, pas stocké** : aucun enum de grant (`active/exhausted/expired/
+   revoked` se dérivent de `revoked_at`/`expires_at`/`downloads_count`) —
+   `expired` dépend de l'horloge et un statut matérialisé serait invérifiable par
+   PostgreSQL. Seul `download_logs.status` (`started/completed/denied`) est stocké
+   (enum PHP `DownloadLogStatus` en P4-B). Révocation set-once APPARIÉE à un motif
+   (`revoked_at` + `revoked_reason_code` ensemble, `CASE … IS TRUE` anti-UNKNOWN).
+10. **Suppression et rétention** : `download_grants` = prevent-delete absolu (G1,
+    un grant se révoque et ne se supprime jamais) ; `download_logs` = SEULE table
+    P4 purgeable, `retention_until` + garde BEFORE DELETE (statut terminal ET
+    rétention échue, pattern T7 webhooks ; job de purge hors P4). `ip_hash` =
+    HMAC-SHA-256 (clé hors BDD), jamais d'IP brute ; `user_agent` tronqué (500) ;
+    minimisation RGPD ; rétention recommandée 365 j (valeur à confirmer — non
+    bloquant). FK `download_logs.download_grant_id ON DELETE RESTRICT` (aucune
+    cascade détruisant l'audit).
+CATALOGUE D'OBJETS : G1–G4 (P4-A) et G5–G6 (P4-B), schéma exact, CHECK nommés,
+index partiels, matrice de tests et threat model consignés dans le bloc P4 de
+`DigiTrove_Schema_BDD_v1.md`. Les triggers REFUSENT et ne mutent jamais.
+ALTERNATIVES REJETÉES : FK `ON DELETE CASCADE` du schéma brouillon v1 (cascade
+supprimant l'historique de livraison) ; `token_hash TEXT` libre (remplacé par le
+format strict 64 hex) ; unité `order × product_file` ou `customer × product_file`
+(perte du lien au snapshot commercial, partage accidentel entre achats) ; statut
+de grant stocké (redondance invérifiable) ; compteur de version de token (rotation
+par réémission suffit) ; révocation automatique sur remboursement partiel
+(impossible sans allocation par ligne) ; création de `licenses` « parce que listée » ;
+journal IP en clair ; grant dépendant exclusivement d'un `user` supprimable.
+IMPACT : bloc P4 de `DigiTrove_Schema_BDD_v1.md` réécrit (schéma cible + catalogue
+G1–G6 + plan de tests), PROGRESS_TRACKER, HANDOFF, CLAUDE.md. Prochaine étape :
+implémentation P4-A sur branche `p4-a-download-grants` (migration `000008`) après
+validation humaine de ce plan. À l'implémentation P4-A : retirer `download_grants`
+des seules assertions globales « table interdite » (Identity/Catalog/P3A/P3B/
+P3C-A/P3C-B/P3C-C) en CONSERVANT les assertions des rollbacks isolés dont la
+frontière précède `000008`, et en conservant l'interdiction de `download_logs`
+(jusqu'à P4-B), `licenses`, `events` et toute table P5+. Aucune migration, modèle,
+enum, factory, route, service ou logique P4/P5 créés par ce plan.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
@@ -541,6 +643,11 @@ aucun remboursement HTTP ni fournisseur réel. P4/P5 restent non démarrés.
   dernier merge P3C-C est `122332a`.
   Les durées d'expiration métier, l'anonymisation invité et la valeur exacte de
   rétention webhook (90 j recommandé) restent à confirmer avant les tranches concernées.
+- **Plan P4 (D-029)** : finalisé, en attente de validation humaine avant la
+  migration `000008`. Valeurs non bloquantes à confirmer à l'implémentation :
+  TTL des liens (72 h recommandé), `max_downloads` par défaut (5), rétention
+  `download_logs` (365 j recommandé). La phase licences reste une décision produit
+  ouverte (liée à la question `usb` du legacy).
 
 ---
 
