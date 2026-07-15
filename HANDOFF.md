@@ -9,8 +9,8 @@
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-15
 - **Branche git active** : `p0-foundations-laravel13` (synchronisée avec
-  `origin/p0-foundations-laravel13` ; P3C-C clôturé, plan P4 finalisé D-029 à
-  `202e4b8` puis validé par audit D-029.1, choix B–A–B)
+  `origin/p0-foundations-laravel13` ; P3C-C clôturé, plan P4 : D-029 à `202e4b8`,
+  audit D-029.1 B–A–B à `6ba74e4`, correction D-029.2 gates isolés + version figée)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -236,41 +236,42 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Le plan P4 est finalisé ET validé** (D-029 + amendement D-029.1 après audit
-contradictoire ; choix KingKouda : **B–A–B**). Schéma cible, catalogue G0–G6/S1–S2,
-threat model et plan de tests dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
+**Le plan P4 est finalisé, validé et corrigé** (D-029 + D-029.1 B–A–B + **D-029.2** :
+`product_files.version` figée avec le contenu, gate composite abandonné, quatre
+gates isolés). Schéma cible, catalogue G0–G6/S1–S2, threat model, plan de tests et
+table de préservation des rollbacks dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
 
-Action suivante : **implémenter P4-A** sur la branche `p4-a-download-grants` (depuis
-la stable), dans une exécution séparée, avec TROIS migrations (frontière de rollback
-du gate = `000010`) :
-1. `2026_07_14_000008_harden_product_files_content_immutability` — trigger G0 :
-   colonnes de CONTENU figées (`storage_disk`, `storage_path`, `checksum_sha256`,
-   `size_bytes`, `mime_type`) ; migration ADDITIVE, jamais d'édition de la migration
-   P2 mergée ; nouvelle version de contenu = nouvelle ligne `product_files`.
-2. `2026_07_14_000009_create_order_item_bundle_components_table` — snapshot des
-   composants de bundle figé à la commande (S1 prevent-delete, S2 immutabilité,
-   nullification FK contrôlée) ; alimentée par le futur OrderService (pattern
-   coupon_redemptions) ; la lignée bundle de G3 n'interroge QUE ce snapshot.
-3. `2026_07_14_000010_create_download_grants_table` — G1–G4 : unité
-   `order_item × product_file`, `token_hash VARCHAR(64)` SHA-256 unique (token brut
-   jamais stocké), `public_id UUID`, FK RESTRICT + `user_id SET NULL` audit, un seul
-   grant ACTIF par couple (index partiel `WHERE revoked_at IS NULL`),
-   **`max_downloads` et `expires_at` EXPLICITES (aucun DEFAULT commercial —
-   D-029.1-B)**, consommation +1 bornée, révocation set-once appariée au motif,
-   émission sous verrou `orders FOR UPDATE` (statut `paid|partially_refunded`,
-   fichier actif, lignée snapshot), invariant différé bidirectionnel « grant actif ⇒
-   commande livrable ». Règle d'orchestration rotation : verrouiller `orders` AVANT
-   de révoquer puis insérer (anti-deadlock).
-Adaptations historiques : retirer `download_grants` des seules assertions globales
-« table interdite », conserver les assertions des rollbacks isolés (frontières <
-`000008`) et l'interdiction `download_logs` (jusqu'à P4-B `000011`), `licenses`, P5.
-TTL 72 h / quota 5 / rétention 365 j = recommandations de config applicative (phase
-service), aucun default BDD.
+Action suivante : **P4-A0 — ProductFile Content Immutability**, dans une exécution
+séparée. STRICTEMENT ce périmètre :
+- branche : `p4-a0-product-file-immutability` (depuis la stable) ;
+- migration UNIQUE : `2026_07_14_000008_harden_product_files_content_immutability.php`
+  (ADDITIVE — la migration P2 mergée `2026_07_12_000004` n'est jamais éditée) ;
+- fonction + trigger G0 (`enforce_product_files_content_immutability` /
+  `product_files_enforce_content_immutability_trigger`, BEFORE UPDATE) : colonnes
+  FIGÉES = `product_id`, `storage_disk`, `storage_path`, `checksum_sha256`,
+  `size_bytes`, `mime_type`, `version`, `created_at` ; mutables = `is_active`,
+  `position`, `original_name` (libellé d'affichage uniquement — audit D-029.2) ;
+- tests adversariaux (chaque colonne figée refusée avec message stable, mutables
+  acceptées, nouvelle ligne pour nouvelle version acceptée, désactivation acceptée,
+  suite Catalog P2 verte) + rollback isolé frontière `000008` (down() ne retire que
+  G0 ; P0–P3C préservés ; `product_files` redevient mutable après rollback) ;
+- AUCUNE table : ni `order_item_bundle_components`, ni `download_grants`, ni
+  `download_logs` ; aucun modèle/enum/factory nouveau ;
+- PR vers `p0-foundations-laravel13`, ne jamais merger.
+Ensuite, chaque gate n'est créé qu'APRÈS merge du précédent :
+P4-A1 `p4-a1-bundle-purchase-snapshots` (`000009`, frontière `000009`) →
+P4-A2 `p4-a2-download-grants` (`000010`, frontière `000010` ; adaptations
+historiques : retirer `download_grants` des seules assertions globales « table
+interdite », conserver les rollbacks isolés antérieurs et l'interdiction
+`download_logs`/`licenses`/P5) → P4-B `p4-b-download-logs` (`000011`).
+Rappels de contrat : `max_downloads`/`expires_at` EXPLICITES (aucun DEFAULT
+commercial) ; TTL 72 h / quota 5 / rétention 365 j = simples recommandations de
+config applicative ; rotation = verrouiller `orders` AVANT de révoquer puis insérer.
 
 Gate : aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret,
 SDK, Filament, job de purge, téléchargement réel, token réel ou déploiement Azure.
-P4-B et P5 restent non démarrés. Ne jamais pousser sur `main`. Ne jamais merger la PR.
-Plan avant code, une feature à la fois, BDD avant logique.
+Aucune consommation applicative réelle avant P4-B. P5 reste non démarré.
+Ne jamais pousser sur `main`. Plan avant code, une feature à la fois, BDD avant logique.
 
 Note régression P3C-A (transparence) : ajouter `payments` a rendu obsolètes des
 assertions « table interdite » dans `IdentitySchemaTest`, `CatalogSchemaTest`,
@@ -332,6 +333,27 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-15 — Claude Code (D-029.2 : version figée + gates P4 isolés)
+- Fait : correction documentaire pré-implémentation (**D-029.2**), sur état Git
+  prouvé (`6ba74e4` = distant, push manuel D-029.1 confirmé, aucun artefact P4).
+  (1) **`product_files.version` devient IMMUABLE** avec le contenu (une étiquette
+  de version renommable après achat rendait l'historique improuvable) ; G0 fige
+  désormais `product_id`, `storage_disk`, `storage_path`, `checksum_sha256`,
+  `size_bytes`, `mime_type`, `version`, `created_at` ; `original_name` audité dans
+  le code (aucun usage de résolution/clé/intégrité/preuve — libellé d'affichage au
+  téléchargement) → mutable, distinction écrite. (2) **Gate composite P4-A abandonné**
+  (sa frontière `000010` n'aurait pas retiré `000008`/`000009`) → QUATRE gates
+  isolés : P4-A0 `p4-a0-product-file-immutability` (`000008`) → P4-A1
+  `p4-a1-bundle-purchase-snapshots` (`000009`) → P4-A2 `p4-a2-download-grants`
+  (`000010`) → P4-B `p4-b-download-logs` (`000011`), chacun avec sa frontière de
+  rollback, merge obligatoire avant le gate suivant, migration N+1 jamais créée
+  avant merge du gate N.
+- État build/tests : aucun fichier PHP touché (docs seuls) ; baseline inchangée
+  (23 migrations, 107 tests / 1534 assertions).
+- Décisions prises (→ DECISIONS_LOG.md) : **D-029.2**.
+- Laisse à : **P4-A0 — ProductFile Content Immutability** (exécution séparée,
+  périmètre strict dans PROCHAINE TÂCHE). Aucune branche/migration/classe P4 créée ici.
 
 ### 2026-07-15 — Claude Code (audit contradictoire P4 + décisions D-029.1)
 - Fait : **audit final en lecture seule du plan P4** au commit `202e4b8` (preuves

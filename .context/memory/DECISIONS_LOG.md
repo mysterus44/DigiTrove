@@ -606,6 +606,9 @@ CHOIX :
 CATALOGUE D'OBJETS : G1–G4 (P4-A) et G5–G6 (P4-B), schéma exact, CHECK nommés,
 index partiels, matrice de tests et threat model consignés dans le bloc P4 de
 `DigiTrove_Schema_BDD_v1.md`. Les triggers REFUSENT et ne mutent jamais.
+**[Note D-029.2 : le séquencement et la branche cités dans l'IMPACT ci-dessous
+sont remplacés — première implémentation = P4-A0 sur
+`p4-a0-product-file-immutability`, voir l'amendement D-029.2.]**
 ALTERNATIVES REJETÉES : FK `ON DELETE CASCADE` du schéma brouillon v1 (cascade
 supprimant l'historique de livraison) ; `token_hash TEXT` libre (remplacé par le
 format strict 64 hex) ; unité `order × product_file` ou `customer × product_file`
@@ -662,7 +665,71 @@ conjonction pure `revoked_at IS NULL AND expires_at > now() AND downloads_count
 < max_downloads` (priorité d'affichage revoked > expired > exhausted purement
 cosmétique). Nouvelle numérotation : P4-A = `000008` + `000009` + `000010`
 (frontière harness `000010`, un seul gate/branche `p4-a-download-grants`) ;
-P4-B = `000011` (frontière `000011`).
+P4-B = `000011` (frontière `000011`). **[Séquencement remplacé par D-029.2
+ci-dessous : le gate composite P4-A est ABANDONNÉ.]**
+
+**AMENDEMENT D-029.2 — ProductFile version immutability and isolated P4 gate
+sequencing (correction pré-implémentation).** Deux incohérences architecturales
+de D-029.1 sont corrigées avant toute migration :
+1. **`product_files.version` IMMUABLE.** Laisser `version` mutable alors que le
+   contenu est figé aurait permis de renommer l'étiquette de version après
+   l'achat : l'historique ne pourrait plus prouver de manière stable quelle
+   version était associée à la ligne au moment de l'émission d'un grant.
+   Colonnes FIGÉES par G0 (identité du contenu) : `product_id`, `storage_disk`,
+   `storage_path`, `checksum_sha256`, `size_bytes`, `mime_type`, `version`,
+   `created_at`. Colonnes mutables : `is_active`, `position`, et
+   `original_name` — **audité** : libellé d'AFFICHAGE uniquement (nom de fichier
+   présenté au client au téléchargement, skill SECURITE_TELECHARGEMENT) ; aucun
+   usage dans le code pour résoudre le fichier (`storage_path`), produire une
+   clé de stockage, vérifier l'intégrité (`checksum_sha256`) ou prouver la
+   version livrée (`version` + checksum) → il reste mutable, distinction écrite.
+   Confirmé : durcissement ADDITIF (`000008`), la migration P2 mergée n'est
+   jamais éditée ; nouvelle version de contenu = nouvelle ligne ; une ancienne
+   ligne se désactive, ne se réécrit jamais ; un grant historique continue de
+   pointer vers l'ancienne ligne ; aucune réactivation ni réécriture silencieuse.
+2. **Gate composite P4-A ABANDONNÉ** (violait la discipline de rollback : la
+   frontière `000010` ne retirait que `000010`, laissant `000008`/`000009`
+   installées ; trois invariants distincts ne partagent pas un gate ; une
+   anomalie dans `download_grants` ne doit pas rollbacker le durcissement
+   ProductFile). Nouveau séquencement — QUATRE gates isolés, une migration par
+   gate, une frontière de rollback par gate, merge du gate N obligatoire AVANT
+   la création de la migration du gate N+1 :
+   - **P4-A0 — ProductFile Content Immutability** : branche
+     `p4-a0-product-file-immutability`, migration
+     `2026_07_14_000008_harden_product_files_content_immutability.php`,
+     frontière `000008`. Rollback : retire uniquement G0 ; P0–P3C préservés.
+     Garantit une référence ProductFile pointant vers un contenu historique stable.
+   - **P4-A1 — Bundle Purchase Snapshot** : branche
+     `p4-a1-bundle-purchase-snapshots`, migration
+     `2026_07_14_000009_create_order_item_bundle_components_table.php`,
+     frontière `000009`. Rollback : retire uniquement la table + S1/S2 ;
+     P0–P3C + P4-A0 préservés. Garantit une composition de bundle achetée
+     indépendante du pivot mutable courant.
+   - **P4-A2 — Download Grants** : branche `p4-a2-download-grants`, migration
+     `2026_07_14_000010_create_download_grants_table.php`, frontière `000010`.
+     Rollback : retire uniquement les objets grants (G1–G4) ; P0–P3C + P4-A0 +
+     P4-A1 préservés. Garantit autorisation, quota, expiration, révocation et
+     consommation atomique.
+   - **P4-B — Download Logs** : branche `p4-b-download-logs`, migration
+     `2026_07_14_000011_create_download_logs_table.php`, frontière `000011`.
+     Rollback : retire uniquement les logs (G5–G6) ; tout le reste préservé.
+     Journal métier append-only des consommations et refus sur grant existant.
+   Règles de rollback par gate : appliquer uniquement jusqu'à la frontière,
+   down() de la seule migration du gate, objets propres disparus, migrations
+   antérieures préservées, migrations futures absentes, nettoyage dans
+   `finally` ; jamais `migrate:fresh` comme preuve, jamais de rollback global,
+   jamais de dépendance à un gate futur.
+   Workflow : chaque gate = branche depuis la stable → PR vers
+   `p0-foundations-laravel13` → merge → clôture documentaire → gate suivant.
+   Interdits : développer plusieurs gates sur une branche, empiler les
+   migrations avant merge du gate précédent, pousser vers `main`.
+RECONFIRMÉ (inchangé) : aucune fonctionnalité HTTP/endpoint/service avant la fin
+du schéma P4 ; `max_downloads` et `expires_at` toujours EXPLICITES à l'insertion ;
+aucune valeur commerciale en DEFAULT (D-029.1-B) ; TTL 72 h / quota 5 / rétention
+365 j = recommandations de config applicative non validées comme valeurs.
+IMPACT : bloc P4 du schéma v1 réécrit (gates, G0 durci, table de préservation des
+rollbacks), PROGRESS_TRACKER, HANDOFF, CLAUDE.md. Prochaine implémentation :
+**P4-A0 uniquement** (aucun snapshot bundle, aucun grant, aucun log dans ce gate).
 
 ---
 
@@ -683,12 +750,13 @@ P4-B = `000011` (frontière `000011`).
   dernier merge P3C-C est `122332a`.
   Les durées d'expiration métier, l'anonymisation invité et la valeur exacte de
   rétention webhook (90 j recommandé) restent à confirmer avant les tranches concernées.
-- **Plan P4 (D-029 + D-029.1)** : ✅ validé par KingKouda (audit contradictoire,
-  choix B–A–B). Prêt pour implémentation P4-A (`p4-a-download-grants`, migrations
-  `000008`–`000010`). TTL (72 h), quota (5) et rétention logs (365 j) sont des
-  recommandations de CONFIG APPLICATIVE (aucun default BDD, D-029.1-B) à fixer à
-  la phase service. La phase licences reste une décision produit ouverte (liée à
-  la question `usb` du legacy).
+- **Plan P4 (D-029 + D-029.1 + D-029.2)** : ✅ validé (audit B–A–B, puis gates
+  isolés et `version` figée par D-029.2). Prêt pour implémentation **P4-A0**
+  (`p4-a0-product-file-immutability`, migration `000008` uniquement), puis
+  P4-A1 → P4-A2 → P4-B, chaque gate mergé avant le suivant. TTL (72 h), quota (5)
+  et rétention logs (365 j) restent des recommandations de CONFIG APPLICATIVE
+  (aucun default BDD, D-029.1-B) à fixer à la phase service. La phase licences
+  reste une décision produit ouverte (liée à la question `usb` du legacy).
 
 ---
 

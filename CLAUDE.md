@@ -44,17 +44,19 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   (PR #9 → `13932ac`, index de rejeu réservé aux signés) · **P3C-C `refunds` mergé**
   (PR #10 → `122332a`, commit final `1270c53`)
 
-- **Plan P4 Livraison** ✅ finalisé (**D-029**) et **validé par audit contradictoire
-  (D-029.1, choix KingKouda B–A–B)** : P4-A = durcissement contenu `product_files`
-  (`000008`, trigger G0) + snapshot `order_item_bundle_components` (`000009`) +
-  `download_grants` (`000010`, aucun DEFAULT commercial) ; P4-B `download_logs`
-  (`000011`) ; `licenses` exclu de P4. Schéma cible + triggers G0–G6/S1–S2 + tests
-  dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
+- **Plan P4 Livraison** ✅ finalisé, validé et corrigé (**D-029 + D-029.1 B–A–B +
+  D-029.2**) : QUATRE gates isolés mergés dans l'ordre — P4-A0 durcissement
+  `product_files` (`000008`, trigger G0, `version` FIGÉE avec le contenu) → P4-A1
+  snapshot `order_item_bundle_components` (`000009`) → P4-A2 `download_grants`
+  (`000010`, aucun DEFAULT commercial) → P4-B `download_logs` (`000011`) ;
+  `licenses` exclu de P4. Une migration, une branche, une frontière de rollback
+  par gate ; migration N+1 jamais créée avant merge du gate N. Détail dans le
+  bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
 
-Prochaine étape : **implémentation P4-A** sur branche `p4-a-download-grants`
-(exécution séparée, frontière de rollback `000010`). P4-B et P5 restent non démarrés.
-P3C-C est validé post-merge : 23 migrations, 107 tests / 1534 assertions, plafond
-concurrent sous verrou Payment `FOR UPDATE`.
+Prochaine étape : **P4-A0** sur branche `p4-a0-product-file-immutability`
+(exécution séparée, migration `000008` uniquement, frontière `000008`). P4-A1/A2/B
+et P5 restent non démarrés. P3C-C est validé post-merge : 23 migrations,
+107 tests / 1534 assertions, plafond concurrent sous verrou Payment `FOR UPDATE`.
 
 ## 🔄 EN FIN DE TÂCHE
 
