@@ -8,8 +8,8 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-15
-- **Branche git active** : `p0-foundations-laravel13` (P3C-A mergé via PR #6 → `4a077db`,
-  synchronisé fast-forward)
+- **Branche git active** : `p3c-b-webhooks` (P3C-B implémenté, non mergé ; basée sur la
+  clôture P3C-A `963eef0` de `p0-foundations-laravel13`)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -226,23 +226,22 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**P3C-A Payments est mergé** (PR #6 → `4a077db`, parents `be1af7f` + `1a792a3`) dans
-`p0-foundations-laravel13`, synchronisé fast-forward. Post-merge vert : 20 migrations,
-rollbacks isolés 2/54, P3B 18/361, P3C-A 16/225, suite complète 78/896, Pint 89,
-diff-check propre. `origin/main` intact `1e41b92` ; branche locale `p3c-a-payments`
-supprimée, `origin/p3c-a-payments` conservée à `1a792a3`.
+**P3C-B `payment_webhook_events` est implémenté sur la branche `p3c-b-webhooks`** (basée
+sur la clôture P3C-A `963eef0`, non mergée). Migration `2026_07_14_000005`, enum
+`WebhookProcessingStatus`, modèle + factory + relation `Payment::webhookEvents()`,
+3 fonctions / 3 triggers immédiats. Vert : P3C-B 12 tests, suite complète 90/1077, Pint
+94, diff-check propre, rollback isolé par frontière (via `PhaseMigrationHarness`).
 
-Action suivante : **plan BDD P3C-B — `payment_webhook_events`** dans une exécution
-séparée, puis implémentation sur une branche dédiée `p3c-b-webhooks` ; ensuite **P3C-C —
-`refunds`** (`p3c-c-refunds`). Suivre le plan D-028 / `DigiTrove_Schema_BDD_v1.md`
-(webhook purgeable, dédup `(provider, external_event_id)` + `(provider, payload_hash)`
-si signature invalide ; refunds avec cumul par trigger IMMÉDIAT + verrou `FOR UPDATE`).
-Réutiliser les patterns P3B/P3C-A (prevent-delete + immutabilité + constraint triggers
-différés + `PhaseMigrationHarness` pour les rollbacks isolés par frontière).
+Action suivante : review + merge de `p3c-b-webhooks` dans `p0-foundations-laravel13`,
+puis **P3C-C — `refunds`** sur une branche dédiée `p3c-c-refunds` (exécution séparée).
+Suivre le plan D-028 / `DigiTrove_Schema_BDD_v1.md` : refunds avec **cumul par trigger
+IMMÉDIAT + verrou `FOR UPDATE`** (≠ triggers différés), cohérence différée
+remboursement↔commande, provider/devise = paiement, `payment_id` RESTRICT. Réutiliser
+les patterns P3B/P3C-A/P3C-B (prevent-delete + immutabilité + `PhaseMigrationHarness`).
 
 Gate : aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret,
-SDK, Filament, `download_grant`, téléchargement ou déploiement Azure. Ne jamais pousser
-sur `main`. Plan avant code, une feature à la fois, BDD avant logique.
+SDK, Filament, job de purge, `download_grant`, téléchargement ou déploiement Azure.
+Ne jamais pousser sur `main`. Plan avant code, une feature à la fois, BDD avant logique.
 
 Note régression P3C-A (transparence) : ajouter `payments` a rendu obsolètes des
 assertions « table interdite » dans `IdentitySchemaTest`, `CatalogSchemaTest`,
@@ -304,6 +303,36 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-15 — Claude Code (P3C-B payment_webhook_events implémenté)
+- Fait : gate **P3C-B** sur branche `p3c-b-webhooks` (depuis la clôture P3C-A `963eef0`).
+  Migration `2026_07_14_000005_create_payment_webhook_events_table.php` : table
+  `payment_webhook_events` (provider `VARCHAR(32)` canonique, `external_event_id`/`payment_id`
+  nullables, `payload_hash VARCHAR(64)`, `filtered_payload JSONB`, `signature_verified`,
+  `processing_status` 4 valeurs `received/processed/ignored/failed` — **pas de `duplicate`**,
+  dates de cycle + rétention). CHECK stricts (provider/hash regex, payload objet, cohérence
+  statut/dates en `CASE…ELSE FALSE END IS TRUE`, signé⇒external_id, forme minimale de
+  l'invalide, anti-`CHECK = UNKNOWN`). FK `payment_id` **RESTRICT**. 2 index uniques partiels
+  de rejeu : `(provider, external_event_id) WHERE NOT NULL` et `(provider, payload_hash)
+  WHERE signature_verified=false`. **3 fonctions / 3 triggers immédiats** :
+  `enforce_webhook_event_immutability` (ROW figée + `payment_id`/`event_type`/dates set-once
+  + `retention_until` extensible seulement + machine à états received→terminal),
+  `validate_webhook_payment_consistency` (BEFORE INSERT/UPDATE OF payment_id : lien ⇒ signé
+  + provider = paiement ; inexistence laissée à la FK), `enforce_webhook_event_retention_delete`
+  (BEFORE DELETE : autorisé seulement si statut terminal + `retention_until ≤ now`).
+  Enum `WebhookProcessingStatus`, modèle `PaymentWebhookEvent` (payload_hash masqué),
+  relation `Payment::webhookEvents()`, `PaymentWebhookEventFactory` (états processed/ignored/
+  failed/invalidSignatureMinimal/forPayment ; aucun secret, aucun appel réseau).
+- Tests : `tests/Feature/P3CBWebhooksSchemaTest.php` (12 tests / 187 assertions), incluant
+  rollback isolé par frontière (`PhaseMigrationHarness`, frontière `…000005`, down() du seul
+  gate, P3C-A + P3B préservés, aucune migration Refund/P4/P5 appliquée).
+- Régression : suite complète **90 tests / 1077 assertions** verte, Pint **94 fichiers**,
+  `git diff --check` propre, aucune base temporaire résiduelle. Adaptation : `payment_webhook_events`
+  retiré des listes « table interdite » de P1/P2/P3A/P3B/P3C-A (refunds/download_grants/P4/P5
+  restent interdits). Le rollback isolé P3C-A reste correct (sa frontière `…000004` exclut `…000005`).
+- Décisions : aucune nouvelle (implémentation fidèle à D-028.4/D-028.5 ; note factuelle dans D-028).
+- Laisse à : review + merge de `p3c-b-webhooks` ; puis P3C-C `refunds`. Aucun webhook HTTP,
+  fournisseur concret, SDK, contrôleur, route, service, job de purge créés.
 
 ### 2026-07-15 — Claude Code (clôture post-merge P3C-A)
 - Fait : **P3C-A Payments mergé** via [PR #6](https://github.com/mysterus44/DigiTrove/pull/6)

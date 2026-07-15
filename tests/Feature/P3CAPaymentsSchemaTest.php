@@ -226,7 +226,6 @@ it('runs P3C-A schema tests against PostgreSQL', function () {
 
 it('creates the payments table with native types while later P3C tables stay absent', function () {
     expect(Schema::hasTable('payments'))->toBeTrue()
-        ->and(Schema::hasTable('payment_webhook_events'))->toBeFalse()
         ->and(Schema::hasTable('refunds'))->toBeFalse()
         ->and(Schema::hasTable('download_grants'))->toBeFalse();
 
@@ -773,9 +772,8 @@ it('rolls back only the P3C-A payments migration while preserving P3B', function
     }
 });
 
-it('does not introduce webhook, refund, delivery, or downstream tables', function () {
+it('does not introduce refund, delivery, or downstream tables', function () {
     foreach ([
-        'payment_webhook_events',
         'refunds',
         'download_grants',
         'download_logs',
