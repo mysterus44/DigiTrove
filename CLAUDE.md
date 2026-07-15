@@ -42,11 +42,12 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
 - **P3 Commerce** 🟡 P3A/P3B/P3C-A mergés · P3C plan finalisé (D-028, 1A–5A) ·
   **P3C-B `payment_webhook_events` mergé** (PR #8 → `51c4847`) + **durcissement P3C-B.1**
   (PR #9 → `13932ac`, index de rejeu réservé aux signés) · **P3C-C `refunds`
-  implémenté sur `p3c-c-refunds`, non mergé**
+  implémenté et durci par audit adversarial sur `p3c-c-refunds`, non mergé**
 
 Prochaine étape : **review puis merge humain de P3C-C** vers
 `p0-foundations-laravel13`. Aucun P4/P5 avant ce merge. Migration `000007`, cinq
 fonctions, six triggers dont deux différés, plafond concurrent sous verrou `FOR UPDATE`.
+La nullification de l'initiateur est réservée à la FK `ON DELETE SET NULL`.
 
 ## 🔄 EN FIN DE TÂCHE
 

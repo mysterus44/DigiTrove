@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\OrderStatus;
+use App\Enums\PaymentStatus;
 use App\Enums\RefundStatus;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -249,17 +250,21 @@ it('enforces amount, currency and provider against the payment', function () {
     expectP3CCTriggerViolation(fn () => Refund::factory()->forPayment($payment)->create(['provider' => 'PowerPay']), 'refunds provider must match the payment provider');
 });
 
-it('rejects refunds for a non-succeeded payment', function () {
-    // A pending payment (order pending) cannot be refunded.
-    $order = createPendingOrderForRefund();
-    $pendingPayment = DB::transaction(function () use ($order): Payment {
-        $p = Payment::factory()->forOrder($order)->create(['attempt_number' => 1]);
-        forceP3CCConstraints();
-
-        return $p;
-    });
-
-    expectP3CCTriggerViolation(fn () => Refund::factory()->forPayment($pendingPayment)->create(), 'refunds require a succeeded payment');
+it('rejects refunds for every non-succeeded payment status', function () {
+    foreach ([
+        PaymentStatus::Pending,
+        PaymentStatus::Processing,
+        PaymentStatus::RequiresReview,
+        PaymentStatus::Failed,
+        PaymentStatus::Cancelled,
+        PaymentStatus::Expired,
+    ] as $status) {
+        $payment = createPaymentWithStatusForRefund($status);
+        expectP3CCTriggerViolation(
+            fn () => Refund::factory()->forPayment($payment)->create(),
+            'refunds require a succeeded payment',
+        );
+    }
 });
 
 function createPendingOrderForRefund(): Order
@@ -278,6 +283,33 @@ function createPendingOrderForRefund(): Order
     });
 }
 
+function createPaymentWithStatusForRefund(PaymentStatus $status): Payment
+{
+    $order = createPendingOrderForRefund();
+
+    return DB::transaction(function () use ($order, $status): Payment {
+        $factory = Payment::factory()->forOrder($order);
+        $factory = match ($status) {
+            PaymentStatus::Pending => $factory,
+            PaymentStatus::Processing => $factory->processing(),
+            PaymentStatus::RequiresReview => $factory->requiresReview(),
+            PaymentStatus::Failed => $factory->failed(),
+            PaymentStatus::Cancelled => $factory->cancelled(),
+            PaymentStatus::Expired => $factory->expired(),
+            PaymentStatus::Succeeded => $factory->succeeded(),
+        };
+
+        if ($status === PaymentStatus::RequiresReview) {
+            DB::table('orders')->where('id', $order->id)->update(['status' => OrderStatus::PaymentReview->value]);
+        }
+
+        $payment = $factory->create();
+        forceP3CCConstraints();
+
+        return $payment;
+    });
+}
+
 it('enforces idempotency hash, provider reference format and uniqueness', function () {
     $payment = createRefundablePayment();
     $other = createRefundablePayment();
@@ -291,7 +323,9 @@ it('enforces idempotency hash, provider reference format and uniqueness', functi
     });
 
     expectP3CCCheckViolation(fn () => Refund::factory()->forPayment($payment)->create(['idempotency_key_hash' => str_repeat('A', 64)]), 'refunds_idempotency_hash_format_check');
+    expectP3CCCheckViolation(fn () => Refund::factory()->forPayment($payment)->create(['idempotency_key_hash' => str_repeat('a', 63)]), 'refunds_idempotency_hash_format_check');
     expectP3CCUniqueViolation(fn () => Refund::factory()->forPayment($other)->create(['idempotency_key_hash' => str_repeat('a', 64)]), 'refunds_idempotency_key_hash_unique');
+    expectP3CCUniqueViolation(fn () => Refund::factory()->forPayment($otherProvider)->create(['idempotency_key_hash' => str_repeat('a', 64)]), 'refunds_idempotency_key_hash_unique');
     expectP3CCCheckViolation(fn () => Refund::factory()->forPayment($payment)->create(['provider_refund_reference' => '   ']), 'refunds_provider_reference_not_blank_check');
     expectP3CCCheckViolation(fn () => Refund::factory()->forPayment($payment)->create(['provider_metadata' => [1, 2, 3]]), 'refunds_provider_metadata_object_check');
 
@@ -303,6 +337,8 @@ it('enforces idempotency hash, provider reference format and uniqueness', functi
     expectP3CCUniqueViolation(fn () => Refund::factory()->forPayment($payment)->create(['provider_refund_reference' => 'rf_1']), 'refunds_provider_reference_unique');
     DB::transaction(function () use ($otherProvider): void {
         Refund::factory()->forPayment($otherProvider)->create(['provider_refund_reference' => 'rf_1']);
+        Refund::factory()->forPayment($otherProvider)->create(['provider_refund_reference' => null]);
+        Refund::factory()->forPayment($otherProvider)->create(['provider_refund_reference' => null]);
         forceP3CCConstraints();
     });
 
@@ -327,6 +363,44 @@ it('enforces status/date coherence and invalid enum status', function () {
     expectP3CCCheckViolation(fn () => Refund::factory()->forPayment($payment)->create(['reason_note_sanitized' => '   ']), 'refunds_reason_note_not_blank_check');
     expectP3CCCheckViolation(fn () => Refund::factory()->forPayment($payment)->create(['provider_metadata' => 'scalar']), 'refunds_provider_metadata_object_check');
     expectP3CCCheckViolation(fn () => Refund::factory()->forPayment($payment)->create(['failed_at' => now()->subDay()]), 'refunds_cycle_dates_check');
+});
+
+it('rejects NULL bypasses on required financial fields while preserving optional NULLs', function () {
+    $payment = createRefundablePayment();
+
+    expectP3CCTriggerViolation(
+        fn () => Refund::factory()->forPayment($payment)->create(['provider' => null]),
+        'refunds provider must match the payment provider',
+    );
+    expectP3CCTriggerViolation(
+        fn () => Refund::factory()->forPayment($payment)->create(['currency' => null]),
+        'refunds currency must match the payment currency',
+    );
+    expectP3CCQueryException(
+        fn () => Refund::factory()->forPayment($payment)->create(['amount_minor' => null]),
+        '23502',
+        'null value in column "amount_minor"',
+    );
+    expectP3CCQueryException(
+        fn () => Refund::factory()->forPayment($payment)->create(['idempotency_key_hash' => null]),
+        '23502',
+        'null value in column "idempotency_key_hash"',
+    );
+    expectP3CCQueryException(
+        fn () => Refund::factory()->forPayment($payment)->create(['status' => null]),
+        '23502',
+        'null value in column "status"',
+    );
+
+    DB::transaction(function () use ($payment): void {
+        Refund::factory()->forPayment($payment)->create([
+            'provider_refund_reference' => null,
+            'reason_note_sanitized' => null,
+            'initiated_by_user_id' => null,
+            'provider_metadata' => null,
+        ]);
+        forceP3CCConstraints();
+    });
 });
 
 it('provides opaque identities, bidirectional relations, casts and coherent factory states', function () {
@@ -360,6 +434,31 @@ it('provides opaque identities, bidirectional relations, casts and coherent fact
         ->and($succeeded->succeeded_at)->not->toBeNull()
         ->and($failed->status)->toBe(RefundStatus::Failed)
         ->and($cancelled->status)->toBe(RefundStatus::Cancelled);
+
+    // Every state is composable: the last state wins and clears incompatible dates.
+    $stateMethods = ['pending', 'processing', 'succeeded', 'failed', 'cancelled'];
+    foreach ($stateMethods as $first) {
+        foreach ($stateMethods as $last) {
+            $composed = Refund::factory()->forPayment($payment)->{$first}()->{$last}()->make();
+            expect($composed->status)->toBe(RefundStatus::from($last));
+
+            if ($last === 'pending') {
+                expect($composed->processing_at)->toBeNull();
+            }
+            if ($last === 'processing') {
+                expect($composed->processing_at)->not->toBeNull();
+            }
+
+            foreach (['succeeded', 'failed', 'cancelled'] as $terminal) {
+                $attribute = "{$terminal}_at";
+                if ($terminal === $last) {
+                    expect($composed->{$attribute})->not->toBeNull();
+                } else {
+                    expect($composed->{$attribute})->toBeNull();
+                }
+            }
+        }
+    }
 });
 
 it('permits allowed refund transitions and rejects the rest', function () {
@@ -466,6 +565,33 @@ it('keeps refunds immutable and blocks physical deletion', function () {
 
     expectP3CCTriggerViolation(fn () => $refund->delete(), 'refunds are immutable and cannot be deleted');
 
+    $deleteCandidates = [$refund];
+    foreach (['processing', 'failed', 'cancelled'] as $state) {
+        $deleteCandidates[] = DB::transaction(function () use ($payment, $state): Refund {
+            $candidate = Refund::factory()->forPayment($payment)->{$state}()->create();
+            forceP3CCConstraints();
+
+            return $candidate;
+        });
+    }
+    $succeededPayment = createRefundablePayment();
+    $deleteCandidates[] = attachSucceededRefund($succeededPayment, 1000, OrderStatus::PartiallyRefunded);
+
+    foreach ($deleteCandidates as $candidate) {
+        expectP3CCTriggerViolation(
+            fn () => DB::table('refunds')->where('id', $candidate->id)->delete(),
+            'refunds are immutable and cannot be deleted',
+        );
+    }
+    expectP3CCTriggerViolation(
+        fn () => DB::table('refunds')->whereIn('id', array_map(fn (Refund $candidate): int => $candidate->id, $deleteCandidates))->delete(),
+        'refunds are immutable and cannot be deleted',
+    );
+    expectP3CCTriggerViolation(
+        fn () => $payment->refunds()->delete(),
+        'refunds are immutable and cannot be deleted',
+    );
+
     foreach ([
         ['public_id' => (string) Str::uuid()],
         ['payment_id' => $other->id],
@@ -531,10 +657,21 @@ it('preserves refunds when the initiating user is deleted and forbids initiator 
         fn () => DB::table('refunds')->where('id', $refund->id)->update(['initiated_by_user_id' => $replacement->id]),
         'refunds initiator reference may only be nulled',
     );
+    expectP3CCTriggerViolation(
+        fn () => DB::table('refunds')->where('id', $refund->id)->update(['initiated_by_user_id' => null]),
+        'refunds initiator reference may only be nulled',
+    );
+
+    $financialSnapshot = DB::table('refunds')->where('id', $refund->id)->first([
+        'payment_id', 'provider', 'amount_minor', 'currency', 'status',
+    ]);
 
     $user->forceDelete();
     expect($refund->refresh()->initiated_by_user_id)->toBeNull()
-        ->and(DB::table('refunds')->where('id', $refund->id)->exists())->toBeTrue();
+        ->and(DB::table('refunds')->where('id', $refund->id)->exists())->toBeTrue()
+        ->and(DB::table('refunds')->where('id', $refund->id)->first([
+            'payment_id', 'provider', 'amount_minor', 'currency', 'status',
+        ]))->toEqual($financialSnapshot);
 });
 
 it('enforces the cumulative capture cap including via update and status exclusion', function () {
@@ -590,25 +727,44 @@ it('enforces the cumulative capture cap including via update and status exclusio
     expect((int) DB::table('refunds')->where('payment_id', $exact->id)->where('status', 'succeeded')->sum('amount_minor'))->toBe(10000);
 });
 
-it('enforces deferred refund/order consistency bidirectionally', function () {
-    $payment = createRefundablePayment(10000);
+it('enforces the complete deferred refund total to order status truth table', function () {
+    foreach ([OrderStatus::PartiallyRefunded, OrderStatus::Refunded] as $invalidStatus) {
+        $payment = createRefundablePayment(10000);
+        expectP3CCDeferredViolation(
+            fn () => DB::table('orders')->where('id', $payment->order_id)->update(['status' => $invalidStatus->value]),
+            'refunds total is inconsistent with the order status',
+        );
+        expect(Order::find($payment->order_id)->status)->toBe(OrderStatus::Paid);
+    }
 
-    // A succeeded refund without moving the order status is rejected at commit.
-    expectP3CCDeferredViolation(function () use ($payment): void {
-        Refund::factory()->forPayment($payment)->succeeded()->create(['amount_minor' => 4000]);
-    }, 'refunds total is inconsistent with the order status');
+    foreach ([OrderStatus::Paid, OrderStatus::Refunded] as $invalidStatus) {
+        $payment = createRefundablePayment(10000);
+        expectP3CCDeferredViolation(function () use ($payment, $invalidStatus): void {
+            Refund::factory()->forPayment($payment)->succeeded()->create(['amount_minor' => 4000]);
+            DB::table('orders')->where('id', $payment->order_id)->update(['status' => $invalidStatus->value]);
+        }, 'refunds total is inconsistent with the order status');
+        expect(Order::find($payment->order_id)->status)->toBe(OrderStatus::Paid)
+            ->and(DB::table('refunds')->where('payment_id', $payment->id)->exists())->toBeFalse();
+    }
 
-    // Moving the order to refunded without a matching refund total is rejected at commit.
-    expectP3CCDeferredViolation(function () use ($payment): void {
-        DB::table('orders')->where('id', $payment->order_id)->update(['status' => 'refunded']);
-    }, 'refunds total is inconsistent with the order status');
+    $partial = createRefundablePayment(10000);
+    attachSucceededRefund($partial, 4000, OrderStatus::PartiallyRefunded);
+    expect(Order::find($partial->order_id)->status)->toBe(OrderStatus::PartiallyRefunded);
 
-    // Coherent partial refund + order status in one transaction is accepted.
-    attachSucceededRefund($payment, 4000, OrderStatus::PartiallyRefunded);
-    expect(Order::find($payment->order_id)->status)->toBe(OrderStatus::PartiallyRefunded);
+    foreach ([OrderStatus::Paid, OrderStatus::PartiallyRefunded] as $invalidStatus) {
+        $payment = createRefundablePayment(10000);
+        expectP3CCDeferredViolation(function () use ($payment, $invalidStatus): void {
+            Refund::factory()->forPayment($payment)->succeeded()->create(['amount_minor' => 10000]);
+            DB::table('orders')->where('id', $payment->order_id)->update(['status' => $invalidStatus->value]);
+        }, 'refunds total is inconsistent with the order status');
+        expect(Order::find($payment->order_id)->status)->toBe(OrderStatus::Paid)
+            ->and(DB::table('refunds')->where('payment_id', $payment->id)->exists())->toBeFalse();
+    }
 
-    // The payment never receives a 'refunded' status.
-    expect(DB::table('payments')->where('id', $payment->id)->value('status'))->toBe('succeeded');
+    $complete = createRefundablePayment(10000);
+    attachSucceededRefund($complete, 10000, OrderStatus::Refunded);
+    expect(Order::find($complete->order_id)->status)->toBe(OrderStatus::Refunded)
+        ->and(DB::table('payments')->where('id', $complete->id)->value('status'))->toBe('succeeded');
 });
 
 it('rolls back only the P3C-C refunds migration while preserving P3C-B, P3C-A and P3B', function () {
@@ -660,7 +816,7 @@ it('serialises concurrent succeeded refunds on the payment row and never exceeds
         $harness->create();
         $harness->applyMigrationsThrough('2026_07_14_000007_create_refunds_table.php');
 
-        // Seed three independent paid orders and succeeded 10000 payments.
+        // Seed four independent paid orders and succeeded 10000 payments.
         $seed = <<<'PHP'
         $make = function () {
             return \Illuminate\Support\Facades\DB::transaction(function () {
@@ -672,7 +828,7 @@ it('serialises concurrent succeeded refunds on the payment row and never exceeds
                 return $payment->id.'|'.$order->id;
             });
         };
-        echo 'SEED:'.$make().';'.$make().';'.$make();
+        echo 'SEED:'.$make().';'.$make().';'.$make().';'.$make();
         PHP;
         $process = new Process([PHP_BINARY, 'artisan', 'tinker', '--execute', $seed], base_path(), [
             'APP_ENV' => 'testing', 'DB_CONNECTION' => 'pgsql', 'DB_DATABASE' => $harness->databaseName(),
@@ -680,15 +836,16 @@ it('serialises concurrent succeeded refunds on the payment row and never exceeds
         $process->setTimeout(60);
         $process->run();
         expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput());
-        expect($process->getOutput())->toMatch('/SEED:\d+\|\d+;\d+\|\d+;\d+\|\d+/');
+        expect($process->getOutput())->toMatch('/SEED:\d+\|\d+;\d+\|\d+;\d+\|\d+;\d+\|\d+/');
         preg_match('/SEED:([^\r\n]+)/', $process->getOutput(), $seedMatch);
-        [$first, $second, $third] = array_map(
+        [$first, $second, $third, $fourth] = array_map(
             fn (string $pair): array => array_map('intval', explode('|', $pair)),
             explode(';', trim($seedMatch[1])),
         );
         [$paymentId, $orderId] = $first;
         [$secondPaymentId, $secondOrderId] = $second;
         [$thirdPaymentId, $thirdOrderId] = $third;
+        [$transitionPaymentId, $transitionOrderId] = $fourth;
 
         $insertRefund = 'INSERT INTO refunds (public_id, payment_id, provider, idempotency_key_hash, amount_minor, currency, status, requested_at, succeeded_at, created_at, updated_at) '
             .'VALUES (gen_random_uuid(), :pid, \'powerpay\', :hash, 6000, \'XOF\', \'succeeded\', now(), now(), now(), now())';
@@ -769,6 +926,65 @@ it('serialises concurrent succeeded refunds on the payment row and never exceeds
         $a->exec('SET CONSTRAINTS ALL IMMEDIATE');
         $a->commit();
         expect((int) $pdo()->query("SELECT COUNT(*) FROM refunds WHERE payment_id IN ({$secondPaymentId}, {$thirdPaymentId}) AND status = 'succeeded'")->fetchColumn())->toBe(2);
+
+        // The same lock also protects two existing non-contributive refunds promoted
+        // concurrently to succeeded; INSERT-only coverage would miss this path.
+        $seedTransition = $pdo();
+        $processingInsert = $seedTransition->prepare(
+            "INSERT INTO refunds (public_id, payment_id, provider, idempotency_key_hash, amount_minor, currency, status, requested_at, processing_at, created_at, updated_at) VALUES (gen_random_uuid(), :pid, 'powerpay', :hash, 6000, 'XOF', 'processing', now(), now(), now(), now()) RETURNING id",
+        );
+        $processingInsert->execute(['pid' => $transitionPaymentId, 'hash' => hash('sha256', 'transition-a')]);
+        $transitionRefundA = (int) $processingInsert->fetchColumn();
+        $processingInsert->execute(['pid' => $transitionPaymentId, 'hash' => hash('sha256', 'transition-b')]);
+        $transitionRefundB = (int) $processingInsert->fetchColumn();
+
+        $a = $pdo();
+        $a->beginTransaction();
+        $a->exec("UPDATE refunds SET status = 'succeeded', succeeded_at = now() WHERE id = {$transitionRefundA}");
+
+        $transitionChildCode = <<<'PHP'
+        $pdo = new PDO(getenv('TEST_DSN'), getenv('TEST_DB_USER'), getenv('TEST_DB_PASSWORD'), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $pdo->exec("SET lock_timeout = '10s'");
+        $pdo->beginTransaction();
+        echo "READY\n";
+        flush();
+        try {
+            $statement = $pdo->prepare("UPDATE refunds SET status = 'succeeded', succeeded_at = now() WHERE id = :id");
+            $statement->execute(['id' => (int) getenv('TEST_REFUND_ID')]);
+            $pdo->commit();
+            echo 'UNEXPECTED_SUCCESS';
+        } catch (PDOException $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            echo 'ERR:'.$exception->getCode().':'.$exception->getMessage();
+        }
+        PHP;
+        $child = new Process([PHP_BINARY, '-r', $transitionChildCode], base_path(), [
+            'TEST_DSN' => $dsn,
+            'TEST_DB_USER' => (string) $connection['username'],
+            'TEST_DB_PASSWORD' => (string) $connection['password'],
+            'TEST_REFUND_ID' => (string) $transitionRefundB,
+        ]);
+        $child->setTimeout(15);
+        $child->start();
+        $readyDeadline = microtime(true) + 5;
+        while (! str_contains($child->getOutput(), 'READY') && microtime(true) < $readyDeadline) {
+            usleep(50000);
+        }
+        expect($child->getOutput())->toContain('READY');
+        usleep(250000);
+        expect($child->isRunning())->toBeTrue('The concurrent status transition did not wait on the payment row lock.');
+
+        $a->exec("UPDATE orders SET status = 'partially_refunded' WHERE id = {$transitionOrderId}");
+        $a->exec('SET CONSTRAINTS ALL IMMEDIATE');
+        $a->commit();
+        $child->wait();
+        expect($child->isSuccessful())->toBeTrue($child->getOutput().$child->getErrorOutput())
+            ->and($child->getOutput())->toContain('ERR:23514:')
+            ->toContain('refunds succeeded total exceeds the captured payment amount')
+            ->toContain('enforce_refund_cumulative_cap');
+        expect((int) $pdo()->query("SELECT COALESCE(SUM(amount_minor),0) FROM refunds WHERE payment_id = {$transitionPaymentId} AND status = 'succeeded'")->fetchColumn())->toBe(6000);
 
         $a = null;
         $b = null;

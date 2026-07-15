@@ -246,10 +246,12 @@ Ordre de migration révisé (D-024/D-027) : `coupons` → `coupon_currency_rules
 | Job expiration paniers (7 j) + commandes pending (30 min) | ⬜ TODO |
 | Tests (snapshot, idempotence, montant falsifié, double webhook, remboursement partiel) | ⬜ TODO |
 
-Validation P3C-C sur PostgreSQL réel : 23 migrations ; tests P3C-C 15/260 ;
-régressions P3C-B 13/189, P3C-A 16/221 et P3B 18/359 ; suite complète 106 tests,
-1333 assertions ; Pint 100 fichiers ; rollback isolé `000007`, concurrence à deux
-connexions et absence de base temporaire résiduelle validés. P4/P5 non démarrés.
+Validation P3C-C sur PostgreSQL réel après audit adversarial : 23 migrations ; tests
+P3C-C 16/461 ; régressions P3C-B 13/189, P3C-A 16/221 et P3B 18/359 ; suite complète
+107 tests, 1534 assertions ; Pint 100 fichiers. Nullification manuelle de l'initiateur
+refusée mais `ON DELETE SET NULL` conservé, states factory composables, matrice différée
+complète, rollback isolé `000007` et courses INSERT/transition à deux connexions validés.
+P4/P5 non démarrés.
 
 Décisions bloquantes tranchées (D-024) : prix panier dynamique, coupon fixe par devise,
 `product_id` nullable + snapshot, quantité ≥ 1, panier invité UUID+hash, un seul coupon.

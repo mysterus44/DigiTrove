@@ -241,13 +241,17 @@ P3C-C — `refunds` est implémenté sur `p3c-c-refunds` : migration `000007`, e
 modèle/factory, relation `Payment::refunds()`, cinq fonctions et six triggers. Le cumul
 des seuls refunds `succeeded` est protégé immédiatement sous verrou Payment
 `FOR UPDATE`; la cohérence `paid` / `partially_refunded` / `refunded` est vérifiée au
-commit par deux constraint triggers différés. Rollback isolé à la frontière `000007`.
+commit par deux constraint triggers différés. L'audit adversarial a réservé la
+nullification de l'initiateur à l'action FK imbriquée `ON DELETE SET NULL` (un UPDATE
+manuel est refusé) et rendu les states de factory composables. Rollback isolé à la
+frontière `000007`.
 
-Validation réelle : 23 migrations ; P3C-C 15 tests / 260 assertions ; P3C-B 13/189 ;
-P3C-A 16/221 ; P3B 18/359 ; suite complète 106/1333 ; Pint 100 fichiers ; diff-check
-propre. Le scénario concurrent 6000 + 6000 sur capture 10000 sérialise sur Payment :
-une transaction réussit, l'autre échoue en `23514`; deux Payments distincts ne se
-bloquent pas. Aucune base temporaire résiduelle.
+Validation réelle : 23 migrations ; P3C-C 16 tests / 461 assertions ; P3C-B 13/189 ;
+P3C-A 16/221 ; P3B 18/359 ; suite complète 107/1534 ; Pint 100 fichiers ; diff-check
+propre. Les scénarios concurrents 6000 + 6000 sur capture 10000, par INSERT puis par
+transition simultanée `processing -> succeeded`, sérialisent sur Payment : une
+transaction réussit, l'autre échoue en `23514`; deux Payments distincts ne se bloquent
+pas. Aucune base temporaire résiduelle.
 
 Action suivante : **review/PR puis merge humain de `p3c-c-refunds` vers
 `p0-foundations-laravel13`**. Ne jamais merger automatiquement. P4/P5 restent bloqués.

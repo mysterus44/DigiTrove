@@ -60,6 +60,20 @@ class RefundFactory extends Factory
         return $this->state(fn (array $attributes): array => [
             'status' => RefundStatus::Processing->value,
             'processing_at' => now(),
+            'succeeded_at' => null,
+            'failed_at' => null,
+            'cancelled_at' => null,
+        ]);
+    }
+
+    public function pending(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'status' => RefundStatus::Pending->value,
+            'processing_at' => null,
+            'succeeded_at' => null,
+            'failed_at' => null,
+            'cancelled_at' => null,
         ]);
     }
 
@@ -68,6 +82,8 @@ class RefundFactory extends Factory
         return $this->state(fn (array $attributes): array => [
             'status' => RefundStatus::Succeeded->value,
             'succeeded_at' => now(),
+            'failed_at' => null,
+            'cancelled_at' => null,
         ]);
     }
 
@@ -75,7 +91,9 @@ class RefundFactory extends Factory
     {
         return $this->state(fn (array $attributes): array => [
             'status' => RefundStatus::Failed->value,
+            'succeeded_at' => null,
             'failed_at' => now(),
+            'cancelled_at' => null,
         ]);
     }
 
@@ -83,6 +101,8 @@ class RefundFactory extends Factory
     {
         return $this->state(fn (array $attributes): array => [
             'status' => RefundStatus::Cancelled->value,
+            'succeeded_at' => null,
+            'failed_at' => null,
             'cancelled_at' => now(),
         ]);
     }

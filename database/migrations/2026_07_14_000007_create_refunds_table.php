@@ -129,11 +129,16 @@ return new class extends Migration
                         MESSAGE = 'refunds commercial data is immutable';
                 END IF;
 
-                -- The initiator is historical identity: it may only be nulled by
-                -- ON DELETE SET NULL, never replaced or attached after creation.
+                -- The initiator is historical identity: only the nested FK action
+                -- triggered by deleting the user may null it. A direct UPDATE runs
+                -- at trigger depth 1 and must not impersonate ON DELETE SET NULL.
                 IF NOT (
                     NEW.initiated_by_user_id IS NOT DISTINCT FROM OLD.initiated_by_user_id
-                    OR (OLD.initiated_by_user_id IS NOT NULL AND NEW.initiated_by_user_id IS NULL)
+                    OR (
+                        OLD.initiated_by_user_id IS NOT NULL
+                        AND NEW.initiated_by_user_id IS NULL
+                        AND pg_trigger_depth() > 1
+                    )
                 ) THEN
                     RAISE EXCEPTION USING
                         ERRCODE = '23514',

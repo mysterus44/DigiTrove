@@ -774,6 +774,8 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --  T9 enforce_refunds_immutability()       / refunds_enforce_immutability_trigger
 --        BEFORE UPDATE. Figés : public_id, payment_id, provider, idempotency_key_hash,
 --        amount_minor, currency, initiated_by_user_id, reason_code, requested_at, created_at.
+--        Exception contrôlée : initiated_by_user_id peut devenir NULL uniquement pendant
+--        l'action FK imbriquée ON DELETE SET NULL ; un UPDATE applicatif direct est refusé.
 --        provider_refund_reference : NULL->valeur puis figé.
 --        Mutables : status, provider_status/metadata, reason_note_sanitized, dates de cycle,
 --        last_verified_at, updated_at. Transitions (D-028.5) :

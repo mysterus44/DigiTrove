@@ -514,7 +514,10 @@ via PR #8 (`51c4847`). **P3C-C `refunds` est implémenté sur `p3c-c-refunds`, n
 mergé**, dans l'unique migration `000007` : enum `pending|processing|succeeded|failed|
 cancelled`, cinq fonctions, six triggers dont deux constraint triggers différés,
 plafond immédiat sous verrou Payment `FOR UPDATE`, rollback isolé et concurrence réelle
-testée. Aucun changement de décision D-028, aucun remboursement HTTP ni fournisseur réel.
+testée. L'audit adversarial réserve la nullification de `initiated_by_user_id` à l'action
+FK imbriquée `ON DELETE SET NULL`, refuse la même mutation par UPDATE direct et couvre
+également la concurrence lors de transitions simultanées vers `succeeded`. Aucun
+changement de décision D-028, aucun remboursement HTTP ni fournisseur réel.
 
 ---
 
