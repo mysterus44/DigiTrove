@@ -2,39 +2,36 @@
 
 namespace App\Models;
 
-use App\Enums\PaymentStatus;
-use Database\Factories\PaymentFactory;
+use App\Enums\RefundStatus;
+use Database\Factories\RefundFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Payment extends Model
+class Refund extends Model
 {
-    /** @use HasFactory<PaymentFactory> */
+    /** @use HasFactory<RefundFactory> */
     use HasFactory;
 
     protected $fillable = [
         'public_id',
-        'order_id',
+        'payment_id',
         'provider',
-        'provider_payment_reference',
+        'provider_refund_reference',
         'idempotency_key_hash',
-        'attempt_number',
         'amount_minor',
         'currency',
         'status',
+        'reason_code',
+        'reason_note_sanitized',
+        'initiated_by_user_id',
         'provider_status',
-        'provider_method',
         'provider_metadata',
-        'failure_code',
-        'failure_message_sanitized',
-        'initiated_at',
+        'requested_at',
         'processing_at',
         'succeeded_at',
         'failed_at',
         'cancelled_at',
-        'expired_at',
         'last_verified_at',
     ];
 
@@ -43,27 +40,19 @@ class Payment extends Model
     ];
 
     /**
-     * @return BelongsTo<Order, $this>
+     * @return BelongsTo<Payment, $this>
      */
-    public function order(): BelongsTo
+    public function payment(): BelongsTo
     {
-        return $this->belongsTo(Order::class);
+        return $this->belongsTo(Payment::class);
     }
 
     /**
-     * @return HasMany<PaymentWebhookEvent, $this>
+     * @return BelongsTo<User, $this>
      */
-    public function webhookEvents(): HasMany
+    public function initiatedBy(): BelongsTo
     {
-        return $this->hasMany(PaymentWebhookEvent::class);
-    }
-
-    /**
-     * @return HasMany<Refund, $this>
-     */
-    public function refunds(): HasMany
-    {
-        return $this->hasMany(Refund::class);
+        return $this->belongsTo(User::class, 'initiated_by_user_id');
     }
 
     /**
@@ -72,16 +61,14 @@ class Payment extends Model
     protected function casts(): array
     {
         return [
-            'status' => PaymentStatus::class,
-            'attempt_number' => 'integer',
+            'status' => RefundStatus::class,
             'amount_minor' => 'integer',
             'provider_metadata' => 'array',
-            'initiated_at' => 'datetime',
+            'requested_at' => 'datetime',
             'processing_at' => 'datetime',
             'succeeded_at' => 'datetime',
             'failed_at' => 'datetime',
             'cancelled_at' => 'datetime',
-            'expired_at' => 'datetime',
             'last_verified_at' => 'datetime',
         ];
     }

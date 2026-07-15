@@ -71,7 +71,6 @@ it('runs P3C-B schema tests against PostgreSQL', function () {
 
 it('creates the payment_webhook_events table with native types and hides the payload hash', function () {
     expect(Schema::hasTable('payment_webhook_events'))->toBeTrue()
-        ->and(Schema::hasTable('refunds'))->toBeFalse()
         ->and(Schema::hasTable('download_grants'))->toBeFalse();
 
     expect(Schema::hasColumns('payment_webhook_events', [
@@ -403,8 +402,8 @@ it('rolls back only the P3C-B webhook migration while preserving P3C-A and P3B',
     }
 });
 
-it('does not introduce refund, delivery, or downstream tables', function () {
-    foreach (['refunds', 'download_grants', 'download_logs', 'events', 'licenses'] as $table) {
+it('does not introduce delivery or downstream tables', function () {
+    foreach (['download_grants', 'download_logs', 'events', 'licenses'] as $table) {
         expect(Schema::hasTable($table))->toBeFalse("Unexpected out-of-scope table exists: {$table}");
     }
 });

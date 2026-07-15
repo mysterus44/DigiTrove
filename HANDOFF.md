@@ -6,10 +6,10 @@
 
 ## 📍 ÉTAT ACTUEL
 
-- **Dernier agent** : Claude Code
+- **Dernier agent** : Codex
 - **Date** : 2026-07-15
-- **Branche git active** : `p0-foundations-laravel13` (durcissement P3C-B.1 mergé via
-  PR #9 → `13932ac`, synchronisé fast-forward)
+- **Branche git active** : `p3c-c-refunds` (basée sur stable `be74854` ; P3C-C
+  implémenté, validé localement, non mergé)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -31,8 +31,7 @@
 - **Merge P3C-B.1 hardening** : [PR #9](https://github.com/mysterus44/DigiTrove/pull/9)
   `13932ac Merge pull request #9 from mysterus44/p3c-b1-webhook-replay-hardening`
   (SHA complet `13932ac11c59be366b859916bd5f15948d7d2cdf`, parents `51c4847` + `c772ac1`)
-- **`main` local** : réaligné sur `origin/main` = `1e41b92 DigiTrove V2`
-  (intact, sans P1/P2/P3A/P3B)
+- **`origin/main`** : `11130f4` (intact pendant P3C-C ; aucun push direct)
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
   - `php artisan --version` OK via `digitrove-php:dev` → Laravel Framework 13.19.0
@@ -238,12 +237,20 @@
 suite complète 91/1081, Pint 95, diff-check propre. `origin/main` intact `1e41b92`… →
 `11130f4` (promu via PR #7). Branches locales P3C-B/P3C-B.1 supprimées, distantes conservées.
 
-Action suivante : **P3C-C — `refunds`** sur une branche dédiée `p3c-c-refunds`
-(migration `2026_07_14_000007`, exécution séparée). Suivre le plan D-028 /
-`DigiTrove_Schema_BDD_v1.md` : refunds avec **cumul par trigger IMMÉDIAT + verrou
-`FOR UPDATE`** (≠ triggers différés), cohérence différée remboursement↔commande,
-provider/devise = paiement, `payment_id` RESTRICT. Réutiliser les patterns
-P3B/P3C-A/P3C-B (prevent-delete + immutabilité + `PhaseMigrationHarness`).
+P3C-C — `refunds` est implémenté sur `p3c-c-refunds` : migration `000007`, enum,
+modèle/factory, relation `Payment::refunds()`, cinq fonctions et six triggers. Le cumul
+des seuls refunds `succeeded` est protégé immédiatement sous verrou Payment
+`FOR UPDATE`; la cohérence `paid` / `partially_refunded` / `refunded` est vérifiée au
+commit par deux constraint triggers différés. Rollback isolé à la frontière `000007`.
+
+Validation réelle : 23 migrations ; P3C-C 15 tests / 260 assertions ; P3C-B 13/189 ;
+P3C-A 16/221 ; P3B 18/359 ; suite complète 106/1333 ; Pint 100 fichiers ; diff-check
+propre. Le scénario concurrent 6000 + 6000 sur capture 10000 sérialise sur Payment :
+une transaction réussit, l'autre échoue en `23514`; deux Payments distincts ne se
+bloquent pas. Aucune base temporaire résiduelle.
+
+Action suivante : **review/PR puis merge humain de `p3c-c-refunds` vers
+`p0-foundations-laravel13`**. Ne jamais merger automatiquement. P4/P5 restent bloqués.
 
 Gate : aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret,
 SDK, Filament, job de purge, `download_grant`, téléchargement ou déploiement Azure.

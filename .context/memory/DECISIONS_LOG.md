@@ -479,7 +479,7 @@ CHOIX :
 RECOMMANDATIONS RETENUES : aucun statut `refunded` dans `payments.status` (état dérivé
 des lignes `refunds` réussies) ; un seul `succeeded` par commande ; immutabilité hybride
 BDD + service ; montant/devise paiement↔commande garantis en BDD et revalidés service ;
-cumul remboursements protégé par trigger IMMÉDIAT `enforce_refund_within_capture()` avec
+cumul remboursements protégé par trigger IMMÉDIAT `enforce_refund_cumulative_cap()` avec
 `SELECT … payments … FOR UPDATE` (excluant la ligne courante via `id <> NEW.id`), ≠ des
 triggers différés P3B ; webhook valide = `payload_hash` + `filtered_payload` allowlisté ;
 rétention configurable (recommandée 90 j) via `retention_until` + fonction de suppression
@@ -510,7 +510,11 @@ ne doit pas réserver ce créneau ni bloquer un événement signé légitime (po
 restent dédupliqués par `(provider, payload_hash) WHERE signature_verified = false`.
 Correctif = migration additive `2026_07_14_000006_harden_webhook_external_event_unique`
 (jamais d'édition de la migration mergée), **mergé via PR #9 (`13932ac`)**. P3C-B mergé
-via PR #8 (`51c4847`). P3C-C (`refunds`) reste à implémenter (migration `000007`).
+via PR #8 (`51c4847`). **P3C-C `refunds` est implémenté sur `p3c-c-refunds`, non
+mergé**, dans l'unique migration `000007` : enum `pending|processing|succeeded|failed|
+cancelled`, cinq fonctions, six triggers dont deux constraint triggers différés,
+plafond immédiat sous verrou Payment `FOR UPDATE`, rollback isolé et concurrence réelle
+testée. Aucun changement de décision D-028, aucun remboursement HTTP ni fournisseur réel.
 
 ---
 

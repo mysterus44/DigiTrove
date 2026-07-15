@@ -702,9 +702,12 @@ ALTER TABLE refunds ADD CONSTRAINT refunds_public_id_unique            UNIQUE (p
 ALTER TABLE refunds ADD CONSTRAINT refunds_idempotency_key_hash_unique UNIQUE (idempotency_key_hash);
 ALTER TABLE refunds ADD CONSTRAINT refunds_provider_format_check       CHECK (provider ~ '^[a-z0-9][a-z0-9_-]{0,31}$');
 ALTER TABLE refunds ADD CONSTRAINT refunds_idempotency_hash_format_check CHECK (idempotency_key_hash ~ '^[0-9a-f]{64}$');
+ALTER TABLE refunds ADD CONSTRAINT refunds_provider_reference_not_blank_check CHECK (provider_refund_reference IS NULL OR length(btrim(provider_refund_reference)) > 0);
 ALTER TABLE refunds ADD CONSTRAINT refunds_amount_positive_check       CHECK (amount_minor > 0);
 ALTER TABLE refunds ADD CONSTRAINT refunds_currency_format_check       CHECK (char_length(currency) = 3 AND currency = upper(currency));
 ALTER TABLE refunds ADD CONSTRAINT refunds_status_check                CHECK (status IN ('pending','processing','succeeded','failed','cancelled'));  -- PAS de requires_review
+ALTER TABLE refunds ADD CONSTRAINT refunds_reason_note_not_blank_check CHECK (reason_note_sanitized IS NULL OR length(btrim(reason_note_sanitized)) > 0);
+ALTER TABLE refunds ADD CONSTRAINT refunds_provider_metadata_object_check CHECK (provider_metadata IS NULL OR jsonb_typeof(provider_metadata) = 'object');
 ALTER TABLE refunds ADD CONSTRAINT refunds_cycle_dates_check CHECK (
     (processing_at    IS NULL OR processing_at    >= requested_at) AND
     (succeeded_at     IS NULL OR succeeded_at     >= requested_at) AND
@@ -712,6 +715,8 @@ ALTER TABLE refunds ADD CONSTRAINT refunds_cycle_dates_check CHECK (
     (cancelled_at     IS NULL OR cancelled_at     >= requested_at) AND
     (last_verified_at IS NULL OR last_verified_at >= requested_at)
 );
+-- Une contrainte CASE ... ELSE FALSE END IS TRUE lie chaque état terminal à sa date
+-- exclusive et empêche tout contournement PostgreSQL par CHECK = UNKNOWN.
 CREATE UNIQUE INDEX refunds_provider_reference_unique ON refunds (provider, provider_refund_reference) WHERE provider_refund_reference IS NOT NULL;
 CREATE INDEX refunds_payment_id_index        ON refunds (payment_id);
 CREATE INDEX refunds_payment_id_status_index ON refunds (payment_id, status);
@@ -774,7 +779,7 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --        last_verified_at, updated_at. Transitions (D-028.5) :
 --          pending -> processing|failed|cancelled ; processing -> succeeded|failed|cancelled
 --          Terminaux : succeeded|failed|cancelled. Aucune transition terminal -> autre.
---  T10 enforce_refund_within_capture()     / refunds_enforce_capture_cap_trigger   IMMÉDIAT (D-028.6)
+--  T10 enforce_refund_cumulative_cap()     / refunds_enforce_cumulative_cap_trigger   IMMÉDIAT (D-028.6)
 --        BEFORE INSERT (déjà 'succeeded') OU BEFORE UPDATE faisant passer status -> 'succeeded' :
 --          1. SELECT ... FROM payments WHERE id = NEW.payment_id FOR UPDATE   (sérialise la concurrence)
 --          2. payment existe ET payment.status = 'succeeded'
@@ -784,9 +789,8 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --          5. RAISE si somme > payments.amount_minor
 --        (≠ trigger différé P3B : les refunds naissent dans des transactions séparées ;
 --         seul un verrou de ligne immédiat empêche le dépassement concurrent.)
---  T11 validate_refund_order_status()      / DEFERRABLE INITIALLY DEFERRED, monté sur
+--  T11 validate_refund_order_consistency() / DEFERRABLE INITIALLY DEFERRED, monté sur
 --        refunds_validate_order_consistency_trigger  (AFTER INSERT/UPDATE ON refunds),
---        payments_validate_refund_consistency_trigger (AFTER UPDATE ON payments),
 --        orders_validate_refund_consistency_trigger  (AFTER INSERT/UPDATE ON orders).
 --        Au COMMIT, pour l'unique paiement 'succeeded' de la commande (D-028.3) :
 --          somme refunds 'succeeded' = 0                     => order.status = 'paid'
@@ -794,6 +798,8 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --          somme = payments.amount_minor                     => order.status = 'refunded'
 --        (Trigger de STATUT distinct du trigger de PLAFOND T10. Aucune récursion : les triggers
 --         ne réécrivent pas orders ; le RefundService met à jour order.status, le trigger vérifie.)
+--        `payments.status='succeeded'` est terminal et la création d'un refund exige déjà ce
+--        statut ; aucun troisième trigger différé sur payments n'est donc nécessaire à ce gate.
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- ORCHESTRATIONS SERVEUR P3C (documentées, NON implémentées en P3C)
