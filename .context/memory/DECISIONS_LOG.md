@@ -500,7 +500,17 @@ et tests PostgreSQL. **P3C-A `create_payments_table` implémenté et mergé** vi
 conformément à D-028.4/D-028.5 : 3 fonctions / 3 triggers immédiats (immutabilité +
 transitions received→terminal, cohérence webhook↔paiement signé/même provider, suppression
 contrôlée par rétention), 2 index uniques partiels de rejeu, pas de statut `duplicate`,
-webhook invalide en forme minimale. P3C-C (`refunds`) reste à implémenter.
+webhook invalide en forme minimale. P3C-B mergé via PR #8 (`51c4847`).
+**Durcissement D-028.4 (validé KingKouda, review post-merge)** : l'unicité de rejeu
+`(provider, external_event_id)` est désormais **restreinte aux événements signés**
+(`WHERE external_event_id IS NOT NULL AND signature_verified = true`). Motif : un
+`external_event_id` provenant d'un webhook **non signé** est contrôlé par l'attaquant et
+ne doit pas réserver ce créneau ni bloquer un événement signé légitime (poisoning/DoS).
+`external_event_id` reste conservé sur les invalides pour l'audit ; les invalides
+restent dédupliqués par `(provider, payload_hash) WHERE signature_verified = false`.
+Correctif = migration additive `2026_07_14_000006_harden_webhook_external_event_unique`
+(branche `p3c-b1-webhook-replay-hardening`, jamais d'édition de la migration mergée).
+P3C-C (`refunds`) reste à implémenter.
 
 ---
 

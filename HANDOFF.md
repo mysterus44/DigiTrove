@@ -8,8 +8,8 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-15
-- **Branche git active** : `p3c-b-webhooks` (P3C-B implémenté, non mergé ; basée sur la
-  clôture P3C-A `963eef0` de `p0-foundations-laravel13`)
+- **Branche git active** : `p3c-b1-webhook-replay-hardening` (durcissement post-merge
+  P3C-B, non mergé ; basée sur `51c4847` = merge PR #8 de P3C-B dans `p0-foundations-laravel13`)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -303,6 +303,25 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-15 — Claude Code (durcissement P3C-B.1 — unicité de rejeu)
+- Contexte : P3C-B mergé via **PR #8** (`51c4847`, parents `963eef0` + `49ad374`). Review
+  adversariale post-merge : l'index `payment_webhook_events_provider_external_event_unique`
+  avait le prédicat `WHERE external_event_id IS NOT NULL` (non restreint aux signés). Un
+  webhook **non signé** peut porter un `external_event_id` → il réserve `(provider,
+  external_event_id)` et **bloque l'événement signé légitime** (poisoning/DoS). KingKouda
+  a validé le durcissement.
+- Fait : branche `p3c-b1-webhook-replay-hardening` (depuis `51c4847`). Migration **additive**
+  `2026_07_14_000006_harden_webhook_external_event_unique.php` (jamais d'édition de `000005`
+  mergée) : DROP + recrée l'index en `WHERE external_event_id IS NOT NULL AND
+  signature_verified = true` ; `down()` restaure l'ancien. `external_event_id` reste conservé
+  sur les invalides pour l'audit ; invalides dédupliqués par `(provider, payload_hash)
+  WHERE signature_verified=false`. Test adversarial ajouté (`P3CBWebhooksSchemaTest`) : un
+  non signé ne bloque plus un signé ; deux signés restent en conflit. D-028.4 : note factuelle.
+- Validation (PostgreSQL réel) : 22 migrations ; index durci confirmé par introspection ;
+  P3C-B **13/191**, P3C-A **16/223**, P3B **18/360**, suite complète **91/1081**, Pint **95**,
+  `git diff --check` propre, aucune base temporaire résiduelle.
+- Laisse à : review + merge de `p3c-b1-webhook-replay-hardening` ; puis P3C-C `refunds`.
 
 ### 2026-07-15 — Claude Code (P3C-B payment_webhook_events implémenté)
 - Fait : gate **P3C-B** sur branche `p3c-b-webhooks` (depuis la clôture P3C-A `963eef0`).

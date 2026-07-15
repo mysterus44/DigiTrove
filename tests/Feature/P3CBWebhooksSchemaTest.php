@@ -332,6 +332,28 @@ it('permits deletion only after retention on a terminal status', function () {
     expect(DB::table('payment_webhook_events')->where('id', $past->id)->exists())->toBeFalse();
 });
 
+it('does not let an unsigned event reserve the signed external-event uniqueness', function () {
+    // An unsigned/invalid webhook forging an external_event_id is stored (kept for audit)...
+    PaymentWebhookEvent::factory()->invalidSignatureMinimal()->create([
+        'provider' => 'powerpay',
+        'external_event_id' => 'evt_shared',
+        'payload_hash' => hash('sha256', 'unsigned-poison'),
+    ]);
+
+    // ...but it must NOT block a later legitimate signed event with the same identifier.
+    $signed = PaymentWebhookEvent::factory()->create([
+        'provider' => 'powerpay',
+        'external_event_id' => 'evt_shared',
+    ]);
+    expect($signed->exists)->toBeTrue();
+
+    // Replay dedup for SIGNED events stays intact: a second signed event still conflicts.
+    expectP3CBUniqueViolation(fn () => PaymentWebhookEvent::factory()->create([
+        'provider' => 'powerpay',
+        'external_event_id' => 'evt_shared',
+    ]), 'payment_webhook_events_provider_external_event_unique');
+});
+
 it('rolls back only the P3C-B webhook migration while preserving P3C-A and P3B', function () {
     $harness = new PhaseMigrationHarness('digitrove_p3cb_rollback_'.strtolower(Str::random(10)));
 
