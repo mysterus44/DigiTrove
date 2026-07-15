@@ -11,7 +11,7 @@ P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
-P3 COMMERCE         : █████████░  P3A+P3B+P3C-A mergés ; P3C-B implémenté (branche) ; P3C-C à venir
+P3 COMMERCE         : █████████░  P3A+P3B+P3C-A+P3C-B mergés ; durcissement P3C-B.1 (branche) ; P3C-C à venir
 P4 LIVRAISON        : ░░░░░░░░░░  0%
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
