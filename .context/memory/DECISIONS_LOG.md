@@ -624,6 +624,46 @@ frontière précède `000008`, et en conservant l'interdiction de `download_logs
 (jusqu'à P4-B), `licenses`, `events` et toute table P5+. Aucune migration, modèle,
 enum, factory, route, service ou logique P4/P5 créés par ce plan.
 
+**AMENDEMENT D-029.1 — Audit contradictoire du plan (validé KingKouda : B–A–B).**
+L'audit final en lecture seule du commit `202e4b8` a identifié trois décisions non
+prouvées ; KingKouda a tranché. Ces choix REMPLACENT les points correspondants du
+texte D-029 ci-dessus :
+1. **Q1 = B — Contenu `product_files` immuable** (remplace le point 8) : la table
+   P2 est mutable in-place (aucun trigger) ; « le grant fige la version achetée »
+   n'était qu'une convention. Correctif : migration ADDITIVE
+   `2026_07_14_000008_harden_product_files_content_immutability` (la migration P2
+   mergée n'est jamais éditée — pattern P3C-B.1) + trigger **G0** figeant
+   `storage_disk`, `storage_path`, `checksum_sha256`, `size_bytes`, `mime_type` ;
+   `original_name`/`version`/`position`/`is_active` restent mutables. Toute
+   nouvelle version de contenu = nouvelle ligne ; remplacement critique =
+   désactivation + révocation + réémission.
+2. **Q2 = A — Snapshot des composants de bundle à la commande** (précise le point
+   5) : `product_bundles` est un pivot mutable sans historique — la lignée G3
+   contre la composition COURANTE aurait livré aux anciens acheteurs des produits
+   ajoutés après l'achat (fenêtre réelle : paiement tardif, réémissions).
+   Correctif : table `order_item_bundle_components` (migration
+   `2026_07_14_000009`), figée à la commande par le futur OrderService (pattern
+   coupon_redemptions : créée en P4-A, alimentée par le checkout), triggers
+   **S1/S2** (prevent-delete + immutabilité, nullification FK contrôlée). La
+   lignée bundle de G3 n'interroge QUE ce snapshot ; fail-closed sans lignes.
+3. **Q3 = B — Aucun DEFAULT commercial en BDD** (remplace le point 4 sur ce
+   volet) : le `DEFAULT 5` de `max_downloads` figeait une politique commerciale
+   dans le schéma. Correctif : `max_downloads` et `expires_at` EXPLICITES à
+   chaque insertion ; la BDD n'impose que les bornes (`>= 1`, `> created_at`) ;
+   TTL (72 h), quota (5) et rétention logs (365 j) deviennent des recommandations
+   de configuration applicative — modifiables sans migration, à fixer à la phase
+   service.
+Précisions d'audit intégrées au plan (sans nouvelle décision) : règle
+d'orchestration rotation anti-deadlock (verrouiller `orders` AVANT de révoquer
+puis insérer) ; sémantique stricte de `download_logs.status`
+(started/completed/denied sur grant existant UNIQUEMENT — un token inconnu
+n'entre jamais dans la table, anti-empoisonnement P3C-B.1) ; autorisation =
+conjonction pure `revoked_at IS NULL AND expires_at > now() AND downloads_count
+< max_downloads` (priorité d'affichage revoked > expired > exhausted purement
+cosmétique). Nouvelle numérotation : P4-A = `000008` + `000009` + `000010`
+(frontière harness `000010`, un seul gate/branche `p4-a-download-grants`) ;
+P4-B = `000011` (frontière `000011`).
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
@@ -643,11 +683,12 @@ enum, factory, route, service ou logique P4/P5 créés par ce plan.
   dernier merge P3C-C est `122332a`.
   Les durées d'expiration métier, l'anonymisation invité et la valeur exacte de
   rétention webhook (90 j recommandé) restent à confirmer avant les tranches concernées.
-- **Plan P4 (D-029)** : finalisé, en attente de validation humaine avant la
-  migration `000008`. Valeurs non bloquantes à confirmer à l'implémentation :
-  TTL des liens (72 h recommandé), `max_downloads` par défaut (5), rétention
-  `download_logs` (365 j recommandé). La phase licences reste une décision produit
-  ouverte (liée à la question `usb` du legacy).
+- **Plan P4 (D-029 + D-029.1)** : ✅ validé par KingKouda (audit contradictoire,
+  choix B–A–B). Prêt pour implémentation P4-A (`p4-a-download-grants`, migrations
+  `000008`–`000010`). TTL (72 h), quota (5) et rétention logs (365 j) sont des
+  recommandations de CONFIG APPLICATIVE (aucun default BDD, D-029.1-B) à fixer à
+  la phase service. La phase licences reste une décision produit ouverte (liée à
+  la question `usb` du legacy).
 
 ---
 

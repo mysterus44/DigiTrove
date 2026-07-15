@@ -8,8 +8,9 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-15
-- **Branche git active** : `p0-foundations-laravel13` à `94d0dec` (synchronisée avec
-  `origin/p0-foundations-laravel13` ; P3C-C clôturé, plan P4 finalisé D-029)
+- **Branche git active** : `p0-foundations-laravel13` (synchronisée avec
+  `origin/p0-foundations-laravel13` ; P3C-C clôturé, plan P4 finalisé D-029 à
+  `202e4b8` puis validé par audit D-029.1, choix B–A–B)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -235,33 +236,41 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Le plan P4 — Delivery & Download Integrity est finalisé (D-029).** Schéma cible,
-catalogue de fonctions/triggers G1–G6, index partiels, threat model et plan de tests
-sont consignés dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`. Découpage validé côté
-plan : **P4-A `download_grants`** (migration `2026_07_14_000008`, branche
-`p4-a-download-grants`) puis **P4-B `download_logs`** (migration `2026_07_14_000009`).
-`licenses` est EXCLU de P4 (décision produit ouverte, liée à la question `usb`).
+**Le plan P4 est finalisé ET validé** (D-029 + amendement D-029.1 après audit
+contradictoire ; choix KingKouda : **B–A–B**). Schéma cible, catalogue G0–G6/S1–S2,
+threat model et plan de tests dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
 
-Action suivante : **validation humaine du plan P4 par KingKouda**, puis implémentation
-P4-A dans une exécution séparée. Points clés du contrat P4-A : unité
-`order_item × product_file`, `token_hash VARCHAR(64)` SHA-256 unique (token brut
-jamais stocké), `public_id UUID`, FK RESTRICT (jamais de cascade d'historique),
-un seul grant ACTIF par couple (index partiel `WHERE revoked_at IS NULL`),
-préconditions d'émission sous verrou `orders FOR UPDATE` (statut livrable
-`paid|partially_refunded`, fichier actif, lignée produit/bundle prouvée),
-consommation +1 atomique bornée par `max_downloads`, révocation set-once appariée
-à un motif, invariant différé bidirectionnel « grant actif ⇒ commande livrable »
-(remboursement TOTAL révoque tout dans la même transaction ; remboursement PARTIEL
-sans révocation automatique — `refunds` n'a pas d'allocation par ligne).
-À l'implémentation P4-A : retirer `download_grants` des seules assertions globales
+Action suivante : **implémenter P4-A** sur la branche `p4-a-download-grants` (depuis
+la stable), dans une exécution séparée, avec TROIS migrations (frontière de rollback
+du gate = `000010`) :
+1. `2026_07_14_000008_harden_product_files_content_immutability` — trigger G0 :
+   colonnes de CONTENU figées (`storage_disk`, `storage_path`, `checksum_sha256`,
+   `size_bytes`, `mime_type`) ; migration ADDITIVE, jamais d'édition de la migration
+   P2 mergée ; nouvelle version de contenu = nouvelle ligne `product_files`.
+2. `2026_07_14_000009_create_order_item_bundle_components_table` — snapshot des
+   composants de bundle figé à la commande (S1 prevent-delete, S2 immutabilité,
+   nullification FK contrôlée) ; alimentée par le futur OrderService (pattern
+   coupon_redemptions) ; la lignée bundle de G3 n'interroge QUE ce snapshot.
+3. `2026_07_14_000010_create_download_grants_table` — G1–G4 : unité
+   `order_item × product_file`, `token_hash VARCHAR(64)` SHA-256 unique (token brut
+   jamais stocké), `public_id UUID`, FK RESTRICT + `user_id SET NULL` audit, un seul
+   grant ACTIF par couple (index partiel `WHERE revoked_at IS NULL`),
+   **`max_downloads` et `expires_at` EXPLICITES (aucun DEFAULT commercial —
+   D-029.1-B)**, consommation +1 bornée, révocation set-once appariée au motif,
+   émission sous verrou `orders FOR UPDATE` (statut `paid|partially_refunded`,
+   fichier actif, lignée snapshot), invariant différé bidirectionnel « grant actif ⇒
+   commande livrable ». Règle d'orchestration rotation : verrouiller `orders` AVANT
+   de révoquer puis insérer (anti-deadlock).
+Adaptations historiques : retirer `download_grants` des seules assertions globales
 « table interdite », conserver les assertions des rollbacks isolés (frontières <
-`000008`) et l'interdiction `download_logs`/`licenses`/P5. Valeurs non bloquantes à
-confirmer : TTL 72 h, `max_downloads` 5, rétention logs 365 j.
+`000008`) et l'interdiction `download_logs` (jusqu'à P4-B `000011`), `licenses`, P5.
+TTL 72 h / quota 5 / rétention 365 j = recommandations de config applicative (phase
+service), aucun default BDD.
 
 Gate : aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret,
 SDK, Filament, job de purge, téléchargement réel, token réel ou déploiement Azure.
-Aucune migration P4 avant validation du plan. P5 reste non démarré.
-Ne jamais pousser sur `main`. Plan avant code, une feature à la fois, BDD avant logique.
+P4-B et P5 restent non démarrés. Ne jamais pousser sur `main`. Ne jamais merger la PR.
+Plan avant code, une feature à la fois, BDD avant logique.
 
 Note régression P3C-A (transparence) : ajouter `payments` a rendu obsolètes des
 assertions « table interdite » dans `IdentitySchemaTest`, `CatalogSchemaTest`,
@@ -323,6 +332,29 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-15 — Claude Code (audit contradictoire P4 + décisions D-029.1)
+- Fait : **audit final en lecture seule du plan P4** au commit `202e4b8` (preuves
+  Git : push confirmé, `origin/main` intact, commit strictement documentaire — la
+  « contradiction » du rapport précédent était l'état pré-commit `94d0dec`, parent
+  de `202e4b8`). Verdict initial : `DÉCISIONS P4 REQUISES` — trois failles réelles :
+  (1) `product_files` mutable in-place ⇒ « version achetée » non garantie ;
+  (2) `product_bundles` sans historique ⇒ lignée bundle prouvée sur la composition
+  courante, pas celle de l'achat ; (3) `max_downloads DEFAULT 5` figeait une
+  politique commerciale dans le schéma.
+- **KingKouda a tranché : B–A–B** → amendement **D-029.1** consigné, documents du
+  plan mis à jour : P4-A devient TROIS migrations (`000008` durcissement G0
+  `product_files`, `000009` snapshot `order_item_bundle_components` S1/S2,
+  `000010` `download_grants` sans DEFAULT commercial, frontière rollback `000010`) ;
+  P4-B `download_logs` passe à `000011`. Précisions d'audit intégrées : règle
+  anti-deadlock de rotation (verrou `orders` d'abord), sémantique stricte
+  `download_logs.status` (jamais de token inconnu en table), autorisation =
+  conjonction pure sur colonnes vérifiables.
+- État build/tests : aucun fichier PHP touché (docs seuls) ; baseline inchangée
+  (23 migrations, 107 tests / 1534 assertions).
+- Décisions prises (→ DECISIONS_LOG.md) : **D-029.1** (B–A–B).
+- Laisse à : **implémentation P4-A** sur `p4-a-download-grants` (exécution séparée,
+  voir PROCHAINE TÂCHE). Aucune branche/migration/classe P4 créée ici.
 
 ### 2026-07-15 — Claude Code (plan final P4 Delivery & Download Integrity)
 - Fait : **finalisation documentaire du plan P4** (exécution strictement documentaire,

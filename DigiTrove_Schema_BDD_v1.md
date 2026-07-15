@@ -845,10 +845,22 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --   consommation coupon bloquée ; triggers P3B inchangés ; aucun download_grant ; aucune table P4/P5.
 
 -- ============================================================================
--- ===== P4 LIVRAISON — PLAN FINALISÉ (D-029 ; schéma cible, NON migré) =====
--- Sous-gates : P4-A `download_grants` (migration `2026_07_14_000008`) puis
---              P4-B `download_logs` (migration `2026_07_14_000009`), chacun sur
---              branche dédiée avec rollback isolé par frontière (harness).
+-- ===== P4 LIVRAISON — PLAN FINALISÉ (D-029 + D-029.1 ; schéma cible, NON migré) =====
+-- Audit contradictoire validé par KingKouda (D-029.1, choix B–A–B) :
+--   B — colonnes de contenu de `product_files` rendues IMMUABLES par migration
+--       additive (nouvelle version = nouvelle ligne) ;
+--   A — composition des bundles SNAPSHOTÉE à la commande
+--       (`order_item_bundle_components`) ; la lignée G3 n'utilise JAMAIS la
+--       composition courante de `product_bundles` ;
+--   B — AUCUN DEFAULT commercial en BDD : `max_downloads` et `expires_at`
+--       explicites à chaque insertion ; TTL/quota/rétention = config applicative.
+-- Sous-gates : P4-A (branche `p4-a-download-grants`, trois migrations :
+--              `2026_07_14_000008_harden_product_files_content_immutability`,
+--              `2026_07_14_000009_create_order_item_bundle_components_table`,
+--              `2026_07_14_000010_create_download_grants_table`) puis
+--              P4-B `download_logs` (migration `2026_07_14_000011`), chacun sur
+--              branche dédiée avec rollback isolé par frontière (harness ;
+--              frontière P4-A = `000010`, down() des trois migrations du gate).
 -- `licenses` est EXCLU de P4 (option produit non décidée — cf. D-029 ; ne pas créer).
 -- Unité du grant : order_item × product_file (D-009 + SECURITE_TELECHARGEMENT.md).
 -- Token brut = random_bytes(32), envoyé UNE fois (e-mail) ; en BDD UNIQUEMENT son
@@ -867,16 +879,55 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 -- porte qu'un payment_id, aucune allocation par ligne (limite P3C-C assumée) ;
 -- révocation manuelle/support seulement. Un ciblage par ligne exigerait une table
 -- d'allocation refund→order_item et une décision dédiée (hors P4).
--- Versionnement : le grant pointe la ligne product_files ACHETÉE (version achetée,
--- jamais d'upgrade implicite) ; remplacement critique => révocation explicite +
--- réémission vers le nouveau fichier. Émission exigée sur fichier is_active.
+-- Versionnement : le grant pointe la ligne product_files ACHETÉE — garanti par G0
+-- (D-029.1-B) : storage_disk/storage_path/checksum_sha256/size_bytes/mime_type sont
+-- FIGÉS après insertion ; toute nouvelle version = NOUVELLE ligne product_files ;
+-- jamais d'upgrade implicite. Remplacement critique => désactivation de l'ancienne
+-- ligne + révocation explicite + réémission vers la nouvelle. Émission exigée sur
+-- fichier is_active. original_name/version/position/is_active restent mutables
+-- (métadonnées d'affichage, pas le contenu).
+-- Bundles : la lignée d'un fichier de bundle se prouve UNIQUEMENT contre le
+-- snapshot `order_item_bundle_components` figé à la commande (D-029.1-A) — un
+-- produit ajouté au bundle APRÈS l'achat n'est jamais livrable à un ancien acheteur,
+-- un produit retiré reste réémissible. Aucun repli sur la composition courante.
+-- Fail-closed : sans lignes de snapshot pour un order_item bundle, aucun grant
+-- enfant n'est émissible (le futur OrderService alimente le snapshot à la commande,
+-- pattern coupon_redemptions : table créée en P4-A, ALIMENTÉE par le checkout).
 -- Statut du grant DÉRIVÉ (revoked_at / expires_at / downloads_count) : AUCUN enum
 -- stocké — `expired` dépend de l'horloge, PostgreSQL ne pourrait pas garantir la
 -- cohérence d'un statut matérialisé. Seul download_logs.status est un enum stocké.
 -- Suppression physique des grants INTERDITE (révocation seulement, trace à vie).
 -- download_logs est la SEULE table P4 purgeable (rétention contrôlée, RGPD).
 
--- P4-A — DROITS DE TÉLÉCHARGEMENT
+-- P4-A.1 — DURCISSEMENT `product_files` (migration additive `000008` ; la
+-- migration P2 mergée `2026_07_12_000004` n'est JAMAIS éditée — pattern P3C-B.1).
+-- Trigger G0 : BEFORE UPDATE, les colonnes de CONTENU sont figées
+-- (storage_disk, storage_path, checksum_sha256, size_bytes, mime_type) ;
+-- original_name, version, position, is_active restent mutables. Aucun
+-- prevent-delete ajouté : la suppression d'un fichier vendu est déjà bloquée par
+-- le futur RESTRICT de download_grants ; les fichiers invendus restent purgeables.
+
+-- P4-A.2 — SNAPSHOT DES COMPOSANTS DE BUNDLE À LA COMMANDE (migration `000009`).
+-- Figé à la création de la commande par le futur OrderService ; immuable ensuite.
+CREATE TABLE order_item_bundle_components (
+    id                          BIGSERIAL PRIMARY KEY,
+    order_item_id               BIGINT NOT NULL REFERENCES order_items(id) ON DELETE RESTRICT,
+    child_product_id            BIGINT REFERENCES products(id) ON DELETE SET NULL,
+    child_product_name_snapshot TEXT NOT NULL,
+    child_product_slug_snapshot TEXT NOT NULL,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE order_item_bundle_components ADD CONSTRAINT oibc_child_name_not_blank_check CHECK (length(btrim(child_product_name_snapshot)) > 0);
+ALTER TABLE order_item_bundle_components ADD CONSTRAINT oibc_child_slug_not_blank_check CHECK (length(btrim(child_product_slug_snapshot)) > 0);
+CREATE UNIQUE INDEX oibc_order_item_child_unique
+    ON order_item_bundle_components (order_item_id, child_product_id) WHERE child_product_id IS NOT NULL;
+CREATE INDEX oibc_order_item_id_index    ON order_item_bundle_components (order_item_id);
+CREATE INDEX oibc_child_product_id_index ON order_item_bundle_components (child_product_id);
+-- Triggers S1/S2 : prevent-delete absolu ; immutabilité totale hors la seule
+-- nullification child_product_id non-NULL->NULL via l'action FK imbriquée
+-- ON DELETE SET NULL (pattern order_items.product_id / refunds.initiated_by_user_id).
+
+-- P4-A.3 — DROITS DE TÉLÉCHARGEMENT (migration `000010`)
 CREATE TABLE download_grants (
     id                  BIGSERIAL PRIMARY KEY,
     public_id           UUID   NOT NULL,               -- identifiant public ≠ secret
@@ -884,8 +935,8 @@ CREATE TABLE download_grants (
     product_file_id     BIGINT NOT NULL REFERENCES product_files(id) ON DELETE RESTRICT,
     user_id             BIGINT REFERENCES users(id) ON DELETE SET NULL,  -- audit seul
     token_hash          VARCHAR(64) NOT NULL,          -- SHA-256 ; token brut JAMAIS stocké
-    expires_at          TIMESTAMPTZ NOT NULL,          -- TTL recommandé 72 h (config, à confirmer)
-    max_downloads       BIGINT NOT NULL DEFAULT 5,
+    expires_at          TIMESTAMPTZ NOT NULL,          -- EXPLICITE à l'insertion (TTL en config applicative, 72 h recommandé)
+    max_downloads       BIGINT NOT NULL,               -- EXPLICITE à l'insertion, AUCUN DEFAULT commercial (D-029.1-B ; 5 recommandé en config)
     downloads_count     BIGINT NOT NULL DEFAULT 0,
     revoked_at          TIMESTAMPTZ,                   -- set-once, apparié au motif
     revoked_reason_code VARCHAR(100),                  -- ex: refund|fraud|file_replaced|support
@@ -914,7 +965,15 @@ CREATE INDEX download_grants_product_file_id_index ON download_grants (product_f
 CREATE INDEX download_grants_user_id_index         ON download_grants (user_id);
 CREATE INDEX download_grants_active_expiry_index   ON download_grants (expires_at) WHERE revoked_at IS NULL;
 
--- P4-B — JOURNAL DE CONSOMMATION (append-only, purgeable après rétention)
+-- P4-B — JOURNAL DE CONSOMMATION (migration `000011` ; append-only, purgeable
+-- après rétention). Sémantique stricte des statuts : started = grant validé,
+-- compteur incrémenté, flux ouvert ; completed = flux terminé (bytes_sent
+-- renseignable) ; denied = tentative SUR UN GRANT EXISTANT refusée
+-- (quota/expiration/révocation). Un token INCONNU n'entre JAMAIS ici
+-- (download_grant_id NOT NULL l'impose ; stocker des données dérivées de tokens
+-- attaquants recréerait le vecteur d'empoisonnement corrigé en P3C-B.1) : ces
+-- tentatives relèvent du rate-limiting et des logs de sécurité applicatifs.
+-- Les logs sont internes ; le client reçoit toujours un 404 générique.
 CREATE TABLE download_logs (
     id                 BIGSERIAL PRIMARY KEY,
     download_grant_id  BIGINT NOT NULL REFERENCES download_grants(id) ON DELETE RESTRICT,
@@ -922,7 +981,7 @@ CREATE TABLE download_logs (
     ip_hash            VARCHAR(64),                    -- HMAC-SHA-256 (clé hors BDD) ; JAMAIS l'IP brute
     user_agent         VARCHAR(500),                   -- tronqué côté service
     bytes_sent         BIGINT,
-    retention_until    TIMESTAMPTZ,                    -- purge RGPD (365 j recommandé, à confirmer)
+    retention_until    TIMESTAMPTZ,                    -- purge RGPD ; valeur en config applicative (D-029.1-B ; 365 j recommandé)
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE download_logs ADD CONSTRAINT download_logs_ip_hash_format_check CHECK (ip_hash IS NULL OR ip_hash ~ '^[0-9a-f]{64}$');
@@ -938,6 +997,21 @@ CREATE INDEX download_logs_retention_until_index ON download_logs (retention_unt
 -- refunds/agrégats -> download_grants.
 -- ─────────────────────────────────────────────────────────────────────────────
 -- P4-A
+--  G0 enforce_product_files_content_immutability() /
+--        product_files_enforce_content_immutability_trigger (migration `000008`)
+--        BEFORE UPDATE ON product_files. Figés après insertion : storage_disk,
+--        storage_path, checksum_sha256, size_bytes, mime_type. Mutables :
+--        original_name, version, position, is_active. Toute nouvelle version de
+--        contenu = NOUVELLE ligne (D-029.1-B) ; le même product_file_id ne peut
+--        plus jamais pointer vers un autre contenu.
+--  S1 prevent_order_item_bundle_components_delete() /
+--        order_item_bundle_components_prevent_delete_trigger (migration `000009`)
+--        BEFORE DELETE -> RAISE 23514 (snapshot d'achat, jamais supprimé).
+--  S2 enforce_order_item_bundle_components_immutability() /
+--        order_item_bundle_components_enforce_immutability_trigger
+--        BEFORE UPDATE. Tout figé ; seule exception : child_product_id
+--        non-NULL -> NULL via l'action FK imbriquée ON DELETE SET NULL, toutes
+--        les autres colonnes identiques (pattern order_items).
 --  G1 prevent_download_grants_delete()      / download_grants_prevent_delete_trigger
 --        BEFORE DELETE -> RAISE 23514 (un grant se révoque, ne se supprime jamais).
 --  G2 enforce_download_grants_immutability() / download_grants_enforce_immutability_trigger
@@ -959,10 +1033,17 @@ CREATE INDEX download_logs_retention_until_index ON download_logs (retention_unt
 --          4. product_file.is_active = true à l'émission ;
 --          5. lignée fichier : product_file.product_id = order_item.product_id, OU
 --             order_item.product_type_snapshot = 'bundle' ET product_file.product_id
---             IN (SELECT child_product_id FROM product_bundles WHERE bundle_id =
---             order_item.product_id) ;
+--             IN (SELECT child_product_id FROM order_item_bundle_components WHERE
+--             order_item_id = NEW.order_item_id AND child_product_id IS NOT NULL)
+--             — SNAPSHOT d'achat uniquement (D-029.1-A), JAMAIS la composition
+--             courante de product_bundles ;
 --          6. NEW.downloads_count = 0 et NEW.revoked_at IS NULL à la naissance.
 --        L'inexistence du order_item/product_file reste au message FK (pattern P3C).
+--        ⚠️ RÈGLE D'ORCHESTRATION ROTATION (anti-deadlock) : toute rotation doit
+--        verrouiller `orders` D'ABORD (ordre global), PUIS révoquer l'ancien grant,
+--        PUIS insérer le nouveau. Révoquer avant de verrouiller orders croiserait
+--        les verrous avec un remboursement concurrent (orders -> grants) et créerait
+--        un cycle de deadlock.
 --  G4 validate_download_grant_order_consistency() / DEFERRABLE INITIALLY DEFERRED,
 --        monté sur download_grants_validate_order_consistency_trigger
 --        (AFTER INSERT OR UPDATE OF revoked_at ON download_grants) ET
@@ -989,7 +1070,16 @@ CREATE INDEX download_logs_retention_until_index ON download_logs (retention_unt
 -- ─────────────────────────────────────────────────────────────────────────────
 -- SCHÉMA : types physiques (uuid/bigint/varchar(64)/timestamptz), FK RESTRICT/SET NULL,
 --   CHECK nommés, index partiels, fonctions/triggers présents, différés confirmés,
---   absence licenses/events/P5.
+--   absence licenses/events/P5 ; INSERT sans max_downloads ou expires_at explicites
+--   refusé (aucun DEFAULT commercial — D-029.1-B).
+-- DURCISSEMENT G0 : UPDATE de storage_path/checksum_sha256/size_bytes/mime_type/
+--   storage_disk refusé (message stable) ; original_name/version/position/is_active
+--   mutables ; comportements P2 antérieurs non cassés (suite Catalog verte).
+-- SNAPSHOT BUNDLE (S1/S2 + G3) : composant snapshoté -> grant enfant accepté ;
+--   produit ajouté à product_bundles APRÈS l'achat (absent du snapshot) -> refusé ;
+--   produit retiré de product_bundles mais présent au snapshot -> réémission acceptée ;
+--   order_item bundle sans lignes de snapshot -> aucun grant enfant (fail-closed) ;
+--   DELETE snapshot refusé ; UPDATE snapshot refusé ; nullification FK contrôlée.
 -- TOKEN : hash 64 hex accepté ; hash invalide/majuscule refusé ; unicité ; token brut
 --   absent de toute colonne ; réémission après révocation OK ; deux grants actifs même
 --   couple refusés (index partiel).
@@ -1014,10 +1104,12 @@ CREATE INDEX download_logs_retention_until_index ON download_logs (retention_unt
 --   nullification manuelle user_id refusée ; DELETE product bloqué par RESTRICT
 --   (via product_files) ; DELETE log avant rétention refusé, après rétention +
 --   statut terminal accepté.
--- ROLLBACK ISOLÉ (PhaseMigrationHarness) : P4-A frontière exacte `..._000008`,
---   down() du seul gate, P3C-C/P3C-B/P3C-A/P3B préservés, aucune migration P4-B/P5
---   appliquée ; P4-B frontière `..._000009`, download_grants préservée ; nettoyage
---   dans finally, aucune base temporaire résiduelle.
+-- ROLLBACK ISOLÉ (PhaseMigrationHarness) : P4-A frontière exacte `..._000010`,
+--   down() des trois migrations du gate (grants -> snapshot -> durcissement G0,
+--   ordre inverse), P3C-C/P3C-B/P3C-A/P3B/P2 préservés (product_files redevient
+--   mutable après rollback du durcissement — vérifié), aucune migration P4-B/P5
+--   appliquée ; P4-B frontière `..._000011`, download_grants et snapshot préservés ;
+--   nettoyage dans finally, aucune base temporaire résiduelle.
 ```
 
 ---
@@ -1209,8 +1301,10 @@ Ordre technique des migrations à respecter avant P1 :
 1. `users` + `customer_profiles` + `visitors` (fondation identité) ✅
 2. `categories` + `products` + `product_prices` + `product_files` + pivots catalogue ✅
 3. Commerce P3 (bloc ci-dessus) — schéma complet mergé jusqu'à P3C-C (PR #10) ✅
-4. `download_grants` (P4-A, migration `000008`) puis `download_logs` (P4-B,
-   migration `000009`) — plan finalisé D-029, non migré
+4. P4-A (durcissement `product_files` `000008` → snapshot
+   `order_item_bundle_components` `000009` → `download_grants` `000010`) puis
+   P4-B `download_logs` (`000011`) — plan finalisé D-029 + D-029.1 (B–A–B),
+   non migré
 5. `events` partitionnée + rollups (analytique)
 6. `campaigns` + `customer_segments` (marketing)
 7. Affiliation dédiée (`affiliate_profiles`, `affiliate_links`, `referrals`,

@@ -24,9 +24,11 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > P3C Paiements : plan BDD finalisé (D-028, 1A–5A). **P3C-A `payments` mergé via PR #6
 > (`4a077db`)**, P3C-B + hardening mergés via PR #8/#9 et P3C-C `refunds` mergé via
 > PR #10 (`122332a`).
-> **P4 Livraison : plan BDD finalisé (D-029)** — sous-gates P4-A `download_grants`
-> (`000008`) puis P4-B `download_logs` (`000009`) ; `licenses` exclu. Aucune
-> migration/logique P4 créée ; implémentation après validation humaine.
+> **P4 Livraison : plan BDD finalisé ET validé (D-029 + audit D-029.1, choix B–A–B)**
+> — P4-A = durcissement `product_files` (`000008`) + snapshot
+> `order_item_bundle_components` (`000009`) + `download_grants` (`000010`) ; P4-B =
+> `download_logs` (`000011`) ; `licenses` exclu. Aucune migration/logique P4 créée ;
+> prochaine étape : implémentation P4-A sur `p4-a-download-grants`.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -313,20 +315,26 @@ Vérifications post-merge P3B sur `p0-foundations-laravel13` (`f07d225`) :
 - aucune table P3C/P4/P5, aucun paiement, webhook, checkout ou téléchargement
 
 ## P4 — LIVRAISON (⚠️ cœur sécurité)
-Statut : plan BDD finalisé (D-029), schéma cible + catalogue de triggers G1–G6 et
-plan de tests consignés dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`. Découpage :
-P4-A `download_grants` (migration `2026_07_14_000008`, branche `p4-a-download-grants`)
-puis P4-B `download_logs` (migration `2026_07_14_000009`). `licenses` exclu de P4
-(décision produit ouverte). Aucune migration ni logique P4 créée à ce jour ;
-implémentation P4-A après validation humaine du plan.
+Statut : plan BDD finalisé (D-029) puis **audité contradictoirement et validé par
+KingKouda (D-029.1, choix B–A–B)** : contenu `product_files` immuable par migration
+additive, composition des bundles snapshotée à la commande, aucun DEFAULT commercial
+en BDD. Schéma cible + catalogue G0–G6/S1–S2 + plan de tests dans le bloc P4 de
+`DigiTrove_Schema_BDD_v1.md`. Découpage : **P4-A** (branche `p4-a-download-grants`,
+frontière rollback `000010`) = durcissement `product_files` (`000008`) + snapshot
+`order_item_bundle_components` (`000009`) + `download_grants` (`000010`) ; **P4-B**
+`download_logs` (`000011`). `licenses` exclu de P4 (décision produit ouverte).
+Aucune migration ni logique P4 créée à ce jour.
 
 | Tâche | Statut |
 |-------|--------|
-| Plan BDD P4 + décision D-029 (unité du grant, token haché, invariants) | ✅ DONE — validé côté plan, migration après validation humaine |
-| P4-A migration `download_grants` (G1–G4, index partiels, rollback isolé `000008`) | ⬜ TODO |
+| Plan BDD P4 + décision D-029 (unité du grant, token haché, invariants) | ✅ DONE |
+| Audit contradictoire du plan + décisions D-029.1 (B–A–B) | ✅ DONE — validé par KingKouda |
+| P4-A migration `000008` durcissement contenu `product_files` (trigger G0) | ⬜ TODO |
+| P4-A migration `000009` snapshot `order_item_bundle_components` (S1/S2) | ⬜ TODO |
+| P4-A migration `000010` `download_grants` (G1–G4, index partiels, sans DEFAULT commercial) | ⬜ TODO |
 | P4-A modèle `DownloadGrant` + factory + relations (`OrderItem::downloadGrants()`, `ProductFile::downloadGrants()`) | ⬜ TODO |
-| P4-A tests PostgreSQL (token, autorisation, quota, concurrence 2 connexions, refund total différé) | ⬜ TODO |
-| P4-B migration `download_logs` (G5–G6, rétention contrôlée, rollback isolé `000009`) | ⬜ TODO |
+| P4-A tests PostgreSQL (token, autorisation snapshot bundle, quota, concurrence 2 connexions, refund total différé, rollback isolé frontière `000010`) | ⬜ TODO |
+| P4-B migration `000011` `download_logs` (G5–G6, rétention contrôlée, rollback isolé) | ⬜ TODO |
 | P4-B enum `DownloadLogStatus` + modèle + factory + tests | ⬜ TODO |
 | Listener IssueDownloadGrants (sur OrderPaid) | ⬜ TODO — après schéma P4 |
 | DownloadService (token haché, expiration, quota atomique) | ⬜ TODO — après schéma P4 |
