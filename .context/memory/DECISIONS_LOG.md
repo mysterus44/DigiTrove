@@ -496,7 +496,11 @@ IMPACT : futures migrations P3C `create_payments_table`,
 et tests PostgreSQL. **P3C-A `create_payments_table` implémenté et mergé** via PR #6
 (`4a077db`, commit final audité `1a792a3`) conformément à cette décision : 4 fonctions,
 5 triggers (dont 2 constraint triggers différés), 3 index uniques partiels, FK RESTRICT.
-P3C-B (`payment_webhook_events`) et P3C-C (`refunds`) restent à implémenter.
+**P3C-B `create_payment_webhook_events_table` implémenté** (branche `p3c-b-webhooks`)
+conformément à D-028.4/D-028.5 : 3 fonctions / 3 triggers immédiats (immutabilité +
+transitions received→terminal, cohérence webhook↔paiement signé/même provider, suppression
+contrôlée par rétention), 2 index uniques partiels de rejeu, pas de statut `duplicate`,
+webhook invalide en forme minimale. P3C-C (`refunds`) reste à implémenter.
 
 ---
 
