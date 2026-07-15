@@ -7,9 +7,9 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Claude Code
-- **Date** : 2026-07-14
-- **Branche git active** : `p3c-a-payments` (P3C-A implémenté, non mergé ; basée sur
-  `be1af7f` de `p0-foundations-laravel13`)
+- **Date** : 2026-07-15
+- **Branche git active** : `p0-foundations-laravel13` (P3C-A mergé via PR #6 → `4a077db`,
+  synchronisé fast-forward)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -21,6 +21,10 @@
 - **Merge P3B Commandes** : [PR #5](https://github.com/mysterus44/DigiTrove/pull/5)
   `f07d225 Merge pull request #5 from mysterus44/p3b-orders`
   (SHA complet `f07d2258c18e196af608f7df97a5816a7cf578f6`, parents `6f7578e` + `499e2bd`)
+- **Merge P3C-A Payments** : [PR #6](https://github.com/mysterus44/DigiTrove/pull/6)
+  `4a077db Merge pull request #6 from mysterus44/p3c-a-payments`
+  (SHA complet `4a077db6720ee07b304a7746bf7545f6dcf743ec`, parents `be1af7f` + `1a792a3` ;
+  commits intégrés `c45e44a` + `0d04f77` + `1a792a3`)
 - **`main` local** : réaligné sur `origin/main` = `1e41b92 DigiTrove V2`
   (intact, sans P1/P2/P3A/P3B)
 - **Build/tests** :
@@ -222,20 +226,23 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**P3C-A Payments est implémenté sur la branche `p3c-a-payments` (non mergée, en attente
-de review humaine).** Table `payments` + enum `PaymentStatus` + modèle + factory + 4
-fonctions / 5 triggers PostgreSQL + tests (16 tests / 209 assertions). Suite complète
-verte (78 tests / 855 assertions), Pint 88 fichiers, diff-check propre.
+**P3C-A Payments est mergé** (PR #6 → `4a077db`, parents `be1af7f` + `1a792a3`) dans
+`p0-foundations-laravel13`, synchronisé fast-forward. Post-merge vert : 20 migrations,
+rollbacks isolés 2/54, P3B 18/361, P3C-A 16/225, suite complète 78/896, Pint 89,
+diff-check propre. `origin/main` intact `1e41b92` ; branche locale `p3c-a-payments`
+supprimée, `origin/p3c-a-payments` conservée à `1a792a3`.
 
-Action suivante, après review et merge de `p3c-a-payments` : **P3C-B — `payment_webhook_events`**
-(sur une nouvelle branche dédiée `p3c-b-webhooks`, exécution séparée), puis **P3C-C —
+Action suivante : **plan BDD P3C-B — `payment_webhook_events`** dans une exécution
+séparée, puis implémentation sur une branche dédiée `p3c-b-webhooks` ; ensuite **P3C-C —
 `refunds`** (`p3c-c-refunds`). Suivre le plan D-028 / `DigiTrove_Schema_BDD_v1.md`
 (webhook purgeable, dédup `(provider, external_event_id)` + `(provider, payload_hash)`
 si signature invalide ; refunds avec cumul par trigger IMMÉDIAT + verrou `FOR UPDATE`).
+Réutiliser les patterns P3B/P3C-A (prevent-delete + immutabilité + constraint triggers
+différés + `PhaseMigrationHarness` pour les rollbacks isolés par frontière).
 
-Gate : ne pas démarrer P3C-B/P3C-C tant que P3C-A n'est pas review/mergé. Aucun
-contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret, SDK, Filament,
-`download_grant`, téléchargement ou déploiement Azure. Ne jamais pousser sur `main`.
+Gate : aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret,
+SDK, Filament, `download_grant`, téléchargement ou déploiement Azure. Ne jamais pousser
+sur `main`. Plan avant code, une feature à la fois, BDD avant logique.
 
 Note régression P3C-A (transparence) : ajouter `payments` a rendu obsolètes des
 assertions « table interdite » dans `IdentitySchemaTest`, `CatalogSchemaTest`,
@@ -297,6 +304,25 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-15 — Claude Code (clôture post-merge P3C-A)
+- Fait : **P3C-A Payments mergé** via [PR #6](https://github.com/mysterus44/DigiTrove/pull/6)
+  → merge commit `4a077db6720ee07b304a7746bf7545f6dcf743ec` (2 parents `be1af7f` + `1a792a3`,
+  commits intégrés `c45e44a` + `0d04f77` + `1a792a3`). `p0-foundations-laravel13` synchronisé
+  fast-forward (`be1af7f..4a077db`).
+- Validation post-merge (PostgreSQL réel) : 20 migrations ; rollbacks isolés **2/54** ;
+  P3B **18/361** ; P3C-A **16/225** ; suite complète **78/896** ; Pint **89** ; `git diff --check`
+  propre. Audit BDD : table `payments` (types uuid/bigint/varchar(32|64|3)/jsonb/timestamptz,
+  FK `order_id` RESTRICT), 4 fonctions + 5 triggers P3C-A dont 2 constraint triggers
+  `DEFERRABLE INITIALLY DEFERRED`, 3 index uniques partiels. Non-régression P3B : 6 fonctions,
+  8 triggers, 4 différés, `orders_coupon_snapshot_consistency_check` intacts. Aucune table
+  `payment_webhook_events`/`refunds`/`download_grants`/`licenses`/`events`. `PhaseMigrationHarness`
+  opérationnel (frontières exactes, aucun `--step`, nettoyage `finally`, aucune base temporaire
+  résiduelle, `digitrove_testing` accessible).
+- Nettoyage : branche locale `p3c-a-payments` supprimée (mergée), `origin/p3c-a-payments`
+  conservée à `1a792a3` ; `origin/main` intact `1e41b92`. Aucune correction post-merge nécessaire.
+- Décisions : aucune nouvelle (D-028 inchangée ; merge consigné). P3C-B/P3C-C non démarrés.
+- Laisse à : **plan BDD P3C-B `payment_webhook_events`** (exécution séparée).
 
 ### 2026-07-14 — Claude Code (isolation des tests de rollback P3B/P3C-A)
 - Contexte : le correctif précédent `0d04f77` (calcul dynamique du `--step`) corrigeait

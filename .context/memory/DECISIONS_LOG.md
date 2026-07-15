@@ -493,7 +493,10 @@ statut webhook `duplicate` ; `external_event_id` obligatoire pour les invalides 
 provider en casse libre ; triggers qui mutent au lieu de refuser.
 IMPACT : futures migrations P3C `create_payments_table`,
 `create_payment_webhook_events_table`, `create_refunds_table`, fonctions/triggers T1–T11
-et tests PostgreSQL. Aucune implémentation en cette exécution (plan documentaire).
+et tests PostgreSQL. **P3C-A `create_payments_table` implémenté et mergé** via PR #6
+(`4a077db`, commit final audité `1a792a3`) conformément à cette décision : 4 fonctions,
+5 triggers (dont 2 constraint triggers différés), 3 index uniques partiels, FK RESTRICT.
+P3C-B (`payment_webhook_events`) et P3C-C (`refunds`) restent à implémenter.
 
 ---
 

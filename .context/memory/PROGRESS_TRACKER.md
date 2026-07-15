@@ -11,7 +11,7 @@ P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
-P3 COMMERCE         : █████████░  P3A+P3B mergés ; P3C-A payments implémenté (branche)
+P3 COMMERCE         : █████████░  P3A+P3B+P3C-A mergés ; P3C-B/P3C-C à venir
 P4 LIVRAISON        : ░░░░░░░░░░  0%
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
@@ -21,8 +21,8 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > Rappel : **aucune logique métier avant que P1→P4 soient migrés et testés.**
 > P1, P2, P3A et P3B sont mergés dans `p0-foundations-laravel13` (P3B via PR #5 →
 > `f07d225`).
-> P3C Paiements : plan BDD finalisé (D-028, 1A–5A). **P3C-A `payments` implémenté sur
-> la branche `p3c-a-payments`** (non mergée) ; P3C-B webhooks et P3C-C refunds à suivre.
+> P3C Paiements : plan BDD finalisé (D-028, 1A–5A). **P3C-A `payments` mergé via PR #6
+> (`4a077db`)** ; P3C-B webhooks et P3C-C refunds non démarrés.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -231,7 +231,7 @@ Ordre de migration révisé (D-024/D-027) : `coupons` → `coupon_currency_rules
 | Modèles/enums/factories P3B | ✅ DONE — sans logique checkout/paiement |
 | Tests PostgreSQL P3B (contraintes, immutabilité, cohérence différée) | ✅ DONE — 18 tests, 337 assertions |
 | Plan BDD P3C + décisions d'intégrité (D-028) | ✅ DONE — validé (1A–5A) |
-| P3C-A `payments` (migration + enum + modèle + factory + 4 fn / 5 triggers) | ✅ DONE — branche `p3c-a-payments`, 16 tests |
+| P3C-A `payments` (migration + enum + modèle + factory + 4 fn / 5 triggers) | ✅ DONE — **mergé PR #6 → `4a077db`**, 16 tests / 225 assertions |
 | P3C-A tests de rollback isolés par frontière (`tests/Support/PhaseMigrationHarness`) | ✅ DONE — `migrate --path` jusqu'au gate + `migrate:rollback --path` du gate seul ; plus de `--step` |
 | P3C-B `payment_webhook_events` | ⬜ TODO — branche dédiée après merge P3C-A |
 | P3C-C `refunds` (cumul par trigger immédiat + verrou) | ⬜ TODO — branche dédiée |
