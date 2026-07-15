@@ -8,8 +8,8 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-15
-- **Branche git active** : `p3c-b1-webhook-replay-hardening` (durcissement post-merge
-  P3C-B, non mergé ; basée sur `51c4847` = merge PR #8 de P3C-B dans `p0-foundations-laravel13`)
+- **Branche git active** : `p0-foundations-laravel13` (durcissement P3C-B.1 mergé via
+  PR #9 → `13932ac`, synchronisé fast-forward)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -25,6 +25,12 @@
   `4a077db Merge pull request #6 from mysterus44/p3c-a-payments`
   (SHA complet `4a077db6720ee07b304a7746bf7545f6dcf743ec`, parents `be1af7f` + `1a792a3` ;
   commits intégrés `c45e44a` + `0d04f77` + `1a792a3`)
+- **Merge P3C-B Webhooks** : [PR #8](https://github.com/mysterus44/DigiTrove/pull/8)
+  `51c4847 Merge pull request #8 from mysterus44/p3c-b-webhooks`
+  (parents `963eef0` + `49ad374` ; commit P3C-B `49ad374`)
+- **Merge P3C-B.1 hardening** : [PR #9](https://github.com/mysterus44/DigiTrove/pull/9)
+  `13932ac Merge pull request #9 from mysterus44/p3c-b1-webhook-replay-hardening`
+  (SHA complet `13932ac11c59be366b859916bd5f15948d7d2cdf`, parents `51c4847` + `c772ac1`)
 - **`main` local** : réaligné sur `origin/main` = `1e41b92 DigiTrove V2`
   (intact, sans P1/P2/P3A/P3B)
 - **Build/tests** :
@@ -226,18 +232,18 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**P3C-B `payment_webhook_events` est implémenté sur la branche `p3c-b-webhooks`** (basée
-sur la clôture P3C-A `963eef0`, non mergée). Migration `2026_07_14_000005`, enum
-`WebhookProcessingStatus`, modèle + factory + relation `Payment::webhookEvents()`,
-3 fonctions / 3 triggers immédiats. Vert : P3C-B 12 tests, suite complète 90/1077, Pint
-94, diff-check propre, rollback isolé par frontière (via `PhaseMigrationHarness`).
+**P3C-B `payment_webhook_events` + durcissement P3C-B.1 sont mergés** dans
+`p0-foundations-laravel13` (PR #8 `51c4847`, puis PR #9 `13932ac`). Post-merge vert :
+22 migrations, index de rejeu durci (`… AND signature_verified = true`), P3C-B 13/191,
+suite complète 91/1081, Pint 95, diff-check propre. `origin/main` intact `1e41b92`… →
+`11130f4` (promu via PR #7). Branches locales P3C-B/P3C-B.1 supprimées, distantes conservées.
 
-Action suivante : review + merge de `p3c-b-webhooks` dans `p0-foundations-laravel13`,
-puis **P3C-C — `refunds`** sur une branche dédiée `p3c-c-refunds` (exécution séparée).
-Suivre le plan D-028 / `DigiTrove_Schema_BDD_v1.md` : refunds avec **cumul par trigger
-IMMÉDIAT + verrou `FOR UPDATE`** (≠ triggers différés), cohérence différée
-remboursement↔commande, provider/devise = paiement, `payment_id` RESTRICT. Réutiliser
-les patterns P3B/P3C-A/P3C-B (prevent-delete + immutabilité + `PhaseMigrationHarness`).
+Action suivante : **P3C-C — `refunds`** sur une branche dédiée `p3c-c-refunds`
+(migration `2026_07_14_000007`, exécution séparée). Suivre le plan D-028 /
+`DigiTrove_Schema_BDD_v1.md` : refunds avec **cumul par trigger IMMÉDIAT + verrou
+`FOR UPDATE`** (≠ triggers différés), cohérence différée remboursement↔commande,
+provider/devise = paiement, `payment_id` RESTRICT. Réutiliser les patterns
+P3B/P3C-A/P3C-B (prevent-delete + immutabilité + `PhaseMigrationHarness`).
 
 Gate : aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret,
 SDK, Filament, job de purge, `download_grant`, téléchargement ou déploiement Azure.
@@ -303,6 +309,19 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-15 — Claude Code (clôture post-merge P3C-B.1)
+- Fait : **durcissement P3C-B.1 mergé** via [PR #9](https://github.com/mysterus44/DigiTrove/pull/9)
+  → `13932ac` (2 parents `51c4847` + `c772ac1`). `p0-foundations-laravel13` synchronisé
+  fast-forward (`963eef0..13932ac`, inclut aussi le merge P3C-B PR #8 `51c4847`).
+- Validation post-merge (PostgreSQL réel) : 22 migrations ; **index de rejeu durci confirmé**
+  par introspection (`WHERE (external_event_id IS NOT NULL) AND (signature_verified = true)`) ;
+  P3C-B **13/191**, suite complète **91/1081**, Pint **95**, `git diff --check` propre, aucune
+  base temporaire résiduelle. Migration mergée `000005` inchangée.
+- Nettoyage : branches locales `p3c-b-webhooks` (49ad374) et `p3c-b1-webhook-replay-hardening`
+  (c772ac1) supprimées (mergées) ; distantes conservées. `origin/main` intact `11130f4`.
+- Décisions : aucune nouvelle (D-028.4 déjà consignée : rejeu restreint aux signés).
+- Laisse à : **P3C-C `refunds`** (branche dédiée, migration `000007`, exécution séparée).
 
 ### 2026-07-15 — Claude Code (durcissement P3C-B.1 — unicité de rejeu)
 - Contexte : P3C-B mergé via **PR #8** (`51c4847`, parents `963eef0` + `49ad374`). Review

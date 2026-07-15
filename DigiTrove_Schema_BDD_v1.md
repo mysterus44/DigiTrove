@@ -562,10 +562,12 @@ CREATE INDEX coupon_redemptions_redeemed_at_index ON coupon_redemptions (redeeme
 -- ============================================================================
 -- 🅲.P3C PAIEMENTS & REMBOURSEMENTS — PLAN FINALISÉ (D-028 ; choix 1A–5A validés)
 -- ÉTAT : P3C-A `payments` MERGÉ (PR #6 -> 4a077db ; 4 fonctions / 5 triggers dont 2
---        constraint triggers différés). P3C-B `payment_webhook_events` IMPLÉMENTÉ
---        (branche p3c-b-webhooks ; 3 fonctions / 3 triggers immédiats : immutabilité+
---        transitions, cohérence webhook↔paiement, suppression contrôlée par rétention ;
---        pas de statut 'duplicate' ; D-028 inchangée). P3C-C `refunds` reste à implémenter.
+--        constraint triggers différés). P3C-B `payment_webhook_events` MERGÉ (PR #8
+--        -> 51c4847 ; 3 fonctions / 3 triggers immédiats : immutabilité+transitions,
+--        cohérence webhook↔paiement, suppression contrôlée par rétention ; pas de statut
+--        'duplicate'). Durcissement P3C-B.1 MERGÉ (PR #9 -> 13932ac) : index de rejeu
+--        `(provider, external_event_id)` restreint aux signés (D-028.4). P3C-C `refunds`
+--        reste à implémenter.
 --        Pour payments : `payments.status` est un VARCHAR(20)
 --        contraint ; provider est VARCHAR(32) ; les checks amount/currency sont doublés
 --        par le trigger immédiat validate_payment_order_amount (défense en profondeur).

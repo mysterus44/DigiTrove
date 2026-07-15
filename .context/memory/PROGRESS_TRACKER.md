@@ -11,7 +11,7 @@ P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
-P3 COMMERCE         : █████████░  P3A+P3B+P3C-A+P3C-B mergés ; durcissement P3C-B.1 (branche) ; P3C-C à venir
+P3 COMMERCE         : █████████░  P3A+P3B+P3C-A+P3C-B(+durcissement) mergés ; reste P3C-C refunds
 P4 LIVRAISON        : ░░░░░░░░░░  0%
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
@@ -233,7 +233,8 @@ Ordre de migration révisé (D-024/D-027) : `coupons` → `coupon_currency_rules
 | Plan BDD P3C + décisions d'intégrité (D-028) | ✅ DONE — validé (1A–5A) |
 | P3C-A `payments` (migration + enum + modèle + factory + 4 fn / 5 triggers) | ✅ DONE — **mergé PR #6 → `4a077db`**, 16 tests / 225 assertions |
 | P3C-A tests de rollback isolés par frontière (`tests/Support/PhaseMigrationHarness`) | ✅ DONE — `migrate --path` jusqu'au gate + `migrate:rollback --path` du gate seul ; plus de `--step` |
-| P3C-B `payment_webhook_events` (migration + enum + modèle + factory + 3 fn / 3 triggers) | ✅ DONE — branche `p3c-b-webhooks`, 12 tests ; rollback isolé par frontière |
+| P3C-B `payment_webhook_events` (migration + enum + modèle + factory + 3 fn / 3 triggers) | ✅ DONE — **mergé PR #8 → `51c4847`**, 13 tests ; rollback isolé par frontière |
+| P3C-B.1 durcissement rejeu (index unique réservé aux signés, migration `000006`) | ✅ DONE — **mergé PR #9 → `13932ac`** ; test adversarial |
 | P3C-C `refunds` (cumul par trigger immédiat + verrou) | ⬜ TODO — branche dédiée |
 | OrderService (snapshot prix + nom) | ⬜ TODO |
 | CouponService (règle par devise, plafonds, verrou transactionnel) | ⬜ TODO |

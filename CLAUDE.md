@@ -40,10 +40,11 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
 - **P0 Fondations** ✅ terminé · **SITE-00** ✅ mergé · **P1 Identité** ✅ mergé
 - **P2 Catalogue** ✅ mergé (PR #3 → `aff4d05`)
 - **P3 Commerce** 🟡 P3A/P3B/P3C-A mergés · P3C plan finalisé (D-028, 1A–5A) ·
-  **P3C-B `payment_webhook_events` implémenté** sur la branche `p3c-b-webhooks` (non mergée)
+  **P3C-B `payment_webhook_events` mergé** (PR #8 → `51c4847`) + **durcissement P3C-B.1**
+  (PR #9 → `13932ac`, index de rejeu réservé aux signés)
 
-Prochaine étape : review + merge de `p3c-b-webhooks`, puis **P3C-C `refunds`** sur une
-branche dédiée (cumul par trigger IMMÉDIAT + verrou `FOR UPDATE` ; patterns P3B/P3C-A/P3C-B).
+Prochaine étape : **P3C-C `refunds`** sur une branche dédiée `p3c-c-refunds` (migration
+`000007` ; cumul par trigger IMMÉDIAT + verrou `FOR UPDATE` ; patterns P3B/P3C-A/P3C-B).
 
 ## 🔄 EN FIN DE TÂCHE
 

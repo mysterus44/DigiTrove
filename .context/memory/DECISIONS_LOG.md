@@ -509,8 +509,8 @@ ne doit pas réserver ce créneau ni bloquer un événement signé légitime (po
 `external_event_id` reste conservé sur les invalides pour l'audit ; les invalides
 restent dédupliqués par `(provider, payload_hash) WHERE signature_verified = false`.
 Correctif = migration additive `2026_07_14_000006_harden_webhook_external_event_unique`
-(branche `p3c-b1-webhook-replay-hardening`, jamais d'édition de la migration mergée).
-P3C-C (`refunds`) reste à implémenter.
+(jamais d'édition de la migration mergée), **mergé via PR #9 (`13932ac`)**. P3C-B mergé
+via PR #8 (`51c4847`). P3C-C (`refunds`) reste à implémenter (migration `000007`).
 
 ---
 
