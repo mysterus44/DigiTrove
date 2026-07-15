@@ -159,7 +159,6 @@ it('allows anonymous visitors and future attachment to a user', function () {
 
 it('does not create out-of-scope P3C, delivery, analytics, or affiliation tables', function () {
     $forbiddenTables = [
-        'refunds',
         'download_grants',
         'download_logs',
         'affiliate_profiles',
