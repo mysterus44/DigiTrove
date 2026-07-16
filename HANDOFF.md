@@ -282,23 +282,45 @@ applicative de l'OrderService, P4-A2 fail-closed) ; exhaustivité applicative
 uniquement ; risque d'insertion tardive par rôle SQL privilégié documenté et non
 éliminé. Rollback isolé `000009` vert (P4-A0/G0 et P0–P3C préservés). Branche
 locale supprimée, distante conservée à `94b018c`. `origin/main` intact `11130f4`.
-Action suivante : **plan technique P4-A2 — Download Grants**, dans une exécution
-séparée, avant toute migration.
-- prochaine branche réservée : `p4-a2-download-grants` (depuis la stable `93d1f17`) ;
-- prochaine migration réservée : `2026_07_14_000010_create_download_grants_table.php`
-  (frontière rollback `000010`) : table `download_grants` + G1–G4 (prevent-delete,
-  immutabilité + consommation +1 bornée, préconditions d'émission sous verrou
-  `orders FOR UPDATE`, cohérence différée bidirectionnelle grant↔commande).
-Rappels de contrat (D-029/D-029.1/D-029.2/D-029.3) : unité `order_item ×
-product_file` ; `token_hash VARCHAR(64)` SHA-256 unique, token brut jamais stocké ;
-`public_id UUID` ; FK RESTRICT + `user_id SET NULL` (audit) ; un seul grant ACTIF
-par couple (index partiel `WHERE revoked_at IS NULL`) ; **`max_downloads` et
-`expires_at` EXPLICITES à l'insertion, aucun DEFAULT commercial** ; TTL 72 h /
-quota 5 / rétention 365 j = simples recommandations de config applicative ;
-révocation set-once appariée au motif ; rotation = verrouiller `orders` AVANT de
-révoquer puis insérer (anti-deadlock) ; lignée bundle prouvée **uniquement** contre
-`order_item_bundle_components` — **aucun repli sur `product_bundles`**, fail-closed
-si le snapshot est absent ou incomplet.
+**Le plan P4-A2 est finalisé et validé (D-029.4 ; choix KingKouda : option A).**
+
+Action suivante : **implémenter P4-A2 — Download Grants**, dans une exécution
+séparée. STRICTEMENT ce périmètre :
+- branche : `p4-a2-download-grants` (depuis la stable) ;
+- migration UNIQUE : `2026_07_14_000010_create_download_grants_table.php`
+  (frontière rollback `000010`) : table `download_grants` + **G1–G4** (G1
+  prevent-delete, G2 immutabilité + bornes du compteur + révocation irréversible,
+  G3 validation d'émission sous `orders FOR UPDATE`, G4 cohérence différée
+  bidirectionnelle grant↔commande) ; modèle `DownloadGrant`, factory, relations
+  `OrderItem::downloadGrants()` / `ProductFile::downloadGrants()`.
+Contrat (D-029 → D-029.4) : unité `order_item × product_file` ; `token_hash
+VARCHAR(64)` SHA-256 unique, **token brut jamais persisté** ; `public_id UUID` ;
+FK `order_item_id`/`product_file_id` RESTRICT + `user_id` SET NULL
+(**dénormalisation d'audit**, pas la source d'autorité — celle-ci est
+`grant → order_item → order`, avec `orders.customer_email` comme snapshot
+d'identité) ; un seul grant ACTIF par couple (index partiel `WHERE revoked_at IS
+NULL`) ; **`max_downloads` et `expires_at` NOT NULL EXPLICITES, aucun DEFAULT
+commercial, ni quota illimité ni absence d'expiration** ; `downloads_count` créé
+mais **non consommé avant P4-B** ; révocation set-once appariée au motif et
+**irréversible** ; **éligibilité financière = `orders.status IN
+('paid','partially_refunded')` uniquement — G3/G4 ne relisent pas `payments`** (les
+triggers différés P3C garantissent déjà l'équivalence) ; lignée bundle prouvée
+**uniquement** contre `order_item_bundle_components`, **aucun repli sur
+`product_bundles`**.
+Points D-029.4 à respecter à la lettre :
+- **option A** : les grants émis à `OrderPaid` SONT le snapshot applicatif des
+  fichiers livrés. **PostgreSQL ne garantit pas** qu'un ProductFile existait à
+  l'achat — « absence d'upgrade implicite = garantie APPLICATIVE » ;
+- fichier ajouté après l'achat : aucun grant automatique, jamais sélectionné par
+  une rotation ni une réémission ; l'y rattacher = `upgrade entitlement`, hors MVP ;
+- **rotation/réémission conservent le même `order_item_id + product_file_id`** ;
+  tout changement de `product_file_id` est une nouvelle attribution commerciale ;
+- **snapshot bundle** : absent = détectable et refusé ; **partiel = INDÉTECTABLE**
+  (sous-livraison possible, jamais de sur-livraison) — ne jamais écrire l'inverse ;
+- un grant **expiré non révoqué** bloque la réémission → révocation
+  `expired_reissue` obligatoire d'abord ; **aucun index partiel avec `now()`** ;
+- AUCUNE route, contrôleur, streaming, consommation réelle, DownloadLog, IP,
+  user-agent, analyse ; aucun code P4-B/P5 ; PR jamais mergée par l'agent.
 Ensuite, P4-B `p4-b-download-logs` (`000011`) uniquement APRÈS merge de P4-A2.
 
 Gate : aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret,
@@ -366,6 +388,37 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-16 — Claude Code (plan final P4-A2 + décision D-029.4)
+- Fait : **finalisation documentaire du plan P4-A2** (exécution documentaire,
+  décision **D-029.4**). L'audit a établi par introspection que `orders.status` est
+  déjà une source d'autorité fiable pour « payé » (constraint triggers différés P3C
+  `orders_validate_payment_consistency` / `orders_validate_refund_consistency` /
+  `refunds_validate_order_consistency`, tous `deferrable=true`, plus l'unique
+  partiel `payments_one_succeeded_per_order`) → **G3/G4 ne reliront pas `payments`**.
+  Question soulevée et tranchée : **aucun snapshot BDD des ProductFiles achetés
+  n'existe** (P4-A1 ne snapshotte que les composants de bundle), donc la lignée G3
+  accepterait techniquement un fichier ajouté après l'achat.
+- **KingKouda a tranché : option A** → les grants émis à `OrderPaid` **sont** le
+  snapshot **applicatif** des fichiers livrés ; « absence d'upgrade implicite =
+  garantie APPLICATIVE, pas invariant PostgreSQL ». Un fichier postérieur ne reçoit
+  aucun grant automatique et n'est jamais choisi par une rotation ou une réémission
+  (qui conservent le même `order_item_id + product_file_id`) ; l'y rattacher serait
+  un **`upgrade entitlement`**, hors P4-A2/P4-B/MVP.
+- **Trois findings corrigés** : (1) la formulation « snapshot **incomplet**
+  détecté en fail-closed » était **fausse** — P4-A2 ne détecte que l'absence
+  TOTALE ; un snapshot partiel est indétectable (sous-livraison possible, jamais de
+  sur-livraison) ; corrigé dans le contrat cible de D-029.3 et dans le schéma, sans
+  réécrire l'historique ; (2) un grant **expiré non révoqué** reste dans le
+  prédicat `WHERE revoked_at IS NULL` et bloque la réémission → révocation
+  `expired_reissue` préalable obligatoire, **aucun index avec `now()`** ; (3)
+  `user_id` requalifié en **dénormalisation de support/audit** (la source
+  d'autorité reste `grant → order_item → order`).
+- État build/tests : `git diff --check` propre ; **aucun fichier PHP touché** (docs
+  seuls). Baseline inchangée : 25 migrations, 133 tests / 1882 assertions, Pint 106.
+- Décisions prises (→ DECISIONS_LOG.md) : **D-029.4**.
+- Laisse à : **implémentation P4-A2** (`p4-a2-download-grants`, migration `000010`),
+  exécution séparée. Aucune migration, branche, classe ou test créés ici.
 
 ### 2026-07-16 — Claude Code (clôture post-merge P4-A1)
 - Fait : **P4-A1 mergé** via [PR #12](https://github.com/mysterus44/DigiTrove/pull/12),
@@ -477,6 +530,8 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 - Objets P4-A1 arrêtés : table + **3 fonctions / 3 triggers** (S1/S2/S3) ; aucune
   quantité (le pivot n'en a pas) ; aucune `position` ; aucun fallback pivot en
   P4-A2 ; fail-closed si snapshot absent ou incomplet.
+  *(Entrée historique — formulation corrigée depuis par D-029.4, finding 1 : seul
+  un snapshot TOTALEMENT absent est détectable ; un snapshot partiel ne l'est pas.)*
 - **Garde-fou bundle vide** (précision validée) : la BDD autorise techniquement un
   snapshot vide (aucune cardinalité minimale — l'imposer exigerait le constraint
   trigger différé écarté) ; le futur OrderService refuse la commande d'un bundle

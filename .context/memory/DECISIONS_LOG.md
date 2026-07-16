@@ -775,9 +775,15 @@ n'est pas re-décidé ; cet amendement fige les points laissés ouverts :
    Couverture : permissions BDD minimales, absence d'API de mutation directe,
    tests — cohérent avec le compromis assumé de D-027.
 5. **Aucun fallback en P4-A2** : la lignée bundle se prouve UNIQUEMENT contre le
-   snapshot. Snapshot **absent ou incomplet** sur un order_item bundle ⇒ émission
-   de grant REFUSÉE en fail-closed, aucun repli sur `product_bundles`, aucune
-   supposition, message stable.
+   snapshot, aucun repli sur `product_bundles`, aucune supposition, message stable.
+   ⚠️ **Formulation corrigée par D-029.4 (finding 1)** — le texte original disait
+   « snapshot absent **ou incomplet** ⇒ émission refusée », ce qui prêtait à
+   P4-A2 une capacité qu'il n'a pas. Contrat cible exact : un snapshot
+   **totalement absent** est détectable et refusé ; un composant absent du
+   snapshot n'est simplement jamais livrable ; un snapshot **partiellement copié
+   est indétectable** (P4-A1 ne stocke ni en-tête, ni compteur attendu, ni preuve
+   de complétude, et comparer au pivot courant est interdit). Risque résiduel :
+   sous-livraison possible, jamais de sur-livraison.
 6. **Objets P4-A1** : table `order_item_bundle_components` + **trois fonctions /
    trois triggers** (S1 prevent-delete, S2 immutabilité, S3 validation immédiate).
    Aucune quantité (le pivot n'en a pas) ; aucune `position` (ordre d'affichage
@@ -813,6 +819,107 @@ l'agent). Adaptation historique prévue : retirer `order_item_bundle_components`
 de l'unique assertion globale de `P4A0ProductFileImmutabilityTest`, en CONSERVANT
 son absence dans le rollback isolé P4-A0 (frontière `000008` < `000009`) et les
 interdictions `download_grants`/`download_logs`/`licenses`/P5.
+
+**AMENDEMENT D-029.4 — Download grant security and lifecycle (validé KingKouda :
+option A).** Finalise le contrat P4-A2 (`download_grants`, migration `000010`,
+branche `p4-a2-download-grants`). Le schéma, l'unité (`order_item × product_file`),
+le token SHA-256, les FK, l'unique partiel, les index, `max_downloads`/`expires_at`
+sans DEFAULT et G1–G4 restent ceux de D-029/D-029.1/D-029.2 et ne sont pas
+re-décidés. Cet amendement fige les points laissés ouverts et corrige trois
+formulations.
+1. **ProductFiles postérieurs à l'achat — option A : émission immédiate comme
+   snapshot APPLICATIF.** Aucun snapshot BDD des fichiers achetés n'existe (P4-A1
+   ne snapshotte que les composants de bundle) : la lignée G3 accepterait donc
+   techniquement un fichier ajouté après l'achat. Choix retenu : à l'événement
+   futur `OrderPaid`, le service d'émission crée les grants pour les ProductFiles
+   **actifs à cet instant**, financièrement éligibles et de lignée valide ; les
+   lignes `download_grants` constituent ensuite le **snapshot applicatif des
+   fichiers livrés**. **PostgreSQL ne garantit pas qu'un ProductFile existait au
+   moment de l'achat** : G3 garantit seulement la lignée (fichier d'un produit
+   réellement acheté), l'absence de fichier d'un produit non acheté et l'absence
+   de fallback vers le pivot bundle courant. → **« absence d'upgrade implicite =
+   garantie APPLICATIVE, pas invariant PostgreSQL »**, à écrire ainsi partout.
+   Alternatives écartées : snapshot BDD des ProductFiles (quatrième gate, garantie
+   forte mais coût structurel) ; accès aux fichiers actifs courants (contredirait
+   D-029.1-B « version achetée / jamais d'upgrade implicite »).
+2. **ProductFile ajouté après l'émission initiale** : ne reçoit aucun grant
+   automatiquement ; n'est jamais sélectionné par une rotation ni par une
+   réémission support ; aucun listener rétroactif ; reste inaccessible à cette
+   commande. Toute création ultérieure d'un grant vers ce fichier relève d'une
+   opération métier distincte — **`upgrade entitlement`** — exclue de P4-A2, de
+   P4-B et du MVP, soumise à une décision produit explicite. Ne jamais la
+   qualifier de rotation ni de réémission.
+3. **Rotation / réémission / upgrade** : la **rotation de token** révoque l'ancien
+   grant et crée une nouvelle ligne conservant EXACTEMENT le même
+   `order_item_id + product_file_id`, avec un nouveau digest ; aucun changement de
+   fichier ; historique conservé. La **réémission support** obéit à la même règle.
+   **Tout changement de `product_file_id` est une nouvelle attribution
+   commerciale** (upgrade), jamais une rotation.
+FINDINGS CORRIGÉS PAR CET AMENDEMENT :
+- **Finding 1 — snapshot bundle partiel** : voir la correction de formulation
+  insérée dans D-029.3 point 5. Absent = détectable et refusé ; composant manquant
+  = jamais livrable ; **partiellement copié = indétectable** ; sous-livraison
+  possible, jamais de sur-livraison ; exhaustivité = futur OrderService + tests ;
+  aucune comparaison ultérieure au pivot courant.
+- **Finding 2 — grant expiré non révoqué** : l'unique partiel
+  `UNIQUE(order_item_id, product_file_id) WHERE revoked_at IS NULL` retient un
+  grant **expiré mais non révoqué** dans son prédicat : il bloque toute nouvelle
+  émission pour le même couple et **doit être révoqué avant réémission** (motif
+  recommandé `expired_reissue`). **Aucun index partiel n'utilisera `now()`**
+  (prédicat non immutable). Expiration et révocation restent distinctes :
+  l'expiration n'écrit rien, aucun job ne révoque implicitement, la réémission
+  déclenche explicitement la révocation préalable.
+- **Finding 3 — `user_id` redondant** : conservé conformément à D-029.2, mais
+  qualifié pour ce qu'il est — une **dénormalisation de support et d'audit**, non
+  la source d'autorité du bénéficiaire. Source d'autorité : `grant → order_item →
+  order` ; `orders.customer_email` (CITEXT NOT NULL) reste le snapshot d'identité
+  obligatoire ; `user_id` nullable, `ON DELETE SET NULL`. G3 vérifie la cohérence
+  initiale avec `orders.user_id` lorsqu'il est renseigné.
+ÉMISSION FINANCIÈRE : la source d'autorité est **`orders.status`**, déjà garantie
+au COMMIT par les constraint triggers différés P3C (`orders_validate_payment_
+consistency`, `orders_validate_refund_consistency`, `refunds_validate_order_
+consistency` — vérifiés `deferrable=true`). États **livrables** : `paid`,
+`partially_refunded`. Non livrables : `pending`, `payment_review`, `cancelled`,
+`expired`, `refunded`. **G3/G4 ne relisent pas `payments`** (aucune nécessité
+démontrée ; la commande gratuite `total_minor = 0` suit les invariants Order
+existants sans sémantique Payment supplémentaire).
+SCHÉMA FINAL CONFIRMÉ (aucune colonne ajoutée) : `id`, `public_id` UUID,
+`order_item_id` (RESTRICT), `product_file_id` (RESTRICT), `user_id` (SET NULL,
+audit), `token_hash` VARCHAR(64) UNIQUE, `max_downloads` NOT NULL, `downloads_count`
+NOT NULL (0 technique), `expires_at` NOT NULL, `revoked_at`, `revoked_reason_code`,
+`created_at`, `updated_at` (`created_at` fait foi comme date d'émission — aucune
+colonne `issued_at` distincte n'est ajoutée). Token brut jamais persisté ; SHA-256
+64 hex ; aucun DEFAULT commercial ; **aucun quota illimité, aucune absence
+d'expiration** ; `downloads_count` créé mais **non consommé avant P4-B** ; aucune
+IP, user-agent, metadata, JSONB, `last_downloaded_at`, `token_prefix`, nom/chemin/
+checksum de fichier (déjà immuables via G0), statut texte ni soft delete.
+FRONTIÈRE P4-B : P4-A2 livre table, modèle, factory, relations, contraintes, G1–G4,
+structure du compteur et tests (émission, lignée, révocation, rotation). P4-A2 ne
+crée **aucune** route, contrôleur, streaming, consommation réelle, incrément depuis
+une requête, DownloadLog, IP, user-agent ni analyse. P4-B réalisera atomiquement :
+validation du token, contrôle expiration/révocation/quota, création du log,
+incrément du compteur, succès ou refus cohérent.
+CONCURRENCE : émission sous `orders FOR UPDATE` ; deux émissions simultanées →
+unique partiel du couple actif ; collision de token → unique `token_hash`
+(régénération avant commit) ; rotation → verrou du grant existant, révocation, puis
+création ; remboursement total → verrou Order avant grants ; suppression
+ProductFile → FK RESTRICT ; désactivation ProductFile → nouvelle émission refusée ;
+consommation future → verrou du grant en P4-B. Ordre global inchangé : `orders →
+payments → coupons → refunds → download_grants`. Aucun verrou global.
+RISQUES RÉSIDUELS ASSUMÉS (jamais présentés comme éliminés par PostgreSQL) :
+émission SQL privilégiée d'un grant vers un fichier ajouté après l'achat (G3 valide
+la lignée, pas la temporalité) ; snapshot bundle partiel indétectable ; mutation
+administrative privilégiée ne prenant pas le verrou applicatif ; fuite du token
+dans une couche applicative future. Couverture : permissions BDD minimales, absence
+d'API de mutation directe, service transactionnel unique, tests, audit.
+CRITÈRES DE SORTIE : migration `000010` verte ; G1–G4 confirmés par introspection ;
+matrice de tests complète (schéma, token, éligibilité financière, lignée
+directe/bundle, snapshot absent refusé + partiel documenté comme indétectable,
+fichier inactif refusé, quota/expiration, immutabilité, révocation irréversible,
+rotation même ProductFile, grant expiré bloquant la réémission puis
+`expired_reissue`, remboursement total + G4, concurrence, rollback isolé `000010`
+préservant P4-A0/G0 et P4-A1/S1-S3) ; suite complète et Pint verts ; PR jamais
+mergée par l'agent. P4-B (`000011`) et P5 non démarrés.
 
 **Note d'exécution P4-A1** (aucune décision nouvelle) : implémenté sur
 `p4-a1-bundle-purchase-snapshots` (migration `000009`) conformément à D-029.3, puis

@@ -895,9 +895,27 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 -- Token brut = random_bytes(32), envoyé UNE fois (e-mail) ; en BDD UNIQUEMENT son
 -- hash SHA-256 (VARCHAR(64) hex lowercase). Jamais dans logs/exceptions/metadata.
 -- La possession du token livré à orders.customer_email est la preuve d'accès
--- (checkout invité inclus) ; user_id est un rattachement d'AUDIT optionnel,
--- jamais une preuve d'autorisation. Rotation = révocation + réémission d'un
--- grant frais (aucun compteur de version de token).
+-- (checkout invité inclus) ; user_id est une DÉNORMALISATION de support/audit
+-- (D-029.4, finding 3), jamais une preuve d'autorisation ni la source d'autorité
+-- du bénéficiaire — celle-ci reste `grant -> order_item -> order`, avec
+-- orders.customer_email (CITEXT NOT NULL) comme snapshot d'identité obligatoire ;
+-- G3 vérifie la cohérence initiale avec orders.user_id lorsqu'il est renseigné.
+-- ÉMISSION INITIALE (D-029.4, option A) : à l'événement futur OrderPaid, le
+-- service crée les grants pour les ProductFiles ACTIFS À CET INSTANT, éligibles
+-- et de lignée valide. Les lignes download_grants constituent alors le SNAPSHOT
+-- APPLICATIF des fichiers livrés. PostgreSQL NE garantit PAS qu'un ProductFile
+-- existait au moment de l'achat : G3 prouve la lignée, jamais la temporalité.
+-- => « absence d'upgrade implicite = GARANTIE APPLICATIVE, PAS invariant
+-- PostgreSQL ». Un ProductFile ajouté APRÈS l'émission initiale ne reçoit aucun
+-- grant automatique, n'est jamais sélectionné par une rotation ni une réémission
+-- support, et n'est inclus par aucun listener rétroactif ; l'y rattacher relèverait
+-- d'une opération métier distincte `upgrade entitlement` — hors P4-A2, hors P4-B,
+-- hors MVP, soumise à une décision produit explicite (ne jamais l'appeler rotation).
+-- ROTATION = révocation de l'ancien grant + NOUVELLE ligne conservant EXACTEMENT
+-- le même order_item_id + product_file_id, nouveau digest, historique conservé
+-- (aucun compteur de version de token, aucune remise à zéro en place). La
+-- réémission support obéit à la même règle. TOUT changement de product_file_id est
+-- une nouvelle attribution commerciale, jamais une rotation.
 -- Précondition de création : commande en statut LIVRABLE (paid|partially_refunded)
 -- après confirmation SERVEUR (D-010). pending/payment_review/cancelled/expired/
 -- refunded ne livrent jamais. Commande gratuite paid : livrable sans ligne
@@ -927,10 +945,20 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 -- produit ajouté au bundle APRÈS l'achat n'est jamais livrable à un ancien acheteur,
 -- un produit retiré reste réémissible. Aucun repli sur la composition courante,
 -- NI en P4-A2, NI ailleurs (D-029.3).
--- Fail-closed : un order_item bundle dont le snapshot est ABSENT ou INCOMPLET
--- n'émet AUCUN grant enfant (le futur OrderService alimente le snapshot à la
--- commande, pattern coupon_redemptions : table créée en P4-A1, ALIMENTÉE par le
--- checkout).
+-- Fail-closed — FORMULATION EXACTE (corrigée par D-029.4, finding 1) :
+--   * snapshot TOTALEMENT ABSENT sur un order_item bundle : détectable, aucun
+--     grant enfant émis (G3 refuse) ;
+--   * composant absent du snapshot : aucun grant possible POUR CE COMPOSANT
+--     (il n'y a simplement pas de ligne prouvant l'achat) ;
+--   * snapshot PARTIELLEMENT copié : **NON détectable comme incomplet** par
+--     P4-A2 — P4-A1 ne stocke ni en-tête, ni compteur attendu, ni preuve de
+--     complétude, et toute comparaison ultérieure au pivot courant est interdite ;
+--   * risque résiduel : SOUS-livraison possible (un composant oublié n'est jamais
+--     livrable), JAMAIS de sur-livraison ;
+--   * exhaustivité : garantie UNIQUEMENT par le futur OrderService (un seul
+--     INSERT ... SELECT) et ses tests — pattern coupon_redemptions : table créée
+--     en P4-A1, ALIMENTÉE par le checkout. Ne jamais écrire que P4-A2 détecte un
+--     snapshot incomplet.
 -- Bundles imbriqués EXCLUS (D-029.3, Q1=A) : un composant de `products.type =
 -- 'bundle'` est REFUSÉ par S3. Le CHECK P2 n'interdit que l'auto-inclusion directe
 -- et la prévention des cycles indirects reste reportée ; sans elle, un aplatissement
@@ -1025,7 +1053,13 @@ ALTER TABLE download_grants ADD CONSTRAINT download_grants_revocation_pair_check
     END) IS TRUE
 );
 -- Un seul grant ACTIF par couple (réémission possible après révocation, quantité
--- multi-unités gérée par max_downloads, licences hors P4) :
+-- multi-unités gérée par max_downloads, licences hors P4).
+-- ⚠️ D-029.4, finding 2 : un grant EXPIRÉ mais NON RÉVOQUÉ reste dans ce prédicat
+-- et bloque donc toute nouvelle émission pour le même couple — il doit être
+-- RÉVOQUÉ avant réémission (motif recommandé `expired_reissue`). Aucun index
+-- partiel n'utilisera `now()` (prédicat non immutable, donc interdit). Expiration
+-- et révocation restent deux notions DISTINCTES : l'expiration n'écrit rien, aucun
+-- job ne révoque implicitement, la réémission révoque explicitement au préalable.
 CREATE UNIQUE INDEX download_grants_active_pair_unique
     ON download_grants (order_item_id, product_file_id) WHERE revoked_at IS NULL;
 CREATE INDEX download_grants_order_item_id_index   ON download_grants (order_item_id);
@@ -1132,17 +1166,30 @@ CREATE INDEX download_logs_retention_until_index ON download_logs (retention_unt
 --        UNIQUEMENT via l'action FK imbriquée ON DELETE SET NULL (pattern refunds).
 --        downloads_count : monotone, +1 EXACTEMENT par UPDATE, refusé si
 --        OLD.revoked_at IS NOT NULL, si OLD.expires_at <= now() ou si le quota est
---        atteint (défense en profondeur du CHECK). revoked_at + revoked_reason_code :
---        set-once APPARIÉS (NULL->valeur ensemble), dé-révocation interdite ;
---        consommation et révocation jamais combinées dans le même UPDATE.
+--        atteint (défense en profondeur du CHECK). Consommation RÉELLE seulement
+--        en P4-B : P4-A2 crée la colonne et ses bornes, aucune requête utilisateur
+--        n'incrémente avant P4-B. revoked_at + revoked_reason_code : set-once
+--        APPARIÉS (NULL->valeur ensemble), IRRÉVERSIBLES — timestamp -> NULL,
+--        timestamp A -> timestamp B et modification du motif après révocation sont
+--        tous refusés ; consommation et révocation jamais combinées dans le même
+--        UPDATE. Aucune réécriture silencieuse ; valeur identique acceptée.
 --  G3 validate_download_grant_delivery()    / download_grants_validate_delivery_trigger
 --        BEFORE INSERT (immédiat) :
 --          1. verrouille la commande du order_item : SELECT ... FROM orders ...
 --             FOR UPDATE (sérialise contre un remboursement/annulation concurrent ;
 --             respecte l'ordre de verrouillage global) ;
---          2. order.status IN ('paid','partially_refunded') ;
+--          2. order.status IN ('paid','partially_refunded') — SOURCE D'AUTORITÉ
+--             UNIQUE de l'éligibilité financière (D-029.4) : les constraint
+--             triggers différés P3C garantissent déjà au COMMIT que ces états
+--             impliquent un paiement réussi (ou une commande gratuite légitime).
+--             G3/G4 NE relisent PAS `payments` : aucune nécessité démontrée,
+--             aucune sémantique financière nouvelle. Non livrables : pending,
+--             payment_review, cancelled, expired, refunded ;
 --          3. order_item.product_id NOT NULL (lignée non prouvable sinon -> refus) ;
---          4. product_file.is_active = true à l'émission ;
+--          4. product_file.is_active = true à l'émission (un fichier désactivé
+--             bloque les NOUVELLES émissions sans réécrire les grants existants) ;
+--          4b. cohérence initiale NEW.user_id avec orders.user_id lorsqu'il est
+--             renseigné (dénormalisation d'audit, D-029.4 finding 3) ;
 --          5. lignée fichier (D-029.3) — reconnaissance du cas par
 --             order_item.product_type_snapshot, figé par le trigger P3B :
 --               * DIRECT (<> 'bundle') : product_file.product_id =
@@ -1157,8 +1204,13 @@ CREATE INDEX download_logs_retention_until_index ON download_logs (retention_unt
 --                 product_bundles, aucune supposition ;
 --             SNAPSHOT d'achat uniquement (D-029.1-A), JAMAIS la composition
 --             courante de product_bundles ;
---          6. NEW.downloads_count = 0 et NEW.revoked_at IS NULL à la naissance.
+--          6. NEW.downloads_count = 0 et NEW.revoked_at IS NULL à la naissance ;
+--          7. token_hash au format attendu ; max_downloads et expires_at EXPLICITES
+--             (bornés par les CHECK ; aucun DEFAULT commercial ne les fournit).
 --        L'inexistence du order_item/product_file reste au message FK (pattern P3C).
+--        G3 ne génère JAMAIS de token, ne crée aucune autre ligne, n'envoie aucun
+--        e-mail, et ne modifie ni Order, ni Payment, ni ProductFile, ni le snapshot
+--        bundle, ni aucun log : il VÉRIFIE et REFUSE.
 --        ⚠️ RÈGLE D'ORCHESTRATION ROTATION (anti-deadlock) : toute rotation doit
 --        verrouiller `orders` D'ABORD (ordre global), PUIS révoquer l'ancien grant,
 --        PUIS insérer le nouveau. Révoquer avant de verrouiller orders croiserait
@@ -1239,7 +1291,20 @@ CREATE INDEX download_logs_retention_until_index ON download_logs (retention_unt
 --   payment_review/cancelled/expired/refunded refusés ; commande gratuite paid
 --   livrable sans payment ; order_item.product_id NULL refusé ; fichier inactif
 --   refusé ; fichier d'un autre produit refusé ; fichier enfant de bundle accepté ;
---   fichier hors bundle refusé.
+--   fichier hors bundle refusé ; snapshot bundle TOTALEMENT absent refusé ;
+--   snapshot PARTIEL non détectable — test documentant explicitement la limite
+--   (sous-livraison possible, jamais de sur-livraison) ; user_id incohérent avec
+--   orders.user_id refusé.
+-- FICHIER AJOUTÉ APRÈS L'ACHAT (D-029.4, option A) : G3 le validerait
+--   TECHNIQUEMENT (la lignée produit est correcte) — le test doit le prouver ET
+--   consigner que l'absence d'émission automatique est une GARANTIE APPLICATIVE
+--   (le listener n'émet qu'à OrderPaid ; rotation et réémission conservent le même
+--   product_file_id), jamais un invariant PostgreSQL.
+-- ROTATION / RÉÉMISSION : rotation conserve le même order_item_id + product_file_id
+--   avec un nouveau digest ; l'ancien grant doit être révoqué d'abord (sinon
+--   l'unique partiel refuse en 23505) ; un grant EXPIRÉ non révoqué bloque la
+--   réémission jusqu'à révocation `expired_reissue` ; une rotation vers un AUTRE
+--   product_file_id relève du service (upgrade), la lignée G3 seule ne la refuse pas.
 -- LIMITES : consommation +1 OK ; dépassement quota refusé (CHECK + trigger) ;
 --   consommation après expiration refusée ; consommation après révocation refusée ;
 --   décrément/écart > 1 refusé ; révocation set-once appariée au motif ;

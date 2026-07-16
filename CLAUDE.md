@@ -45,21 +45,24 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   (PR #10 → `122332a`, commit final `1270c53`)
 
 - **Plan P4 Livraison** ✅ finalisé, validé et corrigé (**D-029 + D-029.1 B–A–B +
-  D-029.2 + D-029.3**) : QUATRE gates isolés mergés dans l'ordre — **P4-A0
+  D-029.2 + D-029.3 + D-029.4**) : QUATRE gates isolés mergés dans l'ordre — **P4-A0
   durcissement `product_files` (`000008`, trigger G0, `version` FIGÉE avec le
   contenu) MERGÉ (PR #11 → `a047571`)** → **P4-A1 snapshot
   `order_item_bundle_components` (`000009`, D-029.3 : S1/S2/S3, bundles imbriqués
   exclus, exhaustivité applicative) MERGÉ (PR #12 → `93d1f17`)** → P4-A2
-  `download_grants` (`000010`, aucun DEFAULT commercial) → P4-B `download_logs`
+  `download_grants` (`000010`, plan **D-029.4** : option A émission immédiate =
+  snapshot applicatif, G1–G4, aucun DEFAULT commercial) → P4-B `download_logs`
   (`000011`) ; `licenses` exclu de P4. Une migration, une branche, une frontière de
   rollback par gate ; migration N+1 jamais créée avant merge du gate N. Détail dans
   le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
 
-Prochaine étape : **plan technique puis implémentation P4-A2 — Download Grants**
-(branche `p4-a2-download-grants`, migration `000010` `download_grants` + G1–G4,
-frontière `000010`), en exécution séparée. P4-A1 est mergé et clôturé (table +
-S1/S2/S3 confirmés en PostgreSQL, S3 sans mutation, bundle vide toujours accepté
-par la BDD, suite 133/1882, Pint 106, rollback isolé `000009` vert). P4-A2/B et P5
+Prochaine étape : **implémentation P4-A2 — Download Grants** (branche
+`p4-a2-download-grants`, migration `000010` `download_grants` + G1–G4, frontière
+`000010`), en exécution séparée. Rappels D-029.4 : éligibilité = `orders.status IN
+('paid','partially_refunded')` seul (pas de relecture de `payments`) ; « pas
+d'upgrade implicite » = garantie **applicative** ; rotation = même
+`product_file_id` ; snapshot bundle partiel **indétectable**. P4-A1 est mergé et
+clôturé (suite 133/1882, Pint 106, rollback isolé `000009` vert). P4-A2/B et P5
 restent non démarrés.
 
 ## 🔄 EN FIN DE TÂCHE
