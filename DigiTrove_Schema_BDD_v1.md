@@ -870,7 +870,10 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --           migration `2026_07_14_000009_create_order_item_bundle_components_table.php`
 --           frontière harness `000009` (down() ne retire que la table + S1/S2/S3 ;
 --           P4-A0 préservé).
---   P4-A2 — Download Grants
+--   P4-A2 — Download Grants  🔄 IMPLÉMENTÉ sur branche, en attente review/merge
+--           (4 fonctions / 5 triggers confirmés ; G4 différé sur download_grants
+--            ET orders ; G3 ne lit jamais payments ; aucun DEFAULT commercial ;
+--            18 tests / 315 assertions ; suite 151/2188 ; rollback 000010 vert)
 --           branche `p4-a2-download-grants`
 --           migration `2026_07_14_000010_create_download_grants_table.php`
 --           frontière harness `000010` (down() ne retire que les objets grants ;

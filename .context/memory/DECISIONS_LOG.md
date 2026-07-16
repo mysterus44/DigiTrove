@@ -921,6 +921,32 @@ rotation même ProductFile, grant expiré bloquant la réémission puis
 préservant P4-A0/G0 et P4-A1/S1-S3) ; suite complète et Pint verts ; PR jamais
 mergée par l'agent. P4-B (`000011`) et P5 non démarrés.
 
+**Note d'exécution P4-A2** (aucune décision nouvelle) : implémenté sur
+`p4-a2-download-grants` (migration `000010`) conformément à D-029.4. Confirmé par
+introspection : **4 fonctions / 5 triggers** — G1 `prevent_download_grants_delete`
+(BEFORE DELETE), G2 `enforce_download_grants_immutability` (BEFORE UPDATE : ROW
+figée + `user_id` nullable via `pg_trigger_depth() > 1` + compteur +1 borné +
+révocation set-once irréversible), G3 `validate_download_grant_delivery` (BEFORE
+INSERT, `orders FOR UPDATE`), **G4 `validate_download_grant_order_consistency`
+monté sur les DEUX domaines** (`download_grants_validate_order_consistency_trigger`
++ `orders_validate_download_consistency_trigger`, tous deux `DEFERRABLE INITIALLY
+DEFERRED` — vérifié `tgdeferrable=t, tginitdeferred=t`). Vérifié : G3/G4 ne mutent
+rien (0 écriture dans `pg_get_functiondef`) ; **G3 ne lit jamais `payments`**
+(0 occurrence) ; **aucun trigger `download%` sur `refunds`** ; `max_downloads` et
+`expires_at` sans DEFAULT (seul `downloads_count` garde `'0'::bigint` technique) ;
+aucun index n'utilise `now()`. **Findings d'implémentation signalés** : (1) les
+CHECK `count_within_quota_check` sont SHADOWÉS par G2/G3 qui s'exécutent avant —
+ils restent une défense en profondeur, asserts structurellement ; (2) le state
+`revoked()` initialement écrit dans la factory produisait une ligne non-insérable
+(G3 exige un grant né actif) — supprimé, la révocation ne s'obtient que par UPDATE.
+Adaptations historiques : `download_grants` retiré de 12 assertions globales, les
+4 assertions des rollbacks isolés (frontières `000005`/`000007`/`000008`/`000009`)
+et le test HTML `StorefrontPreviewTest` conservés ; compteur de migrations P4-A1
+porté de 25 à 26. Validation : 26 migrations ; P4-A2 **18 tests / 315 assertions** ;
+suite complète **151 / 2188** ; Pint **110** ; rollback isolé `000010` vert (P4-A1
+et P4-A0/G0 préservés) ; aucune base temporaire résiduelle. PR en attente de
+review ; P4-B (`000011`) et P5 non démarrés.
+
 **Note d'exécution P4-A1** (aucune décision nouvelle) : implémenté sur
 `p4-a1-bundle-purchase-snapshots` (migration `000009`) conformément à D-029.3, puis
 **mergé via [PR #12](https://github.com/mysterus44/DigiTrove/pull/12) → `93d1f17`**

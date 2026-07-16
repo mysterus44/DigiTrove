@@ -118,7 +118,6 @@ it('has exactly the six P3A tables and expected columns', function () {
 
 it('does not create P3C, delivery, analytics, or affiliation tables', function () {
     $forbiddenTables = [
-        'download_grants',
         'download_logs',
         'events',
         'analytics_sessions',

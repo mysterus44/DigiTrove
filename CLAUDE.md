@@ -56,14 +56,16 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   rollback par gate ; migration N+1 jamais créée avant merge du gate N. Détail dans
   le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
 
-Prochaine étape : **implémentation P4-A2 — Download Grants** (branche
-`p4-a2-download-grants`, migration `000010` `download_grants` + G1–G4, frontière
-`000010`), en exécution séparée. Rappels D-029.4 : éligibilité = `orders.status IN
-('paid','partially_refunded')` seul (pas de relecture de `payments`) ; « pas
-d'upgrade implicite » = garantie **applicative** ; rotation = même
-`product_file_id` ; snapshot bundle partiel **indétectable**. P4-A1 est mergé et
-clôturé (suite 133/1882, Pint 106, rollback isolé `000009` vert). P4-A2/B et P5
-restent non démarrés.
+Prochaine étape : **review + merge de la PR P4-A2** (branche
+`p4-a2-download-grants`, migration `000010` implémentée et verte : 18 tests /
+315 assertions, suite complète 151/2188, Pint 110, rollback isolé `000010`,
+4 fonctions / 5 triggers G1–G4 dont **G4 différé sur `download_grants` ET
+`orders`**). Après merge : **plan P4-B** (`000011`) en exécution séparée. Rappels
+D-029.4 : éligibilité = `orders.status IN ('paid','partially_refunded')` seul
+(G3 ne relit jamais `payments`) ; « pas d'upgrade implicite » = garantie
+**applicative** ; rotation = même `product_file_id` ; snapshot bundle partiel
+**indétectable**. P4-A0/P4-A1 sont mergés et clôturés. P4-B et P5 restent non
+démarrés.
 
 ## 🔄 EN FIN DE TÂCHE
 

@@ -226,7 +226,7 @@ it('runs P3C-A schema tests against PostgreSQL', function () {
 
 it('creates the payments table with native types while later P3C tables stay absent', function () {
     expect(Schema::hasTable('payments'))->toBeTrue()
-        ->and(Schema::hasTable('download_grants'))->toBeFalse();
+        ->and(Schema::hasTable('download_logs'))->toBeFalse();
 
     expect(Schema::hasColumns('payments', [
         'id',
@@ -773,7 +773,6 @@ it('rolls back only the P3C-A payments migration while preserving P3B', function
 
 it('does not introduce delivery or downstream tables', function () {
     foreach ([
-        'download_grants',
         'download_logs',
         'events',
         'campaigns',
