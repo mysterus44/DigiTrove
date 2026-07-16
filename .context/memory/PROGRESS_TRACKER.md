@@ -12,7 +12,7 @@ SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
-P4 LIVRAISON        : ██░░░░░░░░  P4-A0 mergé (PR #11 → a047571) ; A1/A2/B à venir
+P4 LIVRAISON        : ████░░░░░░  P4-A0 + P4-A1 mergés (PR #11/#12) ; A2/B à venir
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
@@ -27,10 +27,10 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > **P4 Livraison : plan BDD finalisé et validé (D-029 + D-029.1 B–A–B + D-029.2 +
 > D-029.3)** — QUATRE gates isolés mergés dans l'ordre : **P4-A0 durcissement
 > `product_files` (`000008`) MERGÉ via PR #11 (`a047571`)** → P4-A1 snapshot
-> `order_item_bundle_components` (`000009`, plan finalisé D-029.3 : S1/S2/S3,
-> bundles imbriqués exclus) → P4-A2 `download_grants` (`000010`) → P4-B
-> `download_logs` (`000011`) ; `licenses` exclu. Prochaine étape :
-> **implémentation P4-A1** sur `p4-a1-bundle-purchase-snapshots`.
+> `order_item_bundle_components` (`000009`, D-029.3 : S1/S2/S3, bundles imbriqués
+> exclus) **MERGÉ via PR #12 (`93d1f17`)** → P4-A2 `download_grants` (`000010`) →
+> P4-B `download_logs` (`000011`) ; `licenses` exclu. Prochaine étape :
+> **plan P4-A2** sur `p4-a2-download-grants`.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -325,9 +325,9 @@ une frontière de rollback chacun, merge obligatoire avant le gate suivant. Sch�
 cible + catalogue G0–G6/S1–S2 + table de préservation des rollbacks dans le bloc
 P4 de `DigiTrove_Schema_BDD_v1.md`. `licenses` exclu de P4 (décision produit
 ouverte). **P4-A0 `000008` (durcissement `product_files`, trigger G0) mergé via
-PR #11 (`a047571`)** ; **P4-A1 `000009` (snapshot bundle, S1/S2/S3) implémenté sur
-branche, en attente de review/merge** ; A2/B non démarrés. Aucune logique applicative
-P4 (OrderService, contrôleur, route, job, listener) créée. P5 non démarré.
+PR #11 (`a047571`)** ; **P4-A1 `000009` (snapshot bundle, S1/S2/S3) mergé via PR #12
+(`93d1f17`)** ; A2/B non démarrés. Aucune logique applicative P4 (OrderService,
+contrôleur, route, job, listener) créée. P5 non démarré.
 
 | Tâche | Statut |
 |-------|--------|
@@ -336,8 +336,8 @@ P4 (OrderService, contrôleur, route, job, listener) créée. P5 non démarré.
 | Correction D-029.2 (version immuable, gates isolés P4-A0→P4-B) | ✅ DONE |
 | **P4-A0** `p4-a0-product-file-immutability` — migration `000008` trigger G0 (frontière `000008`) | ✅ DONE — **mergé PR #11 → `a047571`** ; 9 tests / 132 assertions, suite complète 116/1666, Pint 102, rollback isolé vert |
 | Plan P4-A1 + décisions D-029.3 (Q1=A imbriqués exclus, Q2=A S3 + exhaustivité applicative) | ✅ DONE — validé par KingKouda |
-| **P4-A1** `p4-a1-bundle-purchase-snapshots` — migration `000009` snapshot + S1/S2/S3 (frontière `000009`) | 🔄 IN_PROGRESS — implémenté sur branche (17 tests / 217 assertions, suite complète 133/1882, Pint 106, rollback isolé vert) ; en attente review + merge PR |
-| **P4-A2** `p4-a2-download-grants` — migration `000010` `download_grants` G1–G4, modèle/factory/relations (frontière `000010`) | ⬜ TODO — après merge P4-A1 |
+| **P4-A1** `p4-a1-bundle-purchase-snapshots` — migration `000009` snapshot + S1/S2/S3 (frontière `000009`) | ✅ DONE — **mergé PR #12 → `93d1f17`** ; 17 tests / 217 assertions, suite complète 133/1882, Pint 106, rollback isolé vert |
+| **P4-A2** `p4-a2-download-grants` — migration `000010` `download_grants` G1–G4, modèle/factory/relations (frontière `000010`) | ⬜ TODO — prochaine étape (plan puis implémentation) |
 | P4-A2 tests PostgreSQL (token, autorisation snapshot bundle, quota, concurrence 2 connexions, refund total différé) | ⬜ TODO |
 | **P4-B** `p4-b-download-logs` — migration `000011` `download_logs` G5–G6 + enum `DownloadLogStatus` + modèle/factory/tests (frontière `000011`) | ⬜ TODO — après merge P4-A2 |
 | Listener IssueDownloadGrants (sur OrderPaid) | ⬜ TODO — après schéma P4 |

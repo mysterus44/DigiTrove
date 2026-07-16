@@ -815,7 +815,12 @@ son absence dans le rollback isolé P4-A0 (frontière `000008` < `000009`) et le
 interdictions `download_grants`/`download_logs`/`licenses`/P5.
 
 **Note d'exécution P4-A1** (aucune décision nouvelle) : implémenté sur
-`p4-a1-bundle-purchase-snapshots` (migration `000009`) conformément à D-029.3.
+`p4-a1-bundle-purchase-snapshots` (migration `000009`) conformément à D-029.3, puis
+**mergé via [PR #12](https://github.com/mysterus44/DigiTrove/pull/12) → `93d1f17`**
+(parents `a1e2e7f` + `94b018c`). Audit post-merge : schéma, FK RESTRICT/SET NULL,
+CHECK, unique partiel, index, 3 fonctions / 3 triggers (non internes, actifs, non
+deferrable), S3 sans mutation, 0 S4 / 0 cardinalité / 0 fonction de copie, G0 et
+P0–P3C préservés, rollback isolé `000009` vert ; suite 133/1882, Pint 106.
 Trois fonctions / trois triggers confirmés par introspection : S1
 `prevent_order_item_bundle_components_delete`, S2
 `enforce_order_item_bundle_component_immutability` (ROW `IS DISTINCT FROM` +
@@ -871,10 +876,12 @@ rollbacks), PROGRESS_TRACKER, HANDOFF, CLAUDE.md. Prochaine implémentation :
   `abaea6e` + `8b822c1`) : fonction G0 `enforce_product_file_content_immutability`
   + trigger `product_files_enforce_content_immutability_trigger` confirmés en
   PostgreSQL, suite 116/1666, Pint 102, rollback isolé `000008`. Prochaine étape :
-  **implémentation P4-A1** — plan finalisé par **D-029.3** (Q1=A bundles imbriqués
-  exclus, Q2=A S3 + exhaustivité applicative) : branche
-  `p4-a1-bundle-purchase-snapshots`, migration `000009`, 3 fonctions / 3 triggers
-  (S1/S2/S3). Puis P4-A2 → P4-B, chaque gate mergé avant le suivant. TTL (72 h),
+  **P4-A1 `000009` mergé via [PR #12](https://github.com/mysterus44/DigiTrove/pull/12)
+  → `93d1f17`** (plan **D-029.3** : Q1=A bundles imbriqués exclus, Q2=A S3 +
+  exhaustivité applicative ; 3 fonctions / 3 triggers S1/S2/S3 confirmés, suite
+  133/1882, Pint 106, rollback isolé `000009` vert). Prochaine étape : **plan puis
+  implémentation P4-A2** (`p4-a2-download-grants`, migration `000010`,
+  `download_grants` + G1–G4), puis P4-B, chaque gate mergé avant le suivant. TTL (72 h),
   quota (5) et rétention logs (365 j) restent des recommandations de CONFIG
   APPLICATIVE (aucun default BDD, D-029.1-B) à fixer à la phase service. La phase
   licences reste une décision produit ouverte (liée à la question `usb` du legacy).

@@ -863,7 +863,9 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --           branche `p4-a0-product-file-immutability`
 --           migration `2026_07_14_000008_harden_product_files_content_immutability.php`
 --           frontière harness `000008` (down() ne retire que G0).
---   P4-A1 — Bundle Purchase Snapshot
+--   P4-A1 — Bundle Purchase Snapshot ✅ MERGÉ (PR #12 -> 93d1f17 ; parents
+--           a1e2e7f + 94b018c ; table + S1/S2/S3 confirmés, S3 sans mutation,
+--           0 S4 / 0 cardinalité, suite 133/1882, rollback isolé 000009 vert)
 --           branche `p4-a1-bundle-purchase-snapshots`
 --           migration `2026_07_14_000009_create_order_item_bundle_components_table.php`
 --           frontière harness `000009` (down() ne retire que la table + S1/S2/S3 ;

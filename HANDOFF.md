@@ -8,9 +8,8 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-16
-- **Branche git active** : `p4-a1-bundle-purchase-snapshots` (depuis `a1e2e7f` =
-  stable `p0-foundations-laravel13` ; P4-A0 mergé via PR #11, plan P4-A1 D-029.3
-  complet ; P4-A1 implémenté, en attente review + merge PR)
+- **Branche git active** : `p0-foundations-laravel13` à `93d1f17` (synchronisée avec
+  `origin/p0-foundations-laravel13` ; P4-A1 mergé et clôturé via PR #12)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -40,7 +39,11 @@
   `a047571 Merge pull request #11 from mysterus44/p4-a0-product-file-immutability`
   (SHA complet `a047571fe4e3453fec39336f297f4241cbb95898`, parents `abaea6e` +
   `8b822c1` ; commit P4-A0 intégré `8b822c1a49710be48371ce1b489a9a213f518d1b`)
-- **`origin/main`** : `11130f4` (intact après P4-A0 ; aucun push direct)
+- **Merge P4-A1 Bundle Purchase Snapshot** : [PR #12](https://github.com/mysterus44/DigiTrove/pull/12)
+  `93d1f17 Merge pull request #12 from mysterus44/p4-a1-bundle-purchase-snapshots`
+  (SHA complet `93d1f173b6021fccb7d4df70e24938e02d16f3e3`, parents `a1e2e7f` +
+  `94b018c` ; commit P4-A1 intégré `94b018c303d1f91469f6364c664dff4196da97f4`)
+- **`origin/main`** : `11130f4` (intact après P4-A1 ; aucun push direct)
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
   - `php artisan --version` OK via `digitrove-php:dev` → Laravel Framework 13.19.0
@@ -256,43 +259,47 @@ temporaire résiduelle. Colonnes figées confirmées par `pg_get_functiondef`
 `is_active`. Rollback isolé frontière `000008` vert. Branche locale supprimée,
 distante conservée à `8b822c1`. `origin/main` intact à `11130f4`.
 
-**P4-A1 est implémenté sur la branche `p4-a1-bundle-purchase-snapshots`** (depuis
-`a1e2e7f`) et attend **review humaine + merge de sa PR** vers
-`p0-foundations-laravel13`. Périmètre livré, conforme à D-029.3 :
-- migration UNIQUE `2026_07_14_000009_create_order_item_bundle_components_table.php` ;
-- table `order_item_bundle_components` (`order_item_id` RESTRICT, `child_product_id`
-  SET NULL, snapshots textuels name/slug, `created_at`, unique partiel
-  `oibc_order_item_child_unique WHERE child_product_id IS NOT NULL`, deux index) ;
-- **3 fonctions / 3 triggers** : S1 `prevent_order_item_bundle_components_delete`,
-  S2 `enforce_order_item_bundle_component_immutability` (ROW `IS DISTINCT FROM`,
-  seule exception = nullification FK via `pg_trigger_depth() > 1`), S3
-  `validate_order_item_bundle_component` (BEFORE INSERT : order_item bundle,
-  `product_id` non NULL, `child_product_id` non NULL, composant existant,
-  composant **non-bundle**, composant ∈ `product_bundles` à la copie) ; S3 vérifie
-  et refuse, ne mute rien (prouvé par introspection) ;
-- modèle `OrderItemBundleComponent`, factory (part toujours d'un achat de bundle
-  cohérent, ne touche jamais le pivot existant), relations `OrderItem::bundleComponents()`,
-  `orderItem()`, `childProduct()` ;
-- **durcissement signalé** : CHECK not-blank en `btrim(col, E' \t\n\r\f\v')` (et non
-  `btrim/1` qui ne retire que les espaces) — un snapshot fait de tabulations aurait
-  passé le contrôle. Renforcement, aucun affaiblissement ;
-- **bundle vide** : accepté par la BDD, aucune cardinalité minimale (test dédié) —
-  refus incombant au futur OrderService, P4-A2 fail-closed ; garantie APPLICATIVE ;
-- **exhaustivité** : jamais une garantie BDD ; risque résiduel d'insertion tardive
-  par rôle SQL privilégié documenté dans le test lui-même, non éliminé par PostgreSQL ;
-- adaptation historique : `order_item_bundle_components` retiré de l'unique assertion
-  globale de `P4A0ProductFileImmutabilityTest` (son absence reste prouvée dans le
-  rollback isolé P4-A0, frontière `000008`).
-Validation : 25 migrations ; P4-A1 **17 tests / 217 assertions** ; suite complète
-**133 / 1882** ; Pint **106** ; rollback isolé `000009` vert ; aucune base temporaire
-résiduelle ; migrations `000001`–`000008` intactes.
-Après merge de P4-A1 (clôture documentaire comprise), chaque gate n'est créé
-qu'APRÈS merge du précédent :
-P4-A2 `p4-a2-download-grants` (`000010`) → P4-B `p4-b-download-logs` (`000011`).
-Rappels de contrat : `max_downloads`/`expires_at` EXPLICITES (aucun DEFAULT
-commercial) ; TTL 72 h / quota 5 / rétention 365 j = simples recommandations de
-config applicative ; rotation P4-A2 = verrouiller `orders` AVANT de révoquer puis
-insérer.
+**P4-A1 est mergé et clôturé** dans `p0-foundations-laravel13` via
+[PR #12](https://github.com/mysterus44/DigiTrove/pull/12), merge `93d1f17` (parents
+`a1e2e7f` + `94b018c`). La migration `000009`, la table
+`order_item_bundle_components`, le modèle/factory/relations et les trois fonctions /
+trois triggers S1/S2/S3 sont confirmés dans PostgreSQL (triggers non internes,
+actifs, **non deferrable** ; aucun S4 ; aucune contrainte de cardinalité ; aucune
+fonction de copie).
+
+Validation post-merge réelle : 25 migrations ; suite complète **133 tests /
+1882 assertions** ; Pint **106 fichiers** ; `git diff --check` propre ; aucune base
+temporaire résiduelle. Schéma confirmé par introspection : `order_item_id` bigint
+NOT NULL **RESTRICT**, `child_product_id` bigint NULL **SET NULL**, snapshots
+name/slug text NOT NULL, `created_at` timestamptz NOT NULL ; aucune colonne
+quantity/position/updated_at/jsonb/metadata ; CHECK not-blank en
+`btrim(col, E' \t\n\r\f\v')` ; unique partiel `oibc_order_item_child_unique ...
+WHERE (child_product_id IS NOT NULL)` ; index `oibc_order_item_id_index` et
+`oibc_child_product_id_index`. S2 utilise `IS DISTINCT FROM` + `pg_trigger_depth()
+> 1` ; **S3 ne mute rien** (vérifié sur `pg_get_functiondef`). Bundles imbriqués
+refusés ; **bundle vide techniquement autorisé en BDD** (refus = future garantie
+applicative de l'OrderService, P4-A2 fail-closed) ; exhaustivité applicative
+uniquement ; risque d'insertion tardive par rôle SQL privilégié documenté et non
+éliminé. Rollback isolé `000009` vert (P4-A0/G0 et P0–P3C préservés). Branche
+locale supprimée, distante conservée à `94b018c`. `origin/main` intact `11130f4`.
+Action suivante : **plan technique P4-A2 — Download Grants**, dans une exécution
+séparée, avant toute migration.
+- prochaine branche réservée : `p4-a2-download-grants` (depuis la stable `93d1f17`) ;
+- prochaine migration réservée : `2026_07_14_000010_create_download_grants_table.php`
+  (frontière rollback `000010`) : table `download_grants` + G1–G4 (prevent-delete,
+  immutabilité + consommation +1 bornée, préconditions d'émission sous verrou
+  `orders FOR UPDATE`, cohérence différée bidirectionnelle grant↔commande).
+Rappels de contrat (D-029/D-029.1/D-029.2/D-029.3) : unité `order_item ×
+product_file` ; `token_hash VARCHAR(64)` SHA-256 unique, token brut jamais stocké ;
+`public_id UUID` ; FK RESTRICT + `user_id SET NULL` (audit) ; un seul grant ACTIF
+par couple (index partiel `WHERE revoked_at IS NULL`) ; **`max_downloads` et
+`expires_at` EXPLICITES à l'insertion, aucun DEFAULT commercial** ; TTL 72 h /
+quota 5 / rétention 365 j = simples recommandations de config applicative ;
+révocation set-once appariée au motif ; rotation = verrouiller `orders` AVANT de
+révoquer puis insérer (anti-deadlock) ; lignée bundle prouvée **uniquement** contre
+`order_item_bundle_components` — **aucun repli sur `product_bundles`**, fail-closed
+si le snapshot est absent ou incomplet.
+Ensuite, P4-B `p4-b-download-logs` (`000011`) uniquement APRÈS merge de P4-A2.
 
 Gate : aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret,
 SDK, Filament, job de purge, téléchargement réel, token réel ou déploiement Azure.
@@ -359,6 +366,45 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-16 — Claude Code (clôture post-merge P4-A1)
+- Fait : **P4-A1 mergé** via [PR #12](https://github.com/mysterus44/DigiTrove/pull/12),
+  merge `93d1f173b6021fccb7d4df70e24938e02d16f3e3` (exactement deux parents
+  `a1e2e7f` + `94b018c`, sujet « Merge pull request #12 from
+  mysterus44/p4-a1-bundle-purchase-snapshots »). Commit P4-A1 `94b018c` intégré et
+  ancêtre de la stable. `p0-foundations-laravel13` synchronisé fast-forward
+  (`a1e2e7f..93d1f17`, 10 fichiers). `origin/main` intact `11130f4`.
+- Introspection PostgreSQL post-merge : table `order_item_bundle_components` avec
+  les six colonnes exactes (aucune quantity/position/updated_at/jsonb/metadata) ;
+  FK `order_item_id` **RESTRICT** + `child_product_id` **SET NULL** ; CHECK
+  not-blank `btrim(col, E' \t\n\r\f\v')` ; unique partiel
+  `oibc_order_item_child_unique ... WHERE (child_product_id IS NOT NULL)` ; index
+  `oibc_order_item_id_index` / `oibc_child_product_id_index` (aucun index
+  inattendu) ; **3 fonctions / 3 triggers** S1 (BEFORE DELETE), S2 (BEFORE UPDATE,
+  `IS DISTINCT FROM` + `pg_trigger_depth() > 1`), S3 (BEFORE INSERT), tous non
+  internes (`tgisinternal=f`), actifs (`O`), **non deferrable** ; **S3 ne mute
+  rien** (aucun INSERT/UPDATE/DELETE ni affectation à `NEW` dans
+  `pg_get_functiondef`) ; **0 constraint trigger de cardinalité, 0 fonction de
+  copie, 0 S4** — bundle vide toujours accepté par la BDD (garde-fou applicatif).
+- Périmètre mergé (`a1e2e7f..93d1f17`) audité : migration `000009`, modèle
+  `OrderItemBundleComponent`, factory, relation `OrderItem::bundleComponents()`,
+  test P4-A1, adaptation historique P4-A0, et 4 documents (le schéma v1 était déjà
+  finalisé par D-029.3). Aucun `000010`/`000011`, DownloadGrant, DownloadLog,
+  OrderService, CheckoutService, route, contrôleur, service, job, listener, token,
+  endpoint, P5. Migrations `000001`–`000008` inchangées.
+- Non-régression : G0/P4-A0 présent (1 fonction + 1 trigger) ; `products`,
+  `product_files`, `product_bundles`, `orders`, `order_items`, `payments`,
+  `refunds`, `payment_webhook_events` intactes ; 5 fonctions refunds présentes ;
+  `download_grants`/`download_logs` absents.
+- Validation : `migrate:fresh` 25 migrations ; suite complète **133 / 1882** ; Pint
+  **106** ; `git diff --check` propre ; rollback isolé `000009` vert (P4-A0/G0 et
+  P0–P3C préservés) ; aucune base temporaire résiduelle.
+- Nettoyage : branche locale `p4-a1-bundle-purchase-snapshots` supprimée
+  (`git branch -d`, merge confirmé) ; distante conservée à `94b018c`.
+- Décisions : aucune nouvelle (D-029.3 inchangée ; merge consigné).
+- Laisse à : **plan technique P4-A2 — Download Grants** (branche
+  `p4-a2-download-grants`, migration `000010`), exécution séparée. P4-A2/P4-B/P5
+  non démarrés.
 
 ### 2026-07-16 — Claude Code (P4-A1 Bundle Purchase Snapshot implémenté)
 - Fait : gate **P4-A1** sur branche `p4-a1-bundle-purchase-snapshots` (depuis
