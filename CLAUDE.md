@@ -55,12 +55,12 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   N+1 jamais créée avant merge du gate N. Détail dans le bloc P4 de
   `DigiTrove_Schema_BDD_v1.md`.
 
-Prochaine étape : **implémentation P4-A1 — Bundle Purchase Snapshot** (branche
-`p4-a1-bundle-purchase-snapshots`, migration `000009`
-`order_item_bundle_components`, 3 fonctions / 3 triggers, frontière `000009`), en
-exécution séparée. P4-A0 est mergé et clôturé (fonction G0 + trigger confirmés en
-PostgreSQL, suite 116/1666, Pint 102, rollback isolé `000008` vert). P4-A2/B et P5
-restent non démarrés.
+Prochaine étape : **review + merge de la PR P4-A1** (branche
+`p4-a1-bundle-purchase-snapshots`, migration `000009` implémentée et verte :
+17 tests / 217 assertions, suite complète 133/1882, Pint 106, rollback isolé
+frontière `000009`, 3 fonctions / 3 triggers S1/S2/S3 confirmés). Après merge :
+P4-A2 (`000010`) en exécution séparée. P4-A0 est mergé et clôturé (PR #11 →
+`a047571`). P4-A2/B et P5 restent non démarrés.
 
 ## 🔄 EN FIN DE TÂCHE
 

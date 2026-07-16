@@ -325,8 +325,9 @@ une frontière de rollback chacun, merge obligatoire avant le gate suivant. Sch�
 cible + catalogue G0–G6/S1–S2 + table de préservation des rollbacks dans le bloc
 P4 de `DigiTrove_Schema_BDD_v1.md`. `licenses` exclu de P4 (décision produit
 ouverte). **P4-A0 `000008` (durcissement `product_files`, trigger G0) mergé via
-PR #11 (`a047571`)** ; A1/A2/B non démarrés. Aucune logique applicative P4 (service,
-contrôleur, route, job, listener) créée. P5 non démarré.
+PR #11 (`a047571`)** ; **P4-A1 `000009` (snapshot bundle, S1/S2/S3) implémenté sur
+branche, en attente de review/merge** ; A2/B non démarrés. Aucune logique applicative
+P4 (OrderService, contrôleur, route, job, listener) créée. P5 non démarré.
 
 | Tâche | Statut |
 |-------|--------|
@@ -335,7 +336,7 @@ contrôleur, route, job, listener) créée. P5 non démarré.
 | Correction D-029.2 (version immuable, gates isolés P4-A0→P4-B) | ✅ DONE |
 | **P4-A0** `p4-a0-product-file-immutability` — migration `000008` trigger G0 (frontière `000008`) | ✅ DONE — **mergé PR #11 → `a047571`** ; 9 tests / 132 assertions, suite complète 116/1666, Pint 102, rollback isolé vert |
 | Plan P4-A1 + décisions D-029.3 (Q1=A imbriqués exclus, Q2=A S3 + exhaustivité applicative) | ✅ DONE — validé par KingKouda |
-| **P4-A1** `p4-a1-bundle-purchase-snapshots` — migration `000009` snapshot + S1/S2/S3 (frontière `000009`) | ⬜ TODO — **prochaine implémentation** |
+| **P4-A1** `p4-a1-bundle-purchase-snapshots` — migration `000009` snapshot + S1/S2/S3 (frontière `000009`) | 🔄 IN_PROGRESS — implémenté sur branche (17 tests / 217 assertions, suite complète 133/1882, Pint 106, rollback isolé vert) ; en attente review + merge PR |
 | **P4-A2** `p4-a2-download-grants` — migration `000010` `download_grants` G1–G4, modèle/factory/relations (frontière `000010`) | ⬜ TODO — après merge P4-A1 |
 | P4-A2 tests PostgreSQL (token, autorisation snapshot bundle, quota, concurrence 2 connexions, refund total différé) | ⬜ TODO |
 | **P4-B** `p4-b-download-logs` — migration `000011` `download_logs` G5–G6 + enum `DownloadLogStatus` + modèle/factory/tests (frontière `000011`) | ⬜ TODO — après merge P4-A2 |

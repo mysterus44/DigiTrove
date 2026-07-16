@@ -8,8 +8,9 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-16
-- **Branche git active** : `p0-foundations-laravel13` à `a047571` (synchronisée avec
-  `origin/p0-foundations-laravel13` ; P4-A0 mergé et clôturé via PR #11)
+- **Branche git active** : `p4-a1-bundle-purchase-snapshots` (depuis `a1e2e7f` =
+  stable `p0-foundations-laravel13` ; P4-A0 mergé via PR #11, plan P4-A1 D-029.3
+  complet ; P4-A1 implémenté, en attente review + merge PR)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -255,43 +256,38 @@ temporaire résiduelle. Colonnes figées confirmées par `pg_get_functiondef`
 `is_active`. Rollback isolé frontière `000008` vert. Branche locale supprimée,
 distante conservée à `8b822c1`. `origin/main` intact à `11130f4`.
 
-**Le plan P4-A1 est finalisé et validé (D-029.3 ; choix KingKouda Q1=A, Q2=A).**
-
-Action suivante : **implémenter P4-A1 — Bundle Purchase Snapshot**, dans une
-exécution séparée. STRICTEMENT ce périmètre :
-- branche : `p4-a1-bundle-purchase-snapshots` (depuis la stable) ;
-- migration UNIQUE : `2026_07_14_000009_create_order_item_bundle_components_table.php`
-  (frontière rollback `000009`) ;
-- table `order_item_bundle_components` (schéma figé par D-029.2 : `order_item_id`
-  RESTRICT, `child_product_id` SET NULL, snapshots textuels name/slug, `created_at`,
-  unique partiel, index) ;
-- **3 fonctions / 3 triggers** : S1 prevent-delete, S2 immutabilité (`IS DISTINCT
-  FROM`, seule exception = nullification FK imbriquée `child_product_id`),
-  **S3 validation immédiate BEFORE INSERT** (order_item bundle, `product_id` non
-  NULL, composant existant, composant **non-bundle** — imbrication EXCLUE, composant
-  ∈ `product_bundles` au moment de la copie) ; S3 vérifie et refuse, ne crée rien ;
-- **exhaustivité = garantie applicative, jamais BDD** : le futur OrderService fera
-  un unique `INSERT ... SELECT` dans la même transaction, après `products FOR
-  UPDATE` ; aucune comparaison au pivot après COMMIT. Risque résiduel assumé
-  (insertion tardive par rôle SQL privilégié) à documenter, jamais présenté comme
-  éliminé par PostgreSQL ;
-- **bundle vide (garde-fou D-029.3)** : la BDD ACCEPTE un snapshot vide (aucune
-  cardinalité minimale — le test doit le prouver et consigner la règle) ; c'est le
-  futur OrderService qui refuse la commande d'un bundle vide AVANT la création de
-  l'order_item, et P4-A2 reste fail-closed si une copie échoue ou est oubliée.
-  Garantie APPLICATIVE, jamais un invariant PostgreSQL ;
-- tests : matrice D-029.3 (schéma, snapshot valide, produit direct refusé,
-  intégrité S3 dont imbrication, immutabilité, suppression, historique
-  ajout/retrait du pivot, concurrence 2 connexions, rollback isolé `000009`
-  préservant P4-A0/G0 et P0–P3C, `000010`/`000011` absentes) ;
-- adaptation historique : retirer `order_item_bundle_components` de l'unique
-  assertion globale de `P4A0ProductFileImmutabilityTest`, en CONSERVANT son absence
-  dans le rollback isolé P4-A0 (frontière `000008`) et les interdictions
-  `download_grants`/`download_logs`/`licenses`/P5 ;
-- AUCUN grant, token, quota, expiration, log, OrderService, checkout, service,
-  route, job, listener ; aucun code P4-A2/B/P5 ;
-- PR vers `p0-foundations-laravel13`, ne jamais merger.
-Ensuite, chaque gate n'est créé qu'APRÈS merge du précédent :
+**P4-A1 est implémenté sur la branche `p4-a1-bundle-purchase-snapshots`** (depuis
+`a1e2e7f`) et attend **review humaine + merge de sa PR** vers
+`p0-foundations-laravel13`. Périmètre livré, conforme à D-029.3 :
+- migration UNIQUE `2026_07_14_000009_create_order_item_bundle_components_table.php` ;
+- table `order_item_bundle_components` (`order_item_id` RESTRICT, `child_product_id`
+  SET NULL, snapshots textuels name/slug, `created_at`, unique partiel
+  `oibc_order_item_child_unique WHERE child_product_id IS NOT NULL`, deux index) ;
+- **3 fonctions / 3 triggers** : S1 `prevent_order_item_bundle_components_delete`,
+  S2 `enforce_order_item_bundle_component_immutability` (ROW `IS DISTINCT FROM`,
+  seule exception = nullification FK via `pg_trigger_depth() > 1`), S3
+  `validate_order_item_bundle_component` (BEFORE INSERT : order_item bundle,
+  `product_id` non NULL, `child_product_id` non NULL, composant existant,
+  composant **non-bundle**, composant ∈ `product_bundles` à la copie) ; S3 vérifie
+  et refuse, ne mute rien (prouvé par introspection) ;
+- modèle `OrderItemBundleComponent`, factory (part toujours d'un achat de bundle
+  cohérent, ne touche jamais le pivot existant), relations `OrderItem::bundleComponents()`,
+  `orderItem()`, `childProduct()` ;
+- **durcissement signalé** : CHECK not-blank en `btrim(col, E' \t\n\r\f\v')` (et non
+  `btrim/1` qui ne retire que les espaces) — un snapshot fait de tabulations aurait
+  passé le contrôle. Renforcement, aucun affaiblissement ;
+- **bundle vide** : accepté par la BDD, aucune cardinalité minimale (test dédié) —
+  refus incombant au futur OrderService, P4-A2 fail-closed ; garantie APPLICATIVE ;
+- **exhaustivité** : jamais une garantie BDD ; risque résiduel d'insertion tardive
+  par rôle SQL privilégié documenté dans le test lui-même, non éliminé par PostgreSQL ;
+- adaptation historique : `order_item_bundle_components` retiré de l'unique assertion
+  globale de `P4A0ProductFileImmutabilityTest` (son absence reste prouvée dans le
+  rollback isolé P4-A0, frontière `000008`).
+Validation : 25 migrations ; P4-A1 **17 tests / 217 assertions** ; suite complète
+**133 / 1882** ; Pint **106** ; rollback isolé `000009` vert ; aucune base temporaire
+résiduelle ; migrations `000001`–`000008` intactes.
+Après merge de P4-A1 (clôture documentaire comprise), chaque gate n'est créé
+qu'APRÈS merge du précédent :
 P4-A2 `p4-a2-download-grants` (`000010`) → P4-B `p4-b-download-logs` (`000011`).
 Rappels de contrat : `max_downloads`/`expires_at` EXPLICITES (aucun DEFAULT
 commercial) ; TTL 72 h / quota 5 / rétention 365 j = simples recommandations de
@@ -363,6 +359,54 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-16 — Claude Code (P4-A1 Bundle Purchase Snapshot implémenté)
+- Fait : gate **P4-A1** sur branche `p4-a1-bundle-purchase-snapshots` (depuis
+  `a1e2e7f`, état Git prouvé). Migration unique
+  `2026_07_14_000009_create_order_item_bundle_components_table.php` : table
+  `order_item_bundle_components` (FK `order_item_id` RESTRICT + `child_product_id`
+  SET NULL, snapshots textuels name/slug, `created_at`, CHECK not-blank nommés,
+  unique partiel `oibc_order_item_child_unique WHERE child_product_id IS NOT NULL`,
+  index `oibc_order_item_id_index`/`oibc_child_product_id_index`) et **3 fonctions /
+  3 triggers** (S1 prevent-delete, S2 immutabilité ROW + exception FK
+  `pg_trigger_depth() > 1`, S3 validation BEFORE INSERT). Modèle
+  `OrderItemBundleComponent` (`$timestamps = false`, `created_at` immutable_datetime),
+  `OrderItemBundleComponentFactory` (part toujours d'un achat cohérent ; ne crée
+  jamais de lien pivot absent, ne modifie jamais un pivot existant ni l'order_item),
+  relation `OrderItem::bundleComponents()`.
+- Deux findings corrigés en cours de gate : (1) **`btrim/1` ne retire que les
+  espaces** → CHECK durci en `btrim(col, E' \t\n\r\f\v')` (un snapshot de
+  tabulations passait) — renforcement, jamais un affaiblissement ; (2) `order_number`
+  du test de concurrence hors alphabet Crockford (`O` interdit). Les fixtures PDO
+  brutes groupent order+order_item dans une transaction explicite (le trigger
+  différé P3B valide au COMMIT).
+- Tests : `tests/Feature/P4A1BundlePurchaseSnapshotTest.php` — **17 tests /
+  217 assertions** : schéma physique complet (types, nullabilité, FK `r`/`n`, CHECK,
+  index partiel + prédicat, 3 fonctions, 3 triggers, timings, **0 trigger différé,
+  0 contrainte de cardinalité**), snapshot valide 1..N, factory par défaut + ordre
+  des states, même composant dans deux order_items/commandes, order_item direct
+  refusé, chaque violation S3 (child NULL, autre bundle, non attaché, **bundle
+  imbriqué refusé**, bundle purgé, FK autorité pour l'inexistence), doublon 23505,
+  CHECK blank/whitespace + NOT NULL, S1 (DELETE simple/multiple/relation), S2
+  (colonne par colonne, valeur identique acceptée, multi-colonnes, SQL brut +
+  Eloquent), **nullification FK** (UPDATE manuel et swap refusés, DELETE product réel
+  autorisé → NULL + textes préservés), **historique** (C ajouté après achat absent du
+  snapshot, B retiré toujours reconnu, snapshot tardif de B refusé), **bundle vide
+  accepté par la BDD** (règle applicative documentée dans le test), **concurrence
+  2 connexions** (verrou `products FOR UPDATE` → 55P03, INSERT...SELECT unique,
+  double copie → 23505), zéro effet collatéral, rollback isolé `000009`.
+- **Risque résiduel documenté dans le test lui-même** : un rôle SQL privilégié peut
+  insérer tardivement un composant ajouté après l'achat (S3 lit légitimement le pivot
+  à la copie) — PostgreSQL ne l'empêche pas ; permissions, absence d'API de mutation
+  et tests le couvrent. Jamais présenté comme une garantie.
+- Validation : 25 migrations ; suite complète **133 / 1882** (baseline 116/1666 +
+  17/217, zéro régression) ; Pint **106** ; `git diff --check` propre ; aucune base
+  temporaire résiduelle ; migrations `000001`–`000008` intactes.
+- Décisions : aucune nouvelle (note d'exécution sous D-029.3, dont le durcissement
+  `btrim` signalé).
+- Laisse à : review humaine + merge de la PR `p4-a1-bundle-purchase-snapshots` →
+  `p0-foundations-laravel13`, puis clôture documentaire post-merge, puis P4-A2
+  (`000010`) en exécution séparée. P4-A2/B et P5 non démarrés.
 
 ### 2026-07-16 — Claude Code (plan final P4-A1 + décisions D-029.3)
 - Fait : **finalisation documentaire du plan P4-A1** (exécution en lecture/analyse,
