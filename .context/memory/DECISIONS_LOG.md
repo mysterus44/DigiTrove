@@ -814,6 +814,25 @@ de l'unique assertion globale de `P4A0ProductFileImmutabilityTest`, en CONSERVAN
 son absence dans le rollback isolé P4-A0 (frontière `000008` < `000009`) et les
 interdictions `download_grants`/`download_logs`/`licenses`/P5.
 
+**Note d'exécution P4-A1** (aucune décision nouvelle) : implémenté sur
+`p4-a1-bundle-purchase-snapshots` (migration `000009`) conformément à D-029.3.
+Trois fonctions / trois triggers confirmés par introspection : S1
+`prevent_order_item_bundle_components_delete`, S2
+`enforce_order_item_bundle_component_immutability` (ROW `IS DISTINCT FROM` +
+exception FK par `pg_trigger_depth() > 1`, pattern P3C-C), S3
+`validate_order_item_bundle_component` (BEFORE INSERT ; vérifié : la définition
+ne contient aucune écriture ni affectation à `NEW`). Aucun trigger différé, aucun
+S4, aucune contrainte de cardinalité minimale — le bundle vide reste accepté par
+la BDD (garde-fou applicatif, point 7). **Durcissement d'implémentation signalé** :
+les CHECK `oibc_child_name/slug_not_blank_check` utilisent `btrim(col, E' \t\n\r\f\v')`
+et non `btrim/1` (qui ne retire que les espaces) — un snapshot composé uniquement
+de tabulations/retours ligne aurait autrement passé le contrôle. Renforcement
+strict, plus sévère que le pattern P3B, aucun affaiblissement. Validation :
+25 migrations ; P4-A1 **17 tests / 217 assertions** ; suite complète **133 / 1882** ;
+Pint **106** ; rollback isolé `000009` vert (P4-A0/G0 et P0–P3C préservés, données
+`product_bundles`/`order_items` intactes) ; aucune base temporaire résiduelle.
+PR en attente de review ; P4-A2/P4-B/P5 non démarrés.
+
 **Note d'implémentation P4-A0** : la fonction G0 fige aussi `id` (identité de
 ligne), en plus des huit colonnes D-029.2 — alignement sur le précédent projet
 (les triggers d'immutabilité P3B/P3C figent toujours la clé primaire dans leur
