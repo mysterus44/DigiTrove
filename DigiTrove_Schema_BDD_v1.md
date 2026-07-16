@@ -935,6 +935,13 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 -- récursif serait exposé aux cycles, et conserver le bundle imbriqué tel quel
 -- livrerait un achat incomplet en silence. L'exclusion est donc fail-closed
 -- explicite, jusqu'à une décision produit ET une protection anti-cycle dédiées.
+-- BUNDLE VIDE (D-029.3, garde-fou) : la BDD AUTORISE techniquement un snapshot
+-- vide — aucune contrainte n'impose « au moins une ligne » pour un order_item
+-- bundle (un tel invariant exigerait un constraint trigger différé, écarté :
+-- il relirait le pivot mutable). Le futur OrderService REFUSE la commande d'un
+-- bundle vide AVANT la création de l'order_item. Si une copie échoue ou est
+-- oubliée, P4-A2 reste fail-closed : aucun grant n'est émis. C'est une GARANTIE
+-- APPLICATIVE, jamais un invariant PostgreSQL.
 -- Statut du grant DÉRIVÉ (revoked_at / expires_at / downloads_count) : AUCUN enum
 -- stocké — `expired` dépend de l'horloge, PostgreSQL ne pourrait pas garantir la
 -- cohérence d'un statut matérialisé. Seul download_logs.status est un enum stocké.
@@ -1194,7 +1201,12 @@ CREATE INDEX download_logs_retention_until_index ON download_logs (retention_unt
 --     3 triggers, timings (2 BEFORE UPDATE/DELETE + 1 BEFORE INSERT), aucun différé.
 --   SNAPSHOT VALIDE : bundle à un composant ; bundle à plusieurs composants ; deux
 --     OrderItems du même bundle ; deux commandes du même bundle ; même composant
---     dans deux OrderItems distincts (accepté) ; snapshot vide pour un bundle vide.
+--     dans deux OrderItems distincts (accepté).
+--   BUNDLE VIDE : prouver que la BDD ACCEPTE un order_item bundle SANS aucune
+--     ligne de snapshot (aucune contrainte de cardinalité minimale) ET documenter
+--     dans le test que le refus incombe au futur OrderService (garantie
+--     applicative) ; prouver côté P4-A2 (gate suivant) qu'un tel order_item
+--     n'émet aucun grant enfant (fail-closed).
 --   PRODUIT DIRECT : aucun snapshot créé ; insertion sur un order_item non-bundle
 --     REFUSÉE par S3 (message stable).
 --   INTÉGRITÉ (S3) : composant hors du bundle refusé ; composant d'un AUTRE bundle

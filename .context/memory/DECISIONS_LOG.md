@@ -785,7 +785,17 @@ n'est pas re-décidé ; cet amendement fige les points laissés ouverts :
    justifiés : `products.name/slug` sont mutables et `child_product_id` est
    SET NULL — la FK seule ne suffit pas à l'audit (pattern D-027 : la preuve
    d'achat survit à une purge légale).
-7. **Migration** : `2026_07_14_000009_create_order_item_bundle_components_table.php`.
+7. **Bundle vide — garde-fou explicite (validé KingKouda)** : la BDD **autorise
+   techniquement** un snapshot vide ; aucune contrainte n'impose « au moins une
+   ligne » pour un order_item bundle (un tel invariant exigerait un constraint
+   trigger différé relisant le pivot mutable — écarté au point 3). Le futur
+   **OrderService REFUSE la commande d'un bundle vide AVANT la création de
+   l'order_item**. Si une copie échoue ou est oubliée, **P4-A2 reste fail-closed :
+   aucun grant n'est émis**. Cette règle est une **garantie APPLICATIVE**, jamais
+   un invariant PostgreSQL — elle ne doit jamais être présentée autrement. Test
+   P4-A1 attendu : prouver que la BDD accepte l'absence de snapshot (pas de
+   cardinalité minimale) et consigner que le refus incombe à l'OrderService.
+8. **Migration** : `2026_07_14_000009_create_order_item_bundle_components_table.php`.
    **Branche** : `p4-a1-bundle-purchase-snapshots`, créée depuis la stable après
    merge de `000008`. **Rollback isolé** (frontière `000009`) : le down() retire
    S1/S2/S3 et la table uniquement ; P4-A0 (fonction + trigger G0), P0–P3C,

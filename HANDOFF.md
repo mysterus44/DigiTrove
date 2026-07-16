@@ -275,6 +275,11 @@ exécution séparée. STRICTEMENT ce périmètre :
   UPDATE` ; aucune comparaison au pivot après COMMIT. Risque résiduel assumé
   (insertion tardive par rôle SQL privilégié) à documenter, jamais présenté comme
   éliminé par PostgreSQL ;
+- **bundle vide (garde-fou D-029.3)** : la BDD ACCEPTE un snapshot vide (aucune
+  cardinalité minimale — le test doit le prouver et consigner la règle) ; c'est le
+  futur OrderService qui refuse la commande d'un bundle vide AVANT la création de
+  l'order_item, et P4-A2 reste fail-closed si une copie échoue ou est oubliée.
+  Garantie APPLICATIVE, jamais un invariant PostgreSQL ;
 - tests : matrice D-029.3 (schéma, snapshot valide, produit direct refusé,
   intégrité S3 dont imbrication, immutabilité, suppression, historique
   ajout/retrait du pivot, concurrence 2 connexions, rollback isolé `000009`
@@ -382,6 +387,11 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 - Objets P4-A1 arrêtés : table + **3 fonctions / 3 triggers** (S1/S2/S3) ; aucune
   quantité (le pivot n'en a pas) ; aucune `position` ; aucun fallback pivot en
   P4-A2 ; fail-closed si snapshot absent ou incomplet.
+- **Garde-fou bundle vide** (précision validée) : la BDD autorise techniquement un
+  snapshot vide (aucune cardinalité minimale — l'imposer exigerait le constraint
+  trigger différé écarté) ; le futur OrderService refuse la commande d'un bundle
+  vide avant la création de l'order_item ; une copie échouée/oubliée laisse P4-A2
+  fail-closed. Garantie APPLICATIVE, jamais un invariant PostgreSQL.
 - État build/tests : `git diff --check` propre ; **aucun fichier PHP touché** (docs
   seuls). Baseline inchangée : 24 migrations, 116 tests / 1666 assertions, Pint 102.
 - Décisions prises (→ DECISIONS_LOG.md) : **D-029.3**.
