@@ -45,19 +45,19 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   (PR #10 → `122332a`, commit final `1270c53`)
 
 - **Plan P4 Livraison** ✅ finalisé, validé et corrigé (**D-029 + D-029.1 B–A–B +
-  D-029.2**) : QUATRE gates isolés mergés dans l'ordre — P4-A0 durcissement
-  `product_files` (`000008`, trigger G0, `version` FIGÉE avec le contenu) → P4-A1
-  snapshot `order_item_bundle_components` (`000009`) → P4-A2 `download_grants`
-  (`000010`, aucun DEFAULT commercial) → P4-B `download_logs` (`000011`) ;
-  `licenses` exclu de P4. Une migration, une branche, une frontière de rollback
-  par gate ; migration N+1 jamais créée avant merge du gate N. Détail dans le
-  bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
+  D-029.2**) : QUATRE gates isolés mergés dans l'ordre — **P4-A0 durcissement
+  `product_files` (`000008`, trigger G0, `version` FIGÉE avec le contenu) MERGÉ
+  (PR #11 → `a047571`)** → P4-A1 snapshot `order_item_bundle_components` (`000009`)
+  → P4-A2 `download_grants` (`000010`, aucun DEFAULT commercial) → P4-B
+  `download_logs` (`000011`) ; `licenses` exclu de P4. Une migration, une branche,
+  une frontière de rollback par gate ; migration N+1 jamais créée avant merge du
+  gate N. Détail dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
 
-Prochaine étape : **review + merge de la PR P4-A0** (branche
-`p4-a0-product-file-immutability`, migration `000008` implémentée et verte :
-9 tests / 132 assertions, suite complète 116/1666, Pint 102, rollback isolé
-frontière `000008`). Après merge : P4-A1 (`000009`) en exécution séparée.
-P4-A1/A2/B et P5 restent non démarrés.
+Prochaine étape : **plan puis implémentation P4-A1 — Bundle Purchase Snapshot**
+(branche `p4-a1-bundle-purchase-snapshots`, migration `000009`
+`order_item_bundle_components`, frontière `000009`), en exécution séparée. P4-A0 est
+mergé et clôturé (fonction G0 + trigger confirmés en PostgreSQL, suite 116/1666,
+Pint 102, rollback isolé `000008` vert). P4-A2/B et P5 restent non démarrés.
 
 ## 🔄 EN FIN DE TÂCHE
 

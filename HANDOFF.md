@@ -8,9 +8,8 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-16
-- **Branche git active** : `p4-a0-product-file-immutability` (depuis `abaea6e` =
-  stable `p0-foundations-laravel13` ; plan P4 D-029/D-029.1/D-029.2 complet ;
-  P4-A0 implémenté, en attente review + merge PR)
+- **Branche git active** : `p0-foundations-laravel13` à `a047571` (synchronisée avec
+  `origin/p0-foundations-laravel13` ; P4-A0 mergé et clôturé via PR #11)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -36,7 +35,11 @@
   `122332a Merge pull request #10 from mysterus44/p3c-c-refunds`
   (SHA complet `122332aa5cc9fc25e9bf1898224f5a1da30f6446`, parents `be74854` +
   `1270c53` ; commit final P3C-C intégré `1270c530124fc605ade299f441277edbbf1c5534`)
-- **`origin/main`** : `11130f4` (intact après P3C-C ; aucun push direct)
+- **Merge P4-A0 ProductFile Immutability** : [PR #11](https://github.com/mysterus44/DigiTrove/pull/11)
+  `a047571 Merge pull request #11 from mysterus44/p4-a0-product-file-immutability`
+  (SHA complet `a047571fe4e3453fec39336f297f4241cbb95898`, parents `abaea6e` +
+  `8b822c1` ; commit P4-A0 intégré `8b822c1a49710be48371ce1b489a9a213f518d1b`)
+- **`origin/main`** : `11130f4` (intact après P4-A0 ; aucun push direct)
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
   - `php artisan --version` OK via `digitrove-php:dev` → Laravel Framework 13.19.0
@@ -236,31 +239,37 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**P4-A0 est implémenté sur la branche `p4-a0-product-file-immutability`** (depuis
-`abaea6e`) et attend **review humaine + merge de sa PR** vers
-`p0-foundations-laravel13`. Périmètre livré : migration additive UNIQUE
-`2026_07_14_000008_harden_product_files_content_immutability.php` (fonction
-`enforce_product_file_content_immutability` + trigger BEFORE UPDATE
-`product_files_enforce_content_immutability_trigger`) et suite
-`tests/Feature/P4A0ProductFileImmutabilityTest.php` (9 tests / 132 assertions).
-Colonnes figées : `id` (précédent projet, signalé) + `product_id`, `storage_disk`,
-`storage_path`, `checksum_sha256`, `size_bytes`, `mime_type`, `version`,
-`created_at` ; mutables : `original_name` (libellé d'affichage), `position`,
-`is_active`. Validation : suite complète 116/1666, Pint 102, rollback isolé
-frontière `000008` (down() du seul gate, P0–P3C et données `product_files`
-préservés, `product_files` redevient mutable après rollback — documenté), aucune
-base temporaire résiduelle, aucune adaptation historique nécessaire.
+**P4-A0 est mergé et clôturé** dans `p0-foundations-laravel13` via
+[PR #11](https://github.com/mysterus44/DigiTrove/pull/11), merge `a047571` (parents
+`abaea6e` + `8b822c1`). La migration `000008`, la fonction G0
+`enforce_product_file_content_immutability` et le trigger BEFORE UPDATE
+`product_files_enforce_content_immutability_trigger` sont confirmés dans PostgreSQL
+(1 fonction, 1 trigger non interne actif, aucune table/objet P4 supplémentaire).
 
-Après merge de P4-A0 (clôture documentaire comprise), chaque gate n'est créé
-qu'APRÈS merge du précédent :
-P4-A1 `p4-a1-bundle-purchase-snapshots` (`000009`, frontière `000009`) →
-P4-A2 `p4-a2-download-grants` (`000010`, frontière `000010` ; adaptations
-historiques : retirer `download_grants` des seules assertions globales « table
-interdite », conserver les rollbacks isolés antérieurs et l'interdiction
-`download_logs`/`licenses`/P5) → P4-B `p4-b-download-logs` (`000011`).
+Validation post-merge réelle : 24 migrations ; suite complète 116 tests /
+1666 assertions ; Pint 102 fichiers ; `git diff --check` propre ; aucune base
+temporaire résiduelle. Colonnes figées confirmées par `pg_get_functiondef`
+(`IS DISTINCT FROM`) : `id`, `product_id`, `storage_disk`, `storage_path`,
+`checksum_sha256`, `size_bytes`, `mime_type`, `version`, `created_at` ; mutables :
+`original_name` (seul usage code = `$fillable`, libellé d'affichage), `position`,
+`is_active`. Rollback isolé frontière `000008` vert. Branche locale supprimée,
+distante conservée à `8b822c1`. `origin/main` intact à `11130f4`.
+
+Action suivante : **plan d'implémentation P4-A1 — Bundle Purchase Snapshot**, dans
+une exécution séparée, avant toute migration.
+- prochaine branche : `p4-a1-bundle-purchase-snapshots` (depuis la stable `a047571`) ;
+- prochaine migration : `2026_07_14_000009_create_order_item_bundle_components_table.php`
+  (frontière rollback `000009`) : table `order_item_bundle_components` (snapshot
+  immutable des composants achetés à la commande), triggers S1 prevent-delete + S2
+  immutabilité (nullification FK contrôlée `child_product_id`), tests produit
+  direct / bundle / mutation ultérieure du pivot ; P4-A0 préservé ; aucun download
+  grant, aucun download log.
+Chaque gate n'est créé qu'APRÈS merge du précédent : P4-A1 (`000009`) →
+P4-A2 `p4-a2-download-grants` (`000010`) → P4-B `p4-b-download-logs` (`000011`).
 Rappels de contrat : `max_downloads`/`expires_at` EXPLICITES (aucun DEFAULT
 commercial) ; TTL 72 h / quota 5 / rétention 365 j = simples recommandations de
-config applicative ; rotation = verrouiller `orders` AVANT de révoquer puis insérer.
+config applicative ; rotation P4-A2 = verrouiller `orders` AVANT de révoquer puis
+insérer.
 
 Gate : aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret,
 SDK, Filament, job de purge, téléchargement réel, token réel ou déploiement Azure.
@@ -327,6 +336,40 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-16 — Claude Code (clôture post-merge P4-A0)
+- Fait : **P4-A0 mergé** via [PR #11](https://github.com/mysterus44/DigiTrove/pull/11),
+  merge `a047571fe4e3453fec39336f297f4241cbb95898` (exactement deux parents
+  `abaea6e` + `8b822c1`, sujet « Merge pull request #11 from
+  mysterus44/p4-a0-product-file-immutability »). Commit P4-A0 `8b822c1` intégré et
+  ancêtre de la stable. `p0-foundations-laravel13` synchronisé fast-forward
+  (`abaea6e..a047571`, 6 fichiers). `origin/main` intact `11130f4`.
+- Introspection PostgreSQL post-merge : 1 fonction
+  `enforce_product_file_content_immutability` (corps `IS DISTINCT FROM` sur id +
+  product_id + storage_disk + storage_path + checksum_sha256 + size_bytes +
+  mime_type + version + created_at, RAISE 23514 + DETAIL colonne, retourne NEW sans
+  réécriture), 1 trigger `product_files_enforce_content_immutability_trigger`
+  BEFORE UPDATE FOR EACH ROW sur `product_files`, non interne (`tgisinternal=f`),
+  actif (`tgenabled=O`). Aucune autre fonction/trigger/table P4. Migration `000008`
+  ne crée que la fonction + le trigger (aucune colonne modifiée, aucune donnée
+  réécrite, aucune table, aucun index).
+- Périmètre mergé (`abaea6e..a047571`) audité : uniquement migration `000008`,
+  test `P4A0ProductFileImmutabilityTest`, et 4 documents de suivi
+  (DECISIONS_LOG/PROGRESS_TRACKER/CLAUDE.md/HANDOFF ; le schéma v1 était déjà
+  finalisé par le commit D-029.2). Aucun modèle/enum/factory/table snapshot/grant/
+  log/route/contrôleur/service/job/listener/token/endpoint/P5. Migrations
+  `000001`–`000007` inchangées. `original_name` : seul usage code = `$fillable`
+  (libellé d'affichage confirmé).
+- Validation : `migrate:fresh` 24 migrations ; suite complète **116 / 1666** ;
+  Pint **102** ; `git diff --check` propre ; rollback isolé frontière `000008` vert
+  (données `product_files` préservées, P0–P3C intacts, mutabilité retrouvée après
+  down() — documenté) ; aucune base temporaire résiduelle.
+- Nettoyage : branche locale `p4-a0-product-file-immutability` supprimée
+  (`git branch -d`, merge confirmé) ; distante conservée à `8b822c1`.
+- Décisions : aucune nouvelle (D-029/D-029.1/D-029.2 inchangées ; merge consigné).
+- Laisse à : **plan P4-A1 — Bundle Purchase Snapshot** (branche
+  `p4-a1-bundle-purchase-snapshots`, migration `000009`), exécution séparée. Aucun
+  code P4-A1/A2/B/P5 démarré.
 
 ### 2026-07-16 — Claude Code (P4-A0 ProductFile Content Immutability implémenté)
 - Fait : gate **P4-A0** sur branche `p4-a0-product-file-immutability` (depuis

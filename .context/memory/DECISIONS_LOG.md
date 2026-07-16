@@ -730,7 +730,12 @@ aucune valeur commerciale en DEFAULT (D-029.1-B) ; TTL 72 h / quota 5 / rétenti
 **Note d'implémentation P4-A0** : la fonction G0 fige aussi `id` (identité de
 ligne), en plus des huit colonnes D-029.2 — alignement sur le précédent projet
 (les triggers d'immutabilité P3B/P3C figent toujours la clé primaire dans leur
-comparaison). Signalé à l'implémentation, aucune décision modifiée.
+comparaison). Signalé à l'implémentation, aucune décision modifiée. **P4-A0 mergé
+via PR #11 → `a047571` (parents `abaea6e` + `8b822c1`)** : fonction G0
+`enforce_product_file_content_immutability` + trigger
+`product_files_enforce_content_immutability_trigger` BEFORE UPDATE confirmés ;
+migration `000008` additive (ni colonne, ni donnée, ni table, ni index modifiés) ;
+`original_name`/`position`/`is_active` mutables ; rollback isolé `000008` vert.
 IMPACT : bloc P4 du schéma v1 réécrit (gates, G0 durci, table de préservation des
 rollbacks), PROGRESS_TRACKER, HANDOFF, CLAUDE.md. Prochaine implémentation :
 **P4-A0 uniquement** (aucun snapshot bundle, aucun grant, aucun log dans ce gate).
@@ -755,12 +760,16 @@ rollbacks), PROGRESS_TRACKER, HANDOFF, CLAUDE.md. Prochaine implémentation :
   Les durées d'expiration métier, l'anonymisation invité et la valeur exacte de
   rétention webhook (90 j recommandé) restent à confirmer avant les tranches concernées.
 - **Plan P4 (D-029 + D-029.1 + D-029.2)** : ✅ validé (audit B–A–B, puis gates
-  isolés et `version` figée par D-029.2). Prêt pour implémentation **P4-A0**
-  (`p4-a0-product-file-immutability`, migration `000008` uniquement), puis
-  P4-A1 → P4-A2 → P4-B, chaque gate mergé avant le suivant. TTL (72 h), quota (5)
-  et rétention logs (365 j) restent des recommandations de CONFIG APPLICATIVE
-  (aucun default BDD, D-029.1-B) à fixer à la phase service. La phase licences
-  reste une décision produit ouverte (liée à la question `usb` du legacy).
+  isolés et `version` figée par D-029.2). **P4-A0 `000008` mergé via
+  [PR #11](https://github.com/mysterus44/DigiTrove/pull/11) → `a047571`** (parents
+  `abaea6e` + `8b822c1`) : fonction G0 `enforce_product_file_content_immutability`
+  + trigger `product_files_enforce_content_immutability_trigger` confirmés en
+  PostgreSQL, suite 116/1666, Pint 102, rollback isolé `000008`. Prochaine étape :
+  **plan puis implémentation P4-A1** (`p4-a1-bundle-purchase-snapshots`, migration
+  `000009`), puis P4-A2 → P4-B, chaque gate mergé avant le suivant. TTL (72 h),
+  quota (5) et rétention logs (365 j) restent des recommandations de CONFIG
+  APPLICATIVE (aucun default BDD, D-029.1-B) à fixer à la phase service. La phase
+  licences reste une décision produit ouverte (liée à la question `usb` du legacy).
 
 ---
 

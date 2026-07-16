@@ -857,7 +857,9 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 -- Sous-gates (D-029.2 : QUATRE gates ISOLÉS, un invariant par gate, jamais de
 -- gate composite — chaque gate a sa branche, sa migration unique, sa frontière
 -- de rollback et doit être MERGÉ dans la stable avant le gate suivant) :
---   P4-A0 — ProductFile Content Immutability
+--   P4-A0 — ProductFile Content Immutability ✅ MERGÉ (PR #11 -> a047571 ;
+--           parents abaea6e + 8b822c1 ; fonction G0 + trigger BEFORE UPDATE
+--           confirmés, suite 116/1666, rollback isolé 000008 vert)
 --           branche `p4-a0-product-file-immutability`
 --           migration `2026_07_14_000008_harden_product_files_content_immutability.php`
 --           frontière harness `000008` (down() ne retire que G0).
