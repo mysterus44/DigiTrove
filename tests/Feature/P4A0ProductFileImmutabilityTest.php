@@ -236,7 +236,7 @@ it('adds no side effects: rows, products, relations and future P4 tables are unt
         ->and(Product::query()->whereKey($product->id)->exists())->toBeTrue()
         ->and($file->fresh()->product->is($product))->toBeTrue();
 
-    foreach (['download_grants', 'download_logs', 'licenses'] as $table) {
+    foreach (['download_logs', 'licenses'] as $table) {
         expect(Schema::hasTable($table))->toBeFalse("Unexpected future P4 table exists: {$table}");
     }
 });

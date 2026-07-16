@@ -52,6 +52,14 @@ class OrderItem extends Model
     }
 
     /**
+     * @return HasMany<DownloadGrant, $this>
+     */
+    public function downloadGrants(): HasMany
+    {
+        return $this->hasMany(DownloadGrant::class);
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

@@ -8,8 +8,9 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-16
-- **Branche git active** : `p0-foundations-laravel13` à `93d1f17` (synchronisée avec
-  `origin/p0-foundations-laravel13` ; P4-A1 mergé et clôturé via PR #12)
+- **Branche git active** : `p4-a2-download-grants` (depuis `1b6e401` = stable
+  `p0-foundations-laravel13` ; P4-A1 mergé via PR #12, plan P4-A2 D-029.4 complet ;
+  P4-A2 implémenté, en attente review + merge PR)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -282,18 +283,34 @@ applicative de l'OrderService, P4-A2 fail-closed) ; exhaustivité applicative
 uniquement ; risque d'insertion tardive par rôle SQL privilégié documenté et non
 éliminé. Rollback isolé `000009` vert (P4-A0/G0 et P0–P3C préservés). Branche
 locale supprimée, distante conservée à `94b018c`. `origin/main` intact `11130f4`.
-**Le plan P4-A2 est finalisé et validé (D-029.4 ; choix KingKouda : option A).**
+**P4-A2 est implémenté sur la branche `p4-a2-download-grants`** (depuis `1b6e401`)
+et attend **review humaine + merge de sa PR** vers `p0-foundations-laravel13`.
+Périmètre livré, conforme à D-029.4 (option A) :
+- migration UNIQUE `2026_07_14_000010_create_download_grants_table.php` : table
+  `download_grants` + **4 fonctions / 5 triggers** — G1 `prevent_download_grants_delete`
+  (BEFORE DELETE), G2 `enforce_download_grants_immutability` (BEFORE UPDATE : ROW
+  figée, `user_id` nullable via `pg_trigger_depth() > 1`, compteur +1 borné,
+  révocation set-once irréversible), G3 `validate_download_grant_delivery` (BEFORE
+  INSERT sous `orders FOR UPDATE`), **G4 `validate_download_grant_order_consistency`
+  monté sur les DEUX domaines** (`download_grants` + `orders`, `DEFERRABLE INITIALLY
+  DEFERRED`) ;
+- modèle `DownloadGrant` (`token_hash` en `$hidden`), factory (ne persiste jamais de
+  token brut, refuse une commande non livrable ; **aucun state `revoked()`** — G3
+  exige un grant né actif), relations `OrderItem::downloadGrants()` /
+  `ProductFile::downloadGrants()` ;
+- **findings d'implémentation signalés** : les CHECK de quota sont shadowés par
+  G2/G3 (défense en profondeur, assertés structurellement) ; `max_downloads = -1`
+  viole deux CHECK à la fois (PostgreSQL rapporte le quota) ;
+- adaptations historiques : `download_grants` retiré de 12 assertions globales, les
+  4 assertions des rollbacks isolés (frontières `000005`/`000007`/`000008`/`000009`)
+  et `StorefrontPreviewTest` conservés ; compteur de migrations P4-A1 porté à 26.
+Validation : 26 migrations ; P4-A2 **18 tests / 315 assertions** ; suite complète
+**151 / 2188** ; Pint **110** ; rollback isolé `000010` vert (P4-A1 et P4-A0/G0
+préservés) ; aucune base temporaire résiduelle ; migrations `000001`–`000009`
+intactes. Vérifié par introspection : G3/G4 ne mutent rien, **G3 ne lit jamais
+`payments`**, aucun trigger `download%` sur `refunds`, aucun index avec `now()`.
 
-Action suivante : **implémenter P4-A2 — Download Grants**, dans une exécution
-séparée. STRICTEMENT ce périmètre :
-- branche : `p4-a2-download-grants` (depuis la stable) ;
-- migration UNIQUE : `2026_07_14_000010_create_download_grants_table.php`
-  (frontière rollback `000010`) : table `download_grants` + **G1–G4** (G1
-  prevent-delete, G2 immutabilité + bornes du compteur + révocation irréversible,
-  G3 validation d'émission sous `orders FOR UPDATE`, G4 cohérence différée
-  bidirectionnelle grant↔commande) ; modèle `DownloadGrant`, factory, relations
-  `OrderItem::downloadGrants()` / `ProductFile::downloadGrants()`.
-Contrat (D-029 → D-029.4) : unité `order_item × product_file` ; `token_hash
+Contrat de référence (D-029 → D-029.4) : unité `order_item × product_file` ; `token_hash
 VARCHAR(64)` SHA-256 unique, **token brut jamais persisté** ; `public_id UUID` ;
 FK `order_item_id`/`product_file_id` RESTRICT + `user_id` SET NULL
 (**dénormalisation d'audit**, pas la source d'autorité — celle-ci est
@@ -321,7 +338,9 @@ Points D-029.4 à respecter à la lettre :
   `expired_reissue` obligatoire d'abord ; **aucun index partiel avec `now()`** ;
 - AUCUNE route, contrôleur, streaming, consommation réelle, DownloadLog, IP,
   user-agent, analyse ; aucun code P4-B/P5 ; PR jamais mergée par l'agent.
-Ensuite, P4-B `p4-b-download-logs` (`000011`) uniquement APRÈS merge de P4-A2.
+Après merge de P4-A2 (clôture documentaire comprise) : **plan P4-B
+`p4-b-download-logs` (`000011`)**, qui devra apparier atomiquement le log et
+l'incrément du compteur (le structurel est déjà en place côté `download_grants`).
 
 Gate : aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret,
 SDK, Filament, job de purge, téléchargement réel, token réel ou déploiement Azure.
@@ -388,6 +407,57 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-16 — Claude Code (P4-A2 Download Grants implémenté)
+- Fait : gate **P4-A2** sur branche `p4-a2-download-grants` (depuis `1b6e401`, état
+  Git prouvé). Migration unique `2026_07_14_000010_create_download_grants_table.php` :
+  table `download_grants` (`public_id` uuid unique, `order_item_id`/`product_file_id`
+  **RESTRICT**, `user_id` **SET NULL** audit, `token_hash` varchar(64) unique +
+  CHECK `^[0-9a-f]{64}$`, `expires_at`/`max_downloads` **NOT NULL sans DEFAULT**,
+  `downloads_count` défaut technique 0, `revoked_at`/`revoked_reason_code` appariés,
+  timestamps) ; CHECK `expires_at > created_at`, `max_downloads >= 1`,
+  `0 <= downloads_count <= max_downloads`, appariement de révocation en
+  `CASE … IS TRUE` ; index unique partiel `download_grants_active_pair_unique
+  WHERE revoked_at IS NULL` + `active_expiry` partiel + 3 index FK. **4 fonctions /
+  5 triggers** : G1 prevent-delete, G2 immutabilité (ROW `IS DISTINCT FROM`,
+  `user_id` via `pg_trigger_depth() > 1`, compteur +1 borné refusé si révoqué/
+  expiré/quota, révocation set-once irréversible et jamais combinée à une
+  consommation), G3 validation d'émission (`orders FOR UPDATE`, statut livrable,
+  fichier actif, cohérence `user_id`↔acheteur, lignée directe/bundle, grant né
+  actif), **G4 cohérence différée montée sur `download_grants` ET `orders`**.
+  Modèle `DownloadGrant` (`token_hash` masqué), `DownloadGrantFactory` (digest d'un
+  token jeté, jamais de token brut ; refuse une commande non livrable), relations
+  `OrderItem::downloadGrants()` / `ProductFile::downloadGrants()`.
+- Deux findings corrigés en cours de gate : (1) le state `revoked()` de la factory
+  produisait une ligne **non-insérable** (G3 exige un grant né actif) → supprimé,
+  la révocation ne s'obtient que par UPDATE ; (2) `max_downloads = -1` viole **deux**
+  CHECK simultanément (`0 <= -1` faux) → PostgreSQL rapporte le quota, attente de
+  test alignée. Les CHECK de quota restent shadowés par G2/G3 (défense en
+  profondeur, assertés structurellement) — documenté, jamais affaibli.
+- Tests : `tests/Feature/P4A2DownloadGrantsTest.php` — **18 tests / 315 assertions** :
+  schéma physique complet (colonnes, types, **absence de DEFAULT commercial**, FK
+  `r`/`r`/`n`, 7 contraintes nommées, index partiels, **aucun index avec `now()`**,
+  4 fonctions, 4 triggers sur grants + 1 différé sur orders, aucun objet P4-B),
+  émission valide + **token brut absent de la ligne**, `partially_refunded` accepté
+  et 5 statuts non livrables refusés, fichier hors achat / inactif refusés, lignée
+  bundle contre le **snapshot uniquement** (aucun repli sur `product_bundles`),
+  **snapshot absent refusé / snapshot partiel indétectable documenté**, **fichier
+  ajouté après l'achat accepté par G3** (option A : garantie applicative, jamais
+  PostgreSQL), digest format/unicité, bornes quota/expiration, immutabilité colonne
+  par colonne, compteur structurel borné, révocation irréversible + motif figé +
+  jamais combinée, **un seul grant actif** + rotation revoke→réémission (même
+  `product_file_id`) + **grant expiré non révoqué bloquant → `expired_reissue`**,
+  `user_id` nullifié seulement par la FK, DELETE refusé (grant et product_file),
+  **G4 différé** (refund total sans révocation refusé au COMMIT, réparable dans la
+  même transaction ; partiel ne révoque rien), **concurrence 2 connexions** (verrou
+  `orders` → 55P03, doublon → 23505), rollback isolé `000010`.
+- Validation : 26 migrations ; suite complète **151 / 2188** (baseline 133/1882 +
+  18/315, zéro régression) ; Pint **110** ; `git diff --check` propre ; aucune base
+  temporaire résiduelle ; migrations `000001`–`000009` intactes.
+- Décisions : aucune nouvelle (note d'exécution sous D-029.4).
+- Laisse à : review humaine + merge de la PR `p4-a2-download-grants` →
+  `p0-foundations-laravel13`, puis clôture documentaire post-merge, puis **plan P4-B**
+  (`000011`) en exécution séparée. P4-B et P5 non démarrés.
 
 ### 2026-07-16 — Claude Code (plan final P4-A2 + décision D-029.4)
 - Fait : **finalisation documentaire du plan P4-A2** (exécution documentaire,
