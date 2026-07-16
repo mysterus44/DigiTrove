@@ -7,10 +7,10 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Claude Code
-- **Date** : 2026-07-15
-- **Branche git active** : `p0-foundations-laravel13` (synchronisée avec
-  `origin/p0-foundations-laravel13` ; P3C-C clôturé, plan P4 : D-029 à `202e4b8`,
-  audit D-029.1 B–A–B à `6ba74e4`, correction D-029.2 gates isolés + version figée)
+- **Date** : 2026-07-16
+- **Branche git active** : `p4-a0-product-file-immutability` (depuis `abaea6e` =
+  stable `p0-foundations-laravel13` ; plan P4 D-029/D-029.1/D-029.2 complet ;
+  P4-A0 implémenté, en attente review + merge PR)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -236,29 +236,23 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**Le plan P4 est finalisé, validé et corrigé** (D-029 + D-029.1 B–A–B + **D-029.2** :
-`product_files.version` figée avec le contenu, gate composite abandonné, quatre
-gates isolés). Schéma cible, catalogue G0–G6/S1–S2, threat model, plan de tests et
-table de préservation des rollbacks dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
+**P4-A0 est implémenté sur la branche `p4-a0-product-file-immutability`** (depuis
+`abaea6e`) et attend **review humaine + merge de sa PR** vers
+`p0-foundations-laravel13`. Périmètre livré : migration additive UNIQUE
+`2026_07_14_000008_harden_product_files_content_immutability.php` (fonction
+`enforce_product_file_content_immutability` + trigger BEFORE UPDATE
+`product_files_enforce_content_immutability_trigger`) et suite
+`tests/Feature/P4A0ProductFileImmutabilityTest.php` (9 tests / 132 assertions).
+Colonnes figées : `id` (précédent projet, signalé) + `product_id`, `storage_disk`,
+`storage_path`, `checksum_sha256`, `size_bytes`, `mime_type`, `version`,
+`created_at` ; mutables : `original_name` (libellé d'affichage), `position`,
+`is_active`. Validation : suite complète 116/1666, Pint 102, rollback isolé
+frontière `000008` (down() du seul gate, P0–P3C et données `product_files`
+préservés, `product_files` redevient mutable après rollback — documenté), aucune
+base temporaire résiduelle, aucune adaptation historique nécessaire.
 
-Action suivante : **P4-A0 — ProductFile Content Immutability**, dans une exécution
-séparée. STRICTEMENT ce périmètre :
-- branche : `p4-a0-product-file-immutability` (depuis la stable) ;
-- migration UNIQUE : `2026_07_14_000008_harden_product_files_content_immutability.php`
-  (ADDITIVE — la migration P2 mergée `2026_07_12_000004` n'est jamais éditée) ;
-- fonction + trigger G0 (`enforce_product_files_content_immutability` /
-  `product_files_enforce_content_immutability_trigger`, BEFORE UPDATE) : colonnes
-  FIGÉES = `product_id`, `storage_disk`, `storage_path`, `checksum_sha256`,
-  `size_bytes`, `mime_type`, `version`, `created_at` ; mutables = `is_active`,
-  `position`, `original_name` (libellé d'affichage uniquement — audit D-029.2) ;
-- tests adversariaux (chaque colonne figée refusée avec message stable, mutables
-  acceptées, nouvelle ligne pour nouvelle version acceptée, désactivation acceptée,
-  suite Catalog P2 verte) + rollback isolé frontière `000008` (down() ne retire que
-  G0 ; P0–P3C préservés ; `product_files` redevient mutable après rollback) ;
-- AUCUNE table : ni `order_item_bundle_components`, ni `download_grants`, ni
-  `download_logs` ; aucun modèle/enum/factory nouveau ;
-- PR vers `p0-foundations-laravel13`, ne jamais merger.
-Ensuite, chaque gate n'est créé qu'APRÈS merge du précédent :
+Après merge de P4-A0 (clôture documentaire comprise), chaque gate n'est créé
+qu'APRÈS merge du précédent :
 P4-A1 `p4-a1-bundle-purchase-snapshots` (`000009`, frontière `000009`) →
 P4-A2 `p4-a2-download-grants` (`000010`, frontière `000010` ; adaptations
 historiques : retirer `download_grants` des seules assertions globales « table
@@ -333,6 +327,34 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-16 — Claude Code (P4-A0 ProductFile Content Immutability implémenté)
+- Fait : gate **P4-A0** sur branche `p4-a0-product-file-immutability` (depuis
+  `abaea6e`, état Git prouvé conforme). Migration ADDITIVE unique
+  `2026_07_14_000008_harden_product_files_content_immutability.php` : fonction
+  `enforce_product_file_content_immutability` (comparaisons `IS DISTINCT FROM`
+  résistantes à NULL, RAISE 23514 avec message stable + DETAIL nommant la colonne)
+  + trigger `product_files_enforce_content_immutability_trigger` BEFORE UPDATE.
+  Figés : `id` (précédent P3B/P3C, signalé dans D-029.2) + les huit colonnes
+  D-029.2. Mutables : `original_name`/`position`/`is_active`. La migration P2
+  mergée n'est pas touchée ; aucune table/modèle/enum/factory créé.
+- Tests : `tests/Feature/P4A0ProductFileImmutabilityTest.php` — 9 tests /
+  132 assertions : introspection physique (fonction, trigger BEFORE UPDATE,
+  colonnes surveillées exactes), refus colonne par colonne (valeur d'origine
+  préservée), UPDATE même-valeur accepté, mutables seuls acceptés, refus atomique
+  des mélanges (`original_name`+`storage_path`, `position`+`version`), SQL brut et
+  Eloquent refusés pareil, « nouvelle version = nouvelle ligne » (A intacte puis
+  désactivée, B active), absence d'effets collatéraux, rollback isolé frontière
+  `000008` avec données `product_files` préservées et mutabilité retrouvée après
+  down() (comportement documenté honnêtement).
+- Validation : suite complète **116 tests / 1666 assertions** (baseline 107/1534
+  + 9/132, zéro régression, aucune adaptation historique nécessaire), Pint
+  **102 fichiers**, `git diff --check` propre, aucune base temporaire résiduelle.
+- Décisions : aucune nouvelle (note factuelle dans D-029.2 : `id` figé par
+  alignement sur le précédent projet).
+- Laisse à : review humaine + merge de la PR `p4-a0-product-file-immutability` →
+  `p0-foundations-laravel13`, puis clôture documentaire post-merge, puis P4-A1
+  (`000009`) dans une exécution séparée. P4-A1/A2/B et P5 non démarrés.
 
 ### 2026-07-15 — Claude Code (D-029.2 : version figée + gates P4 isolés)
 - Fait : correction documentaire pré-implémentation (**D-029.2**), sur état Git

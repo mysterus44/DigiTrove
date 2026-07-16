@@ -330,7 +330,7 @@ ouverte). Aucune migration ni logique P4 créée à ce jour. P5 non démarré.
 | Plan BDD P4 + décision D-029 (unité du grant, token haché, invariants) | ✅ DONE |
 | Audit contradictoire + décisions D-029.1 (B–A–B) | ✅ DONE — validé par KingKouda |
 | Correction D-029.2 (version immuable, gates isolés P4-A0→P4-B) | ✅ DONE |
-| **P4-A0** `p4-a0-product-file-immutability` — migration `000008` trigger G0 (frontière `000008`) | ⬜ TODO — prochaine implémentation |
+| **P4-A0** `p4-a0-product-file-immutability` — migration `000008` trigger G0 (frontière `000008`) | 🔄 IN_PROGRESS — implémenté sur branche (9 tests / 132 assertions, rollback isolé vert, suite complète 116/1666, Pint 102) ; en attente review + merge PR |
 | **P4-A1** `p4-a1-bundle-purchase-snapshots` — migration `000009` snapshot + S1/S2 (frontière `000009`) | ⬜ TODO — après merge P4-A0 |
 | **P4-A2** `p4-a2-download-grants` — migration `000010` `download_grants` G1–G4, modèle/factory/relations (frontière `000010`) | ⬜ TODO — après merge P4-A1 |
 | P4-A2 tests PostgreSQL (token, autorisation snapshot bundle, quota, concurrence 2 connexions, refund total différé) | ⬜ TODO |
