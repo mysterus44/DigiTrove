@@ -255,16 +255,38 @@ temporaire résiduelle. Colonnes figées confirmées par `pg_get_functiondef`
 `is_active`. Rollback isolé frontière `000008` vert. Branche locale supprimée,
 distante conservée à `8b822c1`. `origin/main` intact à `11130f4`.
 
-Action suivante : **plan d'implémentation P4-A1 — Bundle Purchase Snapshot**, dans
-une exécution séparée, avant toute migration.
-- prochaine branche : `p4-a1-bundle-purchase-snapshots` (depuis la stable `a047571`) ;
-- prochaine migration : `2026_07_14_000009_create_order_item_bundle_components_table.php`
-  (frontière rollback `000009`) : table `order_item_bundle_components` (snapshot
-  immutable des composants achetés à la commande), triggers S1 prevent-delete + S2
-  immutabilité (nullification FK contrôlée `child_product_id`), tests produit
-  direct / bundle / mutation ultérieure du pivot ; P4-A0 préservé ; aucun download
-  grant, aucun download log.
-Chaque gate n'est créé qu'APRÈS merge du précédent : P4-A1 (`000009`) →
+**Le plan P4-A1 est finalisé et validé (D-029.3 ; choix KingKouda Q1=A, Q2=A).**
+
+Action suivante : **implémenter P4-A1 — Bundle Purchase Snapshot**, dans une
+exécution séparée. STRICTEMENT ce périmètre :
+- branche : `p4-a1-bundle-purchase-snapshots` (depuis la stable) ;
+- migration UNIQUE : `2026_07_14_000009_create_order_item_bundle_components_table.php`
+  (frontière rollback `000009`) ;
+- table `order_item_bundle_components` (schéma figé par D-029.2 : `order_item_id`
+  RESTRICT, `child_product_id` SET NULL, snapshots textuels name/slug, `created_at`,
+  unique partiel, index) ;
+- **3 fonctions / 3 triggers** : S1 prevent-delete, S2 immutabilité (`IS DISTINCT
+  FROM`, seule exception = nullification FK imbriquée `child_product_id`),
+  **S3 validation immédiate BEFORE INSERT** (order_item bundle, `product_id` non
+  NULL, composant existant, composant **non-bundle** — imbrication EXCLUE, composant
+  ∈ `product_bundles` au moment de la copie) ; S3 vérifie et refuse, ne crée rien ;
+- **exhaustivité = garantie applicative, jamais BDD** : le futur OrderService fera
+  un unique `INSERT ... SELECT` dans la même transaction, après `products FOR
+  UPDATE` ; aucune comparaison au pivot après COMMIT. Risque résiduel assumé
+  (insertion tardive par rôle SQL privilégié) à documenter, jamais présenté comme
+  éliminé par PostgreSQL ;
+- tests : matrice D-029.3 (schéma, snapshot valide, produit direct refusé,
+  intégrité S3 dont imbrication, immutabilité, suppression, historique
+  ajout/retrait du pivot, concurrence 2 connexions, rollback isolé `000009`
+  préservant P4-A0/G0 et P0–P3C, `000010`/`000011` absentes) ;
+- adaptation historique : retirer `order_item_bundle_components` de l'unique
+  assertion globale de `P4A0ProductFileImmutabilityTest`, en CONSERVANT son absence
+  dans le rollback isolé P4-A0 (frontière `000008`) et les interdictions
+  `download_grants`/`download_logs`/`licenses`/P5 ;
+- AUCUN grant, token, quota, expiration, log, OrderService, checkout, service,
+  route, job, listener ; aucun code P4-A2/B/P5 ;
+- PR vers `p0-foundations-laravel13`, ne jamais merger.
+Ensuite, chaque gate n'est créé qu'APRÈS merge du précédent :
 P4-A2 `p4-a2-download-grants` (`000010`) → P4-B `p4-b-download-logs` (`000011`).
 Rappels de contrat : `max_downloads`/`expires_at` EXPLICITES (aucun DEFAULT
 commercial) ; TTL 72 h / quota 5 / rétention 365 j = simples recommandations de
@@ -336,6 +358,35 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-16 — Claude Code (plan final P4-A1 + décisions D-029.3)
+- Fait : **finalisation documentaire du plan P4-A1** (exécution en lecture/analyse,
+  décision **D-029.3**). Introspection PostgreSQL prouvant le problème :
+  `product_bundles` n'a **ni timestamps, ni trigger, ni historique** (PK composite
+  `(bundle_id, child_product_id)`, FK CASCADE, colonne `position` seule) — sa
+  composition est librement mutable et ne conserve aucune trace du vendu. Un
+  order_item bundle se reconnaît par `product_type_snapshot = 'bundle'` (figé P3B).
+  `products.name/slug` sont mutables (aucun trigger) → snapshots textuels justifiés.
+- **KingKouda a tranché : Q1=A, Q2=A** → (1) **bundles imbriqués EXCLUS** : S3
+  refuse tout composant `type='bundle'` (les cycles indirects restent non protégés ;
+  l'aplatissement serait exposé aux cycles, le conserver livrerait un achat
+  incomplet en silence) ; (2) **S3 validation immédiate BEFORE INSERT** (order_item
+  bundle, `product_id` non NULL, composant existant/non-bundle/∈ pivot à la copie ;
+  vérifie et refuse, ne mute jamais) + **exhaustivité APPLICATIVE** via un unique
+  `INSERT ... SELECT` de l'OrderService dans la même transaction, après `products
+  FOR UPDATE`. Options écartées documentées : constraint trigger différé (faux
+  refus sous concurrence + dépendance permanente au pivot) et fonction de copie
+  atomique (muterait, contre le principe « triggers vérifient, service mute »).
+  Risque résiduel assumé (insertion tardive par rôle SQL privilégié, couvert par
+  permissions/absence d'API/tests) — **jamais présenté comme éliminé par PostgreSQL**.
+- Objets P4-A1 arrêtés : table + **3 fonctions / 3 triggers** (S1/S2/S3) ; aucune
+  quantité (le pivot n'en a pas) ; aucune `position` ; aucun fallback pivot en
+  P4-A2 ; fail-closed si snapshot absent ou incomplet.
+- État build/tests : `git diff --check` propre ; **aucun fichier PHP touché** (docs
+  seuls). Baseline inchangée : 24 migrations, 116 tests / 1666 assertions, Pint 102.
+- Décisions prises (→ DECISIONS_LOG.md) : **D-029.3**.
+- Laisse à : **implémentation P4-A1** (`p4-a1-bundle-purchase-snapshots`, migration
+  `000009`), exécution séparée. Aucune migration, branche, classe ou test créés ici.
 
 ### 2026-07-16 — Claude Code (clôture post-merge P4-A0)
 - Fait : **P4-A0 mergé** via [PR #11](https://github.com/mysterus44/DigiTrove/pull/11),

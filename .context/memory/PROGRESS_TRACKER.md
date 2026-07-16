@@ -24,12 +24,13 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > P3C Paiements : plan BDD finalisé (D-028, 1A–5A). **P3C-A `payments` mergé via PR #6
 > (`4a077db`)**, P3C-B + hardening mergés via PR #8/#9 et P3C-C `refunds` mergé via
 > PR #10 (`122332a`).
-> **P4 Livraison : plan BDD finalisé et validé (D-029 + D-029.1 B–A–B + D-029.2)**
-> — QUATRE gates isolés mergés dans l'ordre : **P4-A0 durcissement `product_files`
-> (`000008`) MERGÉ via PR #11 (`a047571`)** → P4-A1 snapshot
-> `order_item_bundle_components` (`000009`) → P4-A2 `download_grants` (`000010`) →
-> P4-B `download_logs` (`000011`) ; `licenses` exclu. Prochaine étape : **plan P4-A1**
-> sur `p4-a1-bundle-purchase-snapshots`.
+> **P4 Livraison : plan BDD finalisé et validé (D-029 + D-029.1 B–A–B + D-029.2 +
+> D-029.3)** — QUATRE gates isolés mergés dans l'ordre : **P4-A0 durcissement
+> `product_files` (`000008`) MERGÉ via PR #11 (`a047571`)** → P4-A1 snapshot
+> `order_item_bundle_components` (`000009`, plan finalisé D-029.3 : S1/S2/S3,
+> bundles imbriqués exclus) → P4-A2 `download_grants` (`000010`) → P4-B
+> `download_logs` (`000011`) ; `licenses` exclu. Prochaine étape :
+> **implémentation P4-A1** sur `p4-a1-bundle-purchase-snapshots`.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -333,7 +334,8 @@ contrôleur, route, job, listener) créée. P5 non démarré.
 | Audit contradictoire + décisions D-029.1 (B–A–B) | ✅ DONE — validé par KingKouda |
 | Correction D-029.2 (version immuable, gates isolés P4-A0→P4-B) | ✅ DONE |
 | **P4-A0** `p4-a0-product-file-immutability` — migration `000008` trigger G0 (frontière `000008`) | ✅ DONE — **mergé PR #11 → `a047571`** ; 9 tests / 132 assertions, suite complète 116/1666, Pint 102, rollback isolé vert |
-| **P4-A1** `p4-a1-bundle-purchase-snapshots` — migration `000009` snapshot + S1/S2 (frontière `000009`) | ⬜ TODO — prochaine étape (plan puis implémentation) |
+| Plan P4-A1 + décisions D-029.3 (Q1=A imbriqués exclus, Q2=A S3 + exhaustivité applicative) | ✅ DONE — validé par KingKouda |
+| **P4-A1** `p4-a1-bundle-purchase-snapshots` — migration `000009` snapshot + S1/S2/S3 (frontière `000009`) | ⬜ TODO — **prochaine implémentation** |
 | **P4-A2** `p4-a2-download-grants` — migration `000010` `download_grants` G1–G4, modèle/factory/relations (frontière `000010`) | ⬜ TODO — après merge P4-A1 |
 | P4-A2 tests PostgreSQL (token, autorisation snapshot bundle, quota, concurrence 2 connexions, refund total différé) | ⬜ TODO |
 | **P4-B** `p4-b-download-logs` — migration `000011` `download_logs` G5–G6 + enum `DownloadLogStatus` + modèle/factory/tests (frontière `000011`) | ⬜ TODO — après merge P4-A2 |

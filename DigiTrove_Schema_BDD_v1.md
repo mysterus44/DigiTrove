@@ -866,7 +866,7 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --   P4-A1 — Bundle Purchase Snapshot
 --           branche `p4-a1-bundle-purchase-snapshots`
 --           migration `2026_07_14_000009_create_order_item_bundle_components_table.php`
---           frontière harness `000009` (down() ne retire que la table + S1/S2 ;
+--           frontière harness `000009` (down() ne retire que la table + S1/S2/S3 ;
 --           P4-A0 préservé).
 --   P4-A2 — Download Grants
 --           branche `p4-a2-download-grants`
@@ -923,10 +923,18 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 -- Bundles : la lignée d'un fichier de bundle se prouve UNIQUEMENT contre le
 -- snapshot `order_item_bundle_components` figé à la commande (D-029.1-A) — un
 -- produit ajouté au bundle APRÈS l'achat n'est jamais livrable à un ancien acheteur,
--- un produit retiré reste réémissible. Aucun repli sur la composition courante.
--- Fail-closed : sans lignes de snapshot pour un order_item bundle, aucun grant
--- enfant n'est émissible (le futur OrderService alimente le snapshot à la commande,
--- pattern coupon_redemptions : table créée en P4-A, ALIMENTÉE par le checkout).
+-- un produit retiré reste réémissible. Aucun repli sur la composition courante,
+-- NI en P4-A2, NI ailleurs (D-029.3).
+-- Fail-closed : un order_item bundle dont le snapshot est ABSENT ou INCOMPLET
+-- n'émet AUCUN grant enfant (le futur OrderService alimente le snapshot à la
+-- commande, pattern coupon_redemptions : table créée en P4-A1, ALIMENTÉE par le
+-- checkout).
+-- Bundles imbriqués EXCLUS (D-029.3, Q1=A) : un composant de `products.type =
+-- 'bundle'` est REFUSÉ par S3. Le CHECK P2 n'interdit que l'auto-inclusion directe
+-- et la prévention des cycles indirects reste reportée ; sans elle, un aplatissement
+-- récursif serait exposé aux cycles, et conserver le bundle imbriqué tel quel
+-- livrerait un achat incomplet en silence. L'exclusion est donc fail-closed
+-- explicite, jusqu'à une décision produit ET une protection anti-cycle dédiées.
 -- Statut du grant DÉRIVÉ (revoked_at / expires_at / downloads_count) : AUCUN enum
 -- stocké — `expired` dépend de l'horloge, PostgreSQL ne pourrait pas garantir la
 -- cohérence d'un statut matérialisé. Seul download_logs.status est un enum stocké.
@@ -946,6 +954,16 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 -- P4-A1 — SNAPSHOT DES COMPOSANTS DE BUNDLE À LA COMMANDE (gate isolé,
 -- migration `000009`, créée uniquement APRÈS merge de `000008`).
 -- Figé à la création de la commande par le futur OrderService ; immuable ensuite.
+-- Contrat D-029.3 : trois fonctions / trois triggers (S1 prevent-delete,
+-- S2 immutabilité, S3 validation immédiate). Aucune quantité (le pivot n'en a
+-- pas) ; aucune `position` (ordre d'affichage mutable, inutile à P4-A2 — pas de
+-- duplication « au cas où »). Snapshots textuels JUSTIFIÉS : `products.name/slug`
+-- sont mutables (aucun trigger) et `child_product_id` est SET NULL, donc la FK
+-- seule ne suffit pas à l'audit — pattern D-027 (`order_items`) : la preuve
+-- d'achat (nom + slug achetés) survit à une purge légale du produit. Doublon
+-- composant déjà impossible en amont (PK composite du pivot) ; l'unique partiel
+-- reste la garde anti double-copie concurrente et n'empêche jamais le même
+-- composant dans deux OrderItems ou deux commandes distincts.
 CREATE TABLE order_item_bundle_components (
     id                          BIGSERIAL PRIMARY KEY,
     order_item_id               BIGINT NOT NULL REFERENCES order_items(id) ON DELETE RESTRICT,
@@ -960,9 +978,12 @@ CREATE UNIQUE INDEX oibc_order_item_child_unique
     ON order_item_bundle_components (order_item_id, child_product_id) WHERE child_product_id IS NOT NULL;
 CREATE INDEX oibc_order_item_id_index    ON order_item_bundle_components (order_item_id);
 CREATE INDEX oibc_child_product_id_index ON order_item_bundle_components (child_product_id);
--- Triggers S1/S2 : prevent-delete absolu ; immutabilité totale hors la seule
--- nullification child_product_id non-NULL->NULL via l'action FK imbriquée
--- ON DELETE SET NULL (pattern order_items.product_id / refunds.initiated_by_user_id).
+-- Triggers S1/S2/S3 (D-029.3, détail dans le catalogue ci-dessous) : S1
+-- prevent-delete absolu ; S2 immutabilité totale hors la seule nullification
+-- child_product_id non-NULL->NULL via l'action FK imbriquée ON DELETE SET NULL
+-- (pattern order_items.product_id / refunds.initiated_by_user_id) ; S3 validation
+-- immédiate BEFORE INSERT (order_item bundle, product_id non NULL, composant
+-- existant, composant NON-bundle, composant ∈ product_bundles au moment de la copie).
 
 -- P4-A2 — DROITS DE TÉLÉCHARGEMENT (gate isolé, migration `000010`, créée
 -- uniquement APRÈS merge de `000009`)
@@ -1046,12 +1067,54 @@ CREATE INDEX download_logs_retention_until_index ON download_logs (retention_unt
 --        changer d'étiquette de version après l'achat.
 --  S1 prevent_order_item_bundle_components_delete() /
 --        order_item_bundle_components_prevent_delete_trigger (gate P4-A1, `000009`)
---        BEFORE DELETE -> RAISE 23514 (snapshot d'achat, jamais supprimé).
---  S2 enforce_order_item_bundle_components_immutability() /
+--        BEFORE DELETE -> RAISE 23514 (snapshot d'achat, jamais supprimé ; un
+--        DELETE multi-lignes échoue à la première ligne, donc entièrement).
+--  S2 enforce_order_item_bundle_component_immutability() /
 --        order_item_bundle_components_enforce_immutability_trigger
---        BEFORE UPDATE. Tout figé ; seule exception : child_product_id
---        non-NULL -> NULL via l'action FK imbriquée ON DELETE SET NULL, toutes
---        les autres colonnes identiques (pattern order_items).
+--        BEFORE UPDATE. Comparaisons `IS DISTINCT FROM` (résistantes à NULL) ;
+--        affectation à valeur identique acceptée ; aucune réécriture silencieuse ;
+--        RAISE 23514 stable. Tout figé (id, order_item_id, child_product_id,
+--        child_product_name_snapshot, child_product_slug_snapshot, created_at) ;
+--        SEULE exception : child_product_id non-NULL -> NULL via l'action FK
+--        imbriquée ON DELETE SET NULL, toutes les autres colonnes identiques
+--        (pattern order_items.product_id / refunds.initiated_by_user_id ; un
+--        UPDATE applicatif direct de child_product_id reste refusé).
+--  S3 validate_order_item_bundle_component() /
+--        order_item_bundle_components_validate_trigger        IMMÉDIAT (D-029.3)
+--        BEFORE INSERT. VÉRIFIE et REFUSE uniquement — ne crée ni ne modifie
+--        aucune ligne. Contrôles, dans l'ordre :
+--          1. order_item existe (sinon la FK porte le message final, pattern P3C) ;
+--          2. order_item.product_type_snapshot = 'bundle'  -> sinon RAISE :
+--             un order_item DIRECT ne reçoit jamais de composant ;
+--          3. order_item.product_id IS NOT NULL             -> sinon RAISE :
+--             sans le produit bundle, la lignée n'est pas prouvable (fail-closed) ;
+--          4. child_product existe ;
+--          5. child_product.type <> 'bundle'                -> sinon RAISE :
+--             bundles imbriqués EXCLUS (D-029.3, Q1=A) ;
+--          6. EXISTS (SELECT 1 FROM product_bundles WHERE bundle_id =
+--             order_item.product_id AND child_product_id = NEW.child_product_id)
+--             -> sinon RAISE : le composant n'appartient pas au bundle acheté.
+--        Le contrôle 6 lit le pivot AU MOMENT DE LA COPIE (création de la
+--        commande) — c'est la seule lecture légitime du pivot ; aucune
+--        comparaison au pivot courant n'existe après le COMMIT.
+--  EXHAUSTIVITÉ (D-029.3, Q2=A) — GARANTIE APPLICATIVE, PAS BDD. Un trigger
+--        ligne-par-ligne prouve que chaque ligne est valide, jamais que TOUTES
+--        les lignes ont été copiées. Le futur OrderService copie via un UNIQUE
+--        `INSERT INTO order_item_bundle_components ... SELECT ... FROM
+--        product_bundles WHERE bundle_id = ...` : exhaustif ET cohérent par
+--        construction (une seule requête = un seul instantané, aucun mélange
+--        avant/après possible), dans la MÊME transaction que la création de
+--        l'order_item, après `SELECT ... FROM products WHERE id = <bundle_id>
+--        FOR UPDATE`. Options écartées : constraint trigger différé (il relit le
+--        pivot au COMMIT -> faux refus d'un checkout légitime sous concurrence,
+--        et dépendance permanente au pivot mutable — anti-pattern interdit) ;
+--        fonction de copie atomique (elle MUTERAIT, contre le principe « les
+--        triggers vérifient et refusent, le service exécute les mutations »).
+--        RISQUE RÉSIDUEL ASSUMÉ, JAMAIS PRÉSENTÉ COMME ÉLIMINÉ PAR POSTGRESQL :
+--        un rôle SQL privilégié peut insérer tardivement une ligne pour un
+--        composant ajouté au bundle après l'achat (S3 la validerait, le pivot
+--        courant la contenant). Couverture : permissions BDD minimales, absence
+--        d'API de mutation directe, et tests — cohérent avec D-027.
 --  G1 prevent_download_grants_delete()      / download_grants_prevent_delete_trigger
 --        BEFORE DELETE -> RAISE 23514 (un grant se révoque, ne se supprime jamais).
 --  G2 enforce_download_grants_immutability() / download_grants_enforce_immutability_trigger
@@ -1071,11 +1134,19 @@ CREATE INDEX download_logs_retention_until_index ON download_logs (retention_unt
 --          2. order.status IN ('paid','partially_refunded') ;
 --          3. order_item.product_id NOT NULL (lignée non prouvable sinon -> refus) ;
 --          4. product_file.is_active = true à l'émission ;
---          5. lignée fichier : product_file.product_id = order_item.product_id, OU
---             order_item.product_type_snapshot = 'bundle' ET product_file.product_id
---             IN (SELECT child_product_id FROM order_item_bundle_components WHERE
---             order_item_id = NEW.order_item_id AND child_product_id IS NOT NULL)
---             — SNAPSHOT d'achat uniquement (D-029.1-A), JAMAIS la composition
+--          5. lignée fichier (D-029.3) — reconnaissance du cas par
+--             order_item.product_type_snapshot, figé par le trigger P3B :
+--               * DIRECT (<> 'bundle') : product_file.product_id =
+--                 order_item.product_id, strictement ;
+--               * BUNDLE ('bundle') : product_file.product_id =
+--                 order_item.product_id (fichiers propres du bundle) OU
+--                 product_file.product_id IN (SELECT child_product_id FROM
+--                 order_item_bundle_components WHERE order_item_id =
+--                 NEW.order_item_id AND child_product_id IS NOT NULL) ;
+--               * SNAPSHOT ABSENT sur un order_item bundle : AUCUN grant enfant
+--                 (fail-closed, message stable) — aucun repli sur
+--                 product_bundles, aucune supposition ;
+--             SNAPSHOT d'achat uniquement (D-029.1-A), JAMAIS la composition
 --             courante de product_bundles ;
 --          6. NEW.downloads_count = 0 et NEW.revoked_at IS NULL à la naissance.
 --        L'inexistence du order_item/product_file reste au message FK (pattern P3C).
@@ -1117,11 +1188,36 @@ CREATE INDEX download_logs_retention_until_index ON download_logs (retention_unt
 --   is_active/position/original_name mutables ; nouvelle ligne pour une nouvelle
 --   version acceptée ; désactivation de l'ancienne acceptée ; comportements P2
 --   antérieurs non cassés (suite Catalog verte).
--- SNAPSHOT BUNDLE (S1/S2 + G3) : composant snapshoté -> grant enfant accepté ;
---   produit ajouté à product_bundles APRÈS l'achat (absent du snapshot) -> refusé ;
---   produit retiré de product_bundles mais présent au snapshot -> réémission acceptée ;
---   order_item bundle sans lignes de snapshot -> aucun grant enfant (fail-closed) ;
---   DELETE snapshot refusé ; UPDATE snapshot refusé ; nullification FK contrôlée.
+-- SNAPSHOT BUNDLE — MATRICE P4-A1 (S1/S2/S3), gate `000009` :
+--   SCHÉMA : table, types physiques, nullabilité, FK (order_item_id RESTRICT,
+--     child_product_id SET NULL), CHECK nommés, unique partiel, index, 3 fonctions,
+--     3 triggers, timings (2 BEFORE UPDATE/DELETE + 1 BEFORE INSERT), aucun différé.
+--   SNAPSHOT VALIDE : bundle à un composant ; bundle à plusieurs composants ; deux
+--     OrderItems du même bundle ; deux commandes du même bundle ; même composant
+--     dans deux OrderItems distincts (accepté) ; snapshot vide pour un bundle vide.
+--   PRODUIT DIRECT : aucun snapshot créé ; insertion sur un order_item non-bundle
+--     REFUSÉE par S3 (message stable).
+--   INTÉGRITÉ (S3) : composant hors du bundle refusé ; composant d'un AUTRE bundle
+--     refusé ; composant de type 'bundle' refusé (imbrication) ; order_item.product_id
+--     NULL refusé ; product inexistant -> message FK ; order_item inexistant ->
+--     message FK ; doublon (order_item_id, child_product_id) -> 23505 index nommé.
+--   IMMUTABILITÉ (S2) : chaque colonne métier refusée séparément ; UPDATE à valeur
+--     identique accepté ; UPDATE multi-colonnes mêlant figée et figée refusé
+--     atomiquement ; SQL brut et Eloquent refusés à l'identique ; nullification
+--     manuelle de child_product_id refusée, mais action FK ON DELETE SET NULL admise.
+--   SUPPRESSION (S1) : DELETE simple refusé ; DELETE multi-lignes refusé en bloc ;
+--     suppression via relation refusée ; DELETE order_item déjà refusé par P3B ;
+--     DELETE product composant -> child_product_id NULL, snapshot et textes préservés.
+--   HISTORIQUE (le coeur du gate) : ajout de C au pivot APRÈS l'achat -> snapshot
+--     inchangé, C jamais acheté ; retrait de B du pivot APRÈS l'achat -> snapshot
+--     inchangé, B toujours reconnu comme acheté (réémission tardive possible) ;
+--     aucune requête du plan ne relit le pivot après le COMMIT.
+--   CONCURRENCE (2 connexions réelles) : checkout vs ajout de composant, checkout vs
+--     retrait de composant -> snapshot cohérent (jamais un mélange avant/après) grâce
+--     au verrou `products FOR UPDATE` + INSERT...SELECT unique ; double copie
+--     simultanée du même snapshot -> une seule réussit (23505) ; deux commandes de
+--     bundles distincts -> aucun blocage mutuel.
+--   ROLLBACK ISOLÉ : frontière `000009` (voir table de préservation ci-dessous).
 -- TOKEN : hash 64 hex accepté ; hash invalide/majuscule refusé ; unicité ; token brut
 --   absent de toute colonne ; réémission après révocation OK ; deux grants actifs même
 --   couple refusés (index partiel).
@@ -1156,7 +1252,12 @@ CREATE INDEX download_logs_retention_until_index ON download_logs (retention_unt
 --   | Gate rollbacké      | Supprimé                          | Préservé                    |
 --   | P4-A0 / `000008`    | G0 (fn + trigger)                 | P0–P3C (product_files
 --   |                     |                                   | redevient mutable — vérifié)|
---   | P4-A1 / `000009`    | order_item_bundle_components+S1/S2| P0–P3C + P4-A0              |
+--   | P4-A1 / `000009`    | order_item_bundle_components +    | P0–P3C + P4-A0 (G0 fn +     |
+--   |                     | S1/S2/S3 (3 fn + 3 triggers)      | trigger, products,          |
+--   |                     |                                   | product_files,              |
+--   |                     |                                   | product_bundles, orders,    |
+--   |                     |                                   | order_items) ; `000010` et  |
+--   |                     |                                   | `000011` jamais appliquées  |
 --   | P4-A2 / `000010`    | download_grants + G1–G4           | P0–P3C + P4-A0 + P4-A1      |
 --   | P4-B  / `000011`    | download_logs + G5–G6             | P0–P3C + tout P4-A          |
 ```

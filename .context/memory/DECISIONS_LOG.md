@@ -727,6 +727,83 @@ RECONFIRMÉ (inchangé) : aucune fonctionnalité HTTP/endpoint/service avant la 
 du schéma P4 ; `max_downloads` et `expires_at` toujours EXPLICITES à l'insertion ;
 aucune valeur commerciale en DEFAULT (D-029.1-B) ; TTL 72 h / quota 5 / rétention
 365 j = recommandations de config applicative non validées comme valeurs.
+**AMENDEMENT D-029.3 — Bundle purchase snapshot integrity (validé KingKouda :
+Q1=A, Q2=A).** L'audit du plan P4-A1 a établi par introspection que
+`product_bundles` n'a **ni timestamps, ni trigger, ni historique** (PK composite
+`(bundle_id, child_product_id)`, FK CASCADE des deux côtés, colonne `position`
+seule) : sa composition est librement mutable et ne conserve aucune trace de ce
+qui a été vendu. Un `order_item` est reconnu comme bundle par
+`product_type_snapshot = 'bundle'` (figé par le trigger P3B). Le schéma de la
+table (colonnes, FK, unique partiel, index) reste celui fixé par D-029.2 et
+n'est pas re-décidé ; cet amendement fige les points laissés ouverts :
+1. **Bundles imbriqués EXCLUS (Q1=A)** : S3 refuse tout composant dont
+   `products.type = 'bundle'`. Motif : le CHECK P2 n'interdit que l'auto-inclusion
+   directe et la prévention des cycles indirects est explicitement reportée —
+   un aplatissement récursif serait exposé aux cycles, et conserver le bundle
+   imbriqué tel quel livrerait un achat incomplet en silence (les fichiers des
+   petits-enfants ne seraient jamais livrables). L'exclusion est fail-closed
+   explicite jusqu'à une décision produit ET une protection anti-cycle dédiées.
+   Aucun bundle imbriqué n'existe aujourd'hui, aucun test n'en crée.
+2. **S3 — validation immédiate (Q2=A)** : fonction
+   `validate_order_item_bundle_component()` / trigger
+   `order_item_bundle_components_validate_trigger`, **BEFORE INSERT**. Elle
+   VÉRIFIE et REFUSE uniquement — ne crée ni ne modifie aucune ligne. Contrôles :
+   order_item existant (inexistence laissée au message FK, pattern P3C) ;
+   `product_type_snapshot = 'bundle'` (un order_item DIRECT ne reçoit jamais de
+   composant) ; `product_id IS NOT NULL` (sans le produit bundle la lignée n'est
+   pas prouvable) ; composant existant ; composant **non-bundle** ; composant
+   présent dans `product_bundles` pour le bundle de l'order_item **au moment de
+   la copie**. C'est la seule lecture légitime du pivot ; aucune comparaison au
+   pivot courant n'existe après le COMMIT.
+3. **Exhaustivité = garantie APPLICATIVE, jamais BDD** : un trigger ligne-par-ligne
+   prouve que chaque ligne est valide, jamais que toutes ont été copiées. Le futur
+   OrderService réalise un **unique `INSERT ... SELECT`** depuis `product_bundles`
+   (exhaustif et cohérent par construction : une seule requête = un seul
+   instantané, aucun mélange avant/après), dans la **même transaction** que la
+   création de l'order_item, après `SELECT ... FROM products WHERE id =
+   <bundle_id> FOR UPDATE`. Ordre de verrous : le catalogue se verrouille avant
+   `orders` (ordre global `orders → payments → coupons → refunds →
+   download_grants` inchangé pour les phases existantes).
+   **Options écartées** : constraint trigger différé d'exhaustivité — il relit le
+   pivot au COMMIT, provoquant un faux refus d'un checkout légitime sous
+   concurrence et créant une dépendance permanente au pivot mutable (anti-pattern
+   interdit) ; fonction de copie atomique — elle muterait, contre le principe
+   « les triggers vérifient et refusent, le service exécute les mutations ».
+4. **Risque résiduel ASSUMÉ, jamais présenté comme éliminé par PostgreSQL** : un
+   rôle SQL privilégié peut insérer tardivement une ligne pour un composant ajouté
+   au bundle après l'achat (S3 la validerait, le pivot courant la contenant).
+   Couverture : permissions BDD minimales, absence d'API de mutation directe,
+   tests — cohérent avec le compromis assumé de D-027.
+5. **Aucun fallback en P4-A2** : la lignée bundle se prouve UNIQUEMENT contre le
+   snapshot. Snapshot **absent ou incomplet** sur un order_item bundle ⇒ émission
+   de grant REFUSÉE en fail-closed, aucun repli sur `product_bundles`, aucune
+   supposition, message stable.
+6. **Objets P4-A1** : table `order_item_bundle_components` + **trois fonctions /
+   trois triggers** (S1 prevent-delete, S2 immutabilité, S3 validation immédiate).
+   Aucune quantité (le pivot n'en a pas) ; aucune `position` (ordre d'affichage
+   mutable, inutile à P4-A2). Snapshots textuels `child_product_name/slug`
+   justifiés : `products.name/slug` sont mutables et `child_product_id` est
+   SET NULL — la FK seule ne suffit pas à l'audit (pattern D-027 : la preuve
+   d'achat survit à une purge légale).
+7. **Migration** : `2026_07_14_000009_create_order_item_bundle_components_table.php`.
+   **Branche** : `p4-a1-bundle-purchase-snapshots`, créée depuis la stable après
+   merge de `000008`. **Rollback isolé** (frontière `000009`) : le down() retire
+   S1/S2/S3 et la table uniquement ; P4-A0 (fonction + trigger G0), P0–P3C,
+   `products`, `product_files`, `product_bundles`, `orders`, `order_items` sont
+   préservés ; `000010` et `000011` restent absentes ; nettoyage dans `finally`.
+EXCLUSIONS P4-A1 : aucun grant, token, quota, expiration, téléchargement, log ;
+aucun OrderService, checkout, service, endpoint, route, job ou listener ; aucun
+code P4-A2/P4-B/P5.
+CRITÈRES DE SORTIE : migration `000009` verte ; 3 fonctions / 3 triggers confirmés
+par introspection ; matrice de tests complète (schéma, snapshot valide, produit
+direct refusé, intégrité S3 dont imbrication refusée, immutabilité, suppression,
+historique ajout/retrait, concurrence à 2 connexions, rollback isolé) ; suite
+complète et Pint verts ; PR vers `p0-foundations-laravel13` (jamais mergée par
+l'agent). Adaptation historique prévue : retirer `order_item_bundle_components`
+de l'unique assertion globale de `P4A0ProductFileImmutabilityTest`, en CONSERVANT
+son absence dans le rollback isolé P4-A0 (frontière `000008` < `000009`) et les
+interdictions `download_grants`/`download_logs`/`licenses`/P5.
+
 **Note d'implémentation P4-A0** : la fonction G0 fige aussi `id` (identité de
 ligne), en plus des huit colonnes D-029.2 — alignement sur le précédent projet
 (les triggers d'immutabilité P3B/P3C figent toujours la clé primaire dans leur
@@ -765,8 +842,10 @@ rollbacks), PROGRESS_TRACKER, HANDOFF, CLAUDE.md. Prochaine implémentation :
   `abaea6e` + `8b822c1`) : fonction G0 `enforce_product_file_content_immutability`
   + trigger `product_files_enforce_content_immutability_trigger` confirmés en
   PostgreSQL, suite 116/1666, Pint 102, rollback isolé `000008`. Prochaine étape :
-  **plan puis implémentation P4-A1** (`p4-a1-bundle-purchase-snapshots`, migration
-  `000009`), puis P4-A2 → P4-B, chaque gate mergé avant le suivant. TTL (72 h),
+  **implémentation P4-A1** — plan finalisé par **D-029.3** (Q1=A bundles imbriqués
+  exclus, Q2=A S3 + exhaustivité applicative) : branche
+  `p4-a1-bundle-purchase-snapshots`, migration `000009`, 3 fonctions / 3 triggers
+  (S1/S2/S3). Puis P4-A2 → P4-B, chaque gate mergé avant le suivant. TTL (72 h),
   quota (5) et rétention logs (365 j) restent des recommandations de CONFIG
   APPLICATIVE (aucun default BDD, D-029.1-B) à fixer à la phase service. La phase
   licences reste une décision produit ouverte (liée à la question `usb` du legacy).
