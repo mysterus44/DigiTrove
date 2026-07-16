@@ -727,6 +727,10 @@ RECONFIRMÉ (inchangé) : aucune fonctionnalité HTTP/endpoint/service avant la 
 du schéma P4 ; `max_downloads` et `expires_at` toujours EXPLICITES à l'insertion ;
 aucune valeur commerciale en DEFAULT (D-029.1-B) ; TTL 72 h / quota 5 / rétention
 365 j = recommandations de config applicative non validées comme valeurs.
+**Note d'implémentation P4-A0** : la fonction G0 fige aussi `id` (identité de
+ligne), en plus des huit colonnes D-029.2 — alignement sur le précédent projet
+(les triggers d'immutabilité P3B/P3C figent toujours la clé primaire dans leur
+comparaison). Signalé à l'implémentation, aucune décision modifiée.
 IMPACT : bloc P4 du schéma v1 réécrit (gates, G0 durci, table de préservation des
 rollbacks), PROGRESS_TRACKER, HANDOFF, CLAUDE.md. Prochaine implémentation :
 **P4-A0 uniquement** (aucun snapshot bundle, aucun grant, aucun log dans ce gate).

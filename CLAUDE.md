@@ -53,10 +53,11 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   par gate ; migration N+1 jamais créée avant merge du gate N. Détail dans le
   bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
 
-Prochaine étape : **P4-A0** sur branche `p4-a0-product-file-immutability`
-(exécution séparée, migration `000008` uniquement, frontière `000008`). P4-A1/A2/B
-et P5 restent non démarrés. P3C-C est validé post-merge : 23 migrations,
-107 tests / 1534 assertions, plafond concurrent sous verrou Payment `FOR UPDATE`.
+Prochaine étape : **review + merge de la PR P4-A0** (branche
+`p4-a0-product-file-immutability`, migration `000008` implémentée et verte :
+9 tests / 132 assertions, suite complète 116/1666, Pint 102, rollback isolé
+frontière `000008`). Après merge : P4-A1 (`000009`) en exécution séparée.
+P4-A1/A2/B et P5 restent non démarrés.
 
 ## 🔄 EN FIN DE TÂCHE
 
