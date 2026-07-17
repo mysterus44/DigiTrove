@@ -922,7 +922,17 @@ préservant P4-A0/G0 et P4-A1/S1-S3) ; suite complète et Pint verts ; PR jamais
 mergée par l'agent. P4-B (`000011`) et P5 non démarrés.
 
 **Note d'exécution P4-A2** (aucune décision nouvelle) : implémenté sur
-`p4-a2-download-grants` (migration `000010`) conformément à D-029.4. Confirmé par
+`p4-a2-download-grants` (migration `000010`) conformément à D-029.4, puis **mergé
+via [PR #13](https://github.com/mysterus44/DigiTrove/pull/13) → `77f3766`** (parents
+`1b6e401` + `cea5f2d`). Audit post-merge : 13 colonnes exactes, FK RESTRICT/RESTRICT/
+SET NULL, 5 CHECK nommés, uniques `public_id`/`token_hash`, index partiel actif sans
+`now()`, 4 fonctions / 5 triggers (G4 différé sur les deux domaines), G3/G4 sans
+mutation, G3 sans lecture de `payments`, aucun trigger `download%` sur `refunds`,
+G0 et S1/S2/S3 préservés, rollback isolé `000010` vert ; suite 151/2188, Pint 110.
+**Delta d'assertions** : 1882 − 9 (9 itérations `hasTable('download_grants')`
+devenues fausses : 5 entrées de listes + 4 éléments de `foreach`) + 315 = 2188 ;
+les 3 assertions remplacées par `download_logs` et `toBe(25)`→`toBe(26)` sont
+neutres ; les 4 assertions des rollbacks isolés antérieurs conservées. Confirmé par
 introspection : **4 fonctions / 5 triggers** — G1 `prevent_download_grants_delete`
 (BEFORE DELETE), G2 `enforce_download_grants_immutability` (BEFORE UPDATE : ROW
 figée + `user_id` nullable via `pg_trigger_depth() > 1` + compteur +1 borné +
@@ -1012,9 +1022,13 @@ rollbacks), PROGRESS_TRACKER, HANDOFF, CLAUDE.md. Prochaine implémentation :
   **P4-A1 `000009` mergé via [PR #12](https://github.com/mysterus44/DigiTrove/pull/12)
   → `93d1f17`** (plan **D-029.3** : Q1=A bundles imbriqués exclus, Q2=A S3 +
   exhaustivité applicative ; 3 fonctions / 3 triggers S1/S2/S3 confirmés, suite
-  133/1882, Pint 106, rollback isolé `000009` vert). Prochaine étape : **plan puis
-  implémentation P4-A2** (`p4-a2-download-grants`, migration `000010`,
-  `download_grants` + G1–G4), puis P4-B, chaque gate mergé avant le suivant. TTL (72 h),
+  133/1882, Pint 106, rollback isolé `000009` vert). **P4-A2 `000010` mergé via
+  [PR #13](https://github.com/mysterus44/DigiTrove/pull/13) → `77f3766`** (plan
+  **D-029.4** option A ; 4 fonctions / 5 triggers G1–G4, G4 différé sur
+  `download_grants` ET `orders` ; suite 151/2188, Pint 110, rollback isolé `000010`
+  vert). Prochaine étape : **plan puis implémentation P4-B**
+  (`p4-b-download-logs`, migration `000011`, `download_logs` + G5/G6), dernier gate
+  du schéma P4. TTL (72 h),
   quota (5) et rétention logs (365 j) restent des recommandations de CONFIG
   APPLICATIVE (aucun default BDD, D-029.1-B) à fixer à la phase service. La phase
   licences reste une décision produit ouverte (liée à la question `usb` du legacy).

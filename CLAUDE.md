@@ -49,23 +49,23 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   durcissement `product_files` (`000008`, trigger G0, `version` FIGÉE avec le
   contenu) MERGÉ (PR #11 → `a047571`)** → **P4-A1 snapshot
   `order_item_bundle_components` (`000009`, D-029.3 : S1/S2/S3, bundles imbriqués
-  exclus, exhaustivité applicative) MERGÉ (PR #12 → `93d1f17`)** → P4-A2
-  `download_grants` (`000010`, plan **D-029.4** : option A émission immédiate =
-  snapshot applicatif, G1–G4, aucun DEFAULT commercial) → P4-B `download_logs`
-  (`000011`) ; `licenses` exclu de P4. Une migration, une branche, une frontière de
-  rollback par gate ; migration N+1 jamais créée avant merge du gate N. Détail dans
-  le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
+  exclus, exhaustivité applicative) MERGÉ (PR #12 → `93d1f17`)** → **P4-A2
+  `download_grants` (`000010`, **D-029.4** : option A émission immédiate = snapshot
+  applicatif, G1–G4, aucun DEFAULT commercial) MERGÉ (PR #13 → `77f3766`)** → P4-B
+  `download_logs` (`000011`) ; `licenses` exclu de P4. Une migration, une branche,
+  une frontière de rollback par gate ; migration N+1 jamais créée avant merge du
+  gate N. Détail dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
 
-Prochaine étape : **review + merge de la PR P4-A2** (branche
-`p4-a2-download-grants`, migration `000010` implémentée et verte : 18 tests /
-315 assertions, suite complète 151/2188, Pint 110, rollback isolé `000010`,
-4 fonctions / 5 triggers G1–G4 dont **G4 différé sur `download_grants` ET
-`orders`**). Après merge : **plan P4-B** (`000011`) en exécution séparée. Rappels
-D-029.4 : éligibilité = `orders.status IN ('paid','partially_refunded')` seul
-(G3 ne relit jamais `payments`) ; « pas d'upgrade implicite » = garantie
-**applicative** ; rotation = même `product_file_id` ; snapshot bundle partiel
-**indétectable**. P4-A0/P4-A1 sont mergés et clôturés. P4-B et P5 restent non
-démarrés.
+Prochaine étape : **plan technique puis implémentation P4-B — Download Logs**
+(branche `p4-b-download-logs`, migration `000011` `download_logs` + G5/G6, frontière
+`000011`), dernier gate du schéma P4, en exécution séparée. P4-A2 est mergé et
+clôturé (4 fonctions / 5 triggers, **G4 différé sur `download_grants` ET `orders`**,
+suite 151/2188, Pint 110, rollback isolé `000010` vert). Rappels D-029.4 :
+éligibilité = `orders.status IN ('paid','partially_refunded')` seul (G3 ne relit
+jamais `payments`) ; « pas d'upgrade implicite » = garantie **applicative** ;
+rotation = même `product_file_id` ; snapshot bundle partiel **indétectable** ;
+compteur structurel — **aucune consommation réelle avant P4-B**. P4-B et P5 restent
+non démarrés.
 
 ## 🔄 EN FIN DE TÂCHE
 

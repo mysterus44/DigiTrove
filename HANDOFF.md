@@ -8,9 +8,8 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-16
-- **Branche git active** : `p4-a2-download-grants` (depuis `1b6e401` = stable
-  `p0-foundations-laravel13` ; P4-A1 mergé via PR #12, plan P4-A2 D-029.4 complet ;
-  P4-A2 implémenté, en attente review + merge PR)
+- **Branche git active** : `p0-foundations-laravel13` à `77f3766` (synchronisée avec
+  `origin/p0-foundations-laravel13` ; P4-A2 mergé et clôturé via PR #13)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -44,7 +43,11 @@
   `93d1f17 Merge pull request #12 from mysterus44/p4-a1-bundle-purchase-snapshots`
   (SHA complet `93d1f173b6021fccb7d4df70e24938e02d16f3e3`, parents `a1e2e7f` +
   `94b018c` ; commit P4-A1 intégré `94b018c303d1f91469f6364c664dff4196da97f4`)
-- **`origin/main`** : `11130f4` (intact après P4-A1 ; aucun push direct)
+- **Merge P4-A2 Download Grants** : [PR #13](https://github.com/mysterus44/DigiTrove/pull/13)
+  `77f3766 Merge pull request #13 from mysterus44/p4-a2-download-grants`
+  (SHA complet `77f376624fa036aceded6b9095bd927f4adfdb7b`, parents `1b6e401` +
+  `cea5f2d` ; commit P4-A2 intégré `cea5f2d47b433add09ebd406b90dafdf3176be56`)
+- **`origin/main`** : `11130f4` (intact après P4-A2 ; aucun push direct)
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
   - `php artisan --version` OK via `digitrove-php:dev` → Laravel Framework 13.19.0
@@ -283,9 +286,9 @@ applicative de l'OrderService, P4-A2 fail-closed) ; exhaustivité applicative
 uniquement ; risque d'insertion tardive par rôle SQL privilégié documenté et non
 éliminé. Rollback isolé `000009` vert (P4-A0/G0 et P0–P3C préservés). Branche
 locale supprimée, distante conservée à `94b018c`. `origin/main` intact `11130f4`.
-**P4-A2 est implémenté sur la branche `p4-a2-download-grants`** (depuis `1b6e401`)
-et attend **review humaine + merge de sa PR** vers `p0-foundations-laravel13`.
-Périmètre livré, conforme à D-029.4 (option A) :
+**P4-A2 est mergé et clôturé** dans `p0-foundations-laravel13` via
+[PR #13](https://github.com/mysterus44/DigiTrove/pull/13), merge `77f3766` (parents
+`1b6e401` + `cea5f2d`). Périmètre livré, conforme à D-029.4 (option A) :
 - migration UNIQUE `2026_07_14_000010_create_download_grants_table.php` : table
   `download_grants` + **4 fonctions / 5 triggers** — G1 `prevent_download_grants_delete`
   (BEFORE DELETE), G2 `enforce_download_grants_immutability` (BEFORE UPDATE : ROW
@@ -304,11 +307,28 @@ Périmètre livré, conforme à D-029.4 (option A) :
 - adaptations historiques : `download_grants` retiré de 12 assertions globales, les
   4 assertions des rollbacks isolés (frontières `000005`/`000007`/`000008`/`000009`)
   et `StorefrontPreviewTest` conservés ; compteur de migrations P4-A1 porté à 26.
-Validation : 26 migrations ; P4-A2 **18 tests / 315 assertions** ; suite complète
-**151 / 2188** ; Pint **110** ; rollback isolé `000010` vert (P4-A1 et P4-A0/G0
-préservés) ; aucune base temporaire résiduelle ; migrations `000001`–`000009`
-intactes. Vérifié par introspection : G3/G4 ne mutent rien, **G3 ne lit jamais
-`payments`**, aucun trigger `download%` sur `refunds`, aucun index avec `now()`.
+Validation POST-MERGE réelle : 26 migrations ; suite complète **151 tests /
+2188 assertions** ; Pint **110 fichiers** ; `git diff --check` propre ; rollback
+isolé `000010` vert (P4-A1/S1-S3 et P4-A0/G0 préservés) ; aucune base temporaire
+résiduelle ; migrations `000001`–`000009` intactes. Introspection : 13 colonnes
+exactes (aucun token brut, `token_prefix`, IP, user-agent, JSONB, metadata,
+`last_downloaded_at`, statut texte ni soft-delete) ; FK `r`/`r`/`n` ; 5 CHECK
+nommés ; `public_id`/`token_hash` uniques ; index partiel actif
+`WHERE (revoked_at IS NULL)` ; **4 fonctions / 5 triggers physiques**, les deux
+triggers G4 `DEFERRABLE INITIALLY DEFERRED` sur `download_grants` ET `orders` ;
+**G3/G4 ne mutent rien**, **G3 ne lit jamais `payments`** et verrouille
+`orders FOR UPDATE` ; G2 utilise `pg_trigger_depth() > 1` ; **aucun trigger
+`download%` sur `refunds`** ; **aucun index avec `now()`**.
+
+**Delta d'assertions expliqué** (jamais une addition directe) : 1882 (baseline)
+**− 9** (adaptations historiques) **+ 315** (P4-A2) = **2188**. Les −9 sont
+exactement 9 itérations `expect(Schema::hasTable('download_grants'))->toBeFalse()`
+devenues factuellement fausses : 5 entrées `'download_grants',` retirées de listes
+multi-lignes (Catalog, Identity, P3A, P3B, P3C-A) et 4 éléments retirés de `foreach`
+inline (P3C-B, P3C-C, P4-A0, P4-A1). Les 3 assertions chaînées
+`Schema::hasTable('download_grants')` ont été **remplacées** par `download_logs`
+(0 net) et le compteur de migrations P4-A1 est passé de `toBe(25)` à `toBe(26)`
+(0 net). Les 4 assertions des rollbacks isolés antérieurs sont conservées.
 
 Contrat de référence (D-029 → D-029.4) : unité `order_item × product_file` ; `token_hash
 VARCHAR(64)` SHA-256 unique, **token brut jamais persisté** ; `public_id UUID` ;
@@ -338,9 +358,25 @@ Points D-029.4 à respecter à la lettre :
   `expired_reissue` obligatoire d'abord ; **aucun index partiel avec `now()`** ;
 - AUCUNE route, contrôleur, streaming, consommation réelle, DownloadLog, IP,
   user-agent, analyse ; aucun code P4-B/P5 ; PR jamais mergée par l'agent.
-Après merge de P4-A2 (clôture documentaire comprise) : **plan P4-B
-`p4-b-download-logs` (`000011`)**, qui devra apparier atomiquement le log et
-l'incrément du compteur (le structurel est déjà en place côté `download_grants`).
+Branche locale `p4-a2-download-grants` supprimée, distante conservée à `cea5f2d`.
+`origin/main` intact `11130f4`.
+
+Action suivante : **plan technique P4-B — Download Logs**, dans une exécution
+séparée, avant toute migration.
+- prochaine branche réservée : `p4-b-download-logs` (depuis la stable `77f3766`) ;
+- prochaine migration réservée : `2026_07_14_000011_create_download_logs_table.php`
+  (frontière rollback `000011`) : table `download_logs` + G5 (append-only :
+  `started` → `completed`|`denied`, terminal non réactivable) et G6 (purge
+  contrôlée par rétention, pattern T7 webhooks).
+P4-B devra apparier **atomiquement** le log et l'incrément du compteur (le
+structurel est déjà en place côté `download_grants` : G2 borne le +1 ; aucune
+consommation applicative n'existe encore). Rappels D-029/D-029.4 : `download_logs`
+est la SEULE table P4 purgeable ; `ip_hash` = HMAC-SHA-256 (clé hors BDD), jamais
+d'IP brute ; `user_agent` tronqué (500) ; rétention 365 j = recommandation de
+config, aucun DEFAULT commercial ; **un token inconnu n'entre JAMAIS dans la table**
+(`download_grant_id` NOT NULL — anti-empoisonnement P3C-B.1), ces tentatives
+relèvent du rate-limiting et des logs de sécurité applicatifs ; le client reçoit
+toujours un 404 générique.
 
 Gate : aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret,
 SDK, Filament, job de purge, téléchargement réel, token réel ou déploiement Azure.
@@ -407,6 +443,50 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-17 — Claude Code (clôture post-merge P4-A2)
+- Fait : **P4-A2 mergé** via [PR #13](https://github.com/mysterus44/DigiTrove/pull/13),
+  merge `77f376624fa036aceded6b9095bd927f4adfdb7b` (exactement deux parents
+  `1b6e401` + `cea5f2d`, sujet « Merge pull request #13 from
+  mysterus44/p4-a2-download-grants »). Commit P4-A2 `cea5f2d` intégré et ancêtre de
+  la stable. Stable synchronisée fast-forward (`1b6e401..77f3766`, 20 fichiers).
+  `origin/main` intact `11130f4`.
+- Infrastructure : le daemon Docker Desktop était arrêté au démarrage de la mission
+  → relancé, puis **uniquement** les services du projet démarrés (`docker compose
+  up -d`) ; PostgreSQL 16 + Redis healthy avant toute validation.
+- Introspection PostgreSQL post-merge : `download_grants` avec les 13 colonnes
+  exactes ; **aucun** token brut / `token_prefix` / IP / user-agent / JSONB /
+  metadata / `last_downloaded_at` / statut texte / soft-delete ; FK `order_item_id`
+  et `product_file_id` **RESTRICT**, `user_id` **SET NULL** ; 5 CHECK nommés
+  (token SHA-256 hex minuscule, `expires_at > created_at`, `max_downloads >= 1`,
+  `0 <= downloads_count <= max_downloads`, appariement de révocation en
+  `CASE … IS TRUE`) ; `public_id` et `token_hash` uniques ; index partiel
+  `download_grants_active_pair_unique … WHERE (revoked_at IS NULL)` — **aucun
+  prédicat avec `now()`** ; **4 fonctions / 5 triggers physiques**, tous non
+  internes et actifs, les deux triggers G4 `DEFERRABLE INITIALLY DEFERRED` sur
+  `download_grants` ET `orders`. Vérifié : **G3/G4 ne mutent rien**, **G3 ne lit
+  jamais `payments`** et prend `orders FOR UPDATE`, G2 utilise
+  `pg_trigger_depth() > 1`, **aucun trigger `download%` sur `refunds`**.
+- Périmètre mergé (`1b6e401..77f3766`) audité : migration `000010`, modèle
+  `DownloadGrant`, factory, relations `OrderItem`/`ProductFile`, test P4-A2,
+  9 tests historiques adaptés, 5 documents. Aucun `000011`, DownloadLog, route,
+  contrôleur, service, listener, job, notification, email, endpoint, streaming,
+  token brut, P5. Migrations `000001`–`000009` inchangées.
+- **Delta d'assertions expliqué** : 1882 − 9 + 315 = **2188** (jamais 1882 + 315).
+  Les −9 = 9 itérations `Schema::hasTable('download_grants')->toBeFalse()` devenues
+  fausses (5 entrées de listes multi-lignes + 4 éléments de `foreach` inline) ;
+  3 assertions chaînées remplacées par `download_logs` et `toBe(25)`→`toBe(26)`
+  sont neutres ; les 4 assertions des rollbacks isolés antérieurs conservées.
+- Non-régression : G0/P4-A0 (1 fonction), S1/S2/S3 de P4-A1 (3 fonctions), 5
+  fonctions refunds, catalogue et commerce intacts ; `download_logs` absent.
+- Validation : `migrate:fresh` 26 migrations ; suite complète **151 / 2188** ; Pint
+  **110** ; `git diff --check` propre ; rollback isolé `000010` vert ; aucune base
+  temporaire résiduelle.
+- Nettoyage : branche locale `p4-a2-download-grants` supprimée (`git branch -d`,
+  merge confirmé) ; distante conservée à `cea5f2d`.
+- Décisions : aucune nouvelle (D-029.4 inchangée ; merge consigné).
+- Laisse à : **plan technique P4-B — Download Logs** (branche `p4-b-download-logs`,
+  migration `000011`), exécution séparée. P4-B et P5 non démarrés.
 
 ### 2026-07-16 — Claude Code (P4-A2 Download Grants implémenté)
 - Fait : gate **P4-A2** sur branche `p4-a2-download-grants` (depuis `1b6e401`, état
