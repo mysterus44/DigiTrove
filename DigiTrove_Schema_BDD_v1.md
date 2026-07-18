@@ -854,8 +854,9 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --       composition courante de `product_bundles` ;
 --   B — AUCUN DEFAULT commercial en BDD : `max_downloads` et `expires_at`
 --       explicites à chaque insertion ; TTL/quota/rétention = config applicative.
--- Sous-gates (D-029.2 : QUATRE gates ISOLÉS, un invariant par gate, jamais de
--- gate composite — chaque gate a sa branche, sa migration unique, sa frontière
+-- Sous-gates (D-029.2 : quatre gates ISOLÉS, plus le hotfix additif P4-A2.1 ; un
+-- invariant par gate, jamais de gate composite — chaque gate a sa branche, sa
+-- migration unique, sa frontière
 -- de rollback et doit être MERGÉ dans la stable avant le gate suivant) :
 --   P4-A0 — ProductFile Content Immutability ✅ MERGÉ (PR #11 -> a047571 ;
 --           parents abaea6e + 8b822c1 ; fonction G0 + trigger BEFORE UPDATE
@@ -879,13 +880,21 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --           migration `2026_07_14_000010_create_download_grants_table.php`
 --           frontière harness `000010` (down() ne retire que les objets grants ;
 --           P4-A0 + P4-A1 préservés).
+--   P4-A2.1 — Download Grant Integrity Hardening 🟨 IMPLÉMENTÉ, NON MERGÉ
+--           branche `p4-a2-1-grant-integrity-hardening`
+--           migration additive
+--           `2026_07_14_000011_harden_download_grants_integrity.php`
+--           G3 : bénéficiaire null-safe strict avec orders.user_id ; G2 :
+--           updated_at avance uniquement avec consommation/révocation ; 4 fonctions
+--           / 5 triggers inchangés ; rollback restaure exactement G2/G3 de 000010.
 --   P4-B  — Download Logs
 --           branche `p4-b-download-logs`
---           migration `2026_07_14_000011_create_download_logs_table.php`
---           frontière harness `000011` (down() ne retire que les logs ;
+--           migration `2026_07_14_000012_create_download_logs_table.php`
+--           frontière harness `000012` (down() ne retire que les logs ;
 --           tout P4-A préservé).
 -- Ordre des merges OBLIGATOIRE : `000009` ne se crée qu'après merge de `000008`,
--- `000010` qu'après merge de `000009`, `000011` qu'après merge de `000010`.
+-- `000010` après `000009`, le hotfix `000011` après `000010`, puis `000012`
+-- seulement après merge/clôture du hotfix.
 -- Responsabilités : A0 = référence de contenu historiquement stable ;
 -- A1 = composition de bundle achetée indépendante du pivot mutable courant ;
 -- A2 = autorisation/quota/expiration/révocation/consommation atomique ;
@@ -1071,7 +1080,23 @@ CREATE INDEX download_grants_product_file_id_index ON download_grants (product_f
 CREATE INDEX download_grants_user_id_index         ON download_grants (user_id);
 CREATE INDEX download_grants_active_expiry_index   ON download_grants (expires_at) WHERE revoked_at IS NULL;
 
--- P4-B — JOURNAL DE CONSOMMATION (migration `000011` ; append-only, purgeable
+-- P4-A2.1 — DURCISSEMENT ADDITIF G2/G3 (migration `000011`, `000010` immuable)
+-- Vulnérabilités reproduites avant correction :
+--   1. une commande invitée (`orders.user_id IS NULL`) acceptait un user_id arbitraire ;
+--   2. updated_at pouvait être modifié isolément sans transition de cycle de vie.
+-- G3 remplace la branche nullable ambiguë par la matrice stricte PostgreSQL :
+--     NEW.user_id IS NOT DISTINCT FROM orders.user_id
+-- soit invité->NULL uniquement et compte->même identifiant uniquement.
+-- G2 n'accepte un changement de updated_at que s'il est strictement croissant ET
+-- accompagne exactement une consommation downloads_count + 1 ou une révocation
+-- NULL->(timestamp + motif). Une nullification user_id causée par la FK SET NULL
+-- reste autorisée avec updated_at inchangé ; nullification/remplacement manuels
+-- restent refusés. Aucune donnée n'est réécrite. Aucun objet n'est ajouté : les
+-- signatures et liaisons des 4 fonctions / 5 triggers G1–G4 sont conservées.
+-- Le down() restaure textuellement les versions G2/G3 de 000010 ; le harness
+-- compare les définitions pg_get_functiondef avant up() et après down().
+
+-- P4-B — JOURNAL DE CONSOMMATION (migration `000012` ; append-only, purgeable
 -- après rétention). Sémantique stricte des statuts : started = grant validé,
 -- compteur incrémenté, flux ouvert ; completed = flux terminé (bytes_sent
 -- renseignable) ; denied = tentative SUR UN GRANT EXISTANT refusée
@@ -1339,10 +1364,11 @@ CREATE INDEX download_logs_retention_until_index ON download_logs (retention_unt
 --   |                     | S1/S2/S3 (3 fn + 3 triggers)      | trigger, products,          |
 --   |                     |                                   | product_files,              |
 --   |                     |                                   | product_bundles, orders,    |
---   |                     |                                   | order_items) ; `000010` et  |
---   |                     |                                   | `000011` jamais appliquées  |
+--   |                     |                                   | order_items) ; `000010`,    |
+--   |                     |                                   | `000011`, `000012` absentes |
 --   | P4-A2 / `000010`    | download_grants + G1–G4           | P0–P3C + P4-A0 + P4-A1      |
---   | P4-B  / `000011`    | download_logs + G5–G6             | P0–P3C + tout P4-A          |
+--   | P4-A2.1 / `000011`  | remplacements G2/G3               | table + G1/G4 + déf. G2/G3  |
+--   | P4-B  / `000012`    | download_logs + G5–G6             | P0–P3C + tout P4-A          |
 ```
 
 ---
@@ -1534,10 +1560,11 @@ Ordre technique des migrations à respecter avant P1 :
 1. `users` + `customer_profiles` + `visitors` (fondation identité) ✅
 2. `categories` + `products` + `product_prices` + `product_files` + pivots catalogue ✅
 3. Commerce P3 (bloc ci-dessus) — schéma complet mergé jusqu'à P3C-C (PR #10) ✅
-4. P4 en QUATRE gates isolés, mergés dans l'ordre (D-029.2) : P4-A0 durcissement
+4. P4 en gates isolés, mergés dans l'ordre (D-029.2 + correctif P4-A2.1) : P4-A0 durcissement
    `product_files` (`000008`) → P4-A1 snapshot `order_item_bundle_components`
-   (`000009`) → P4-A2 `download_grants` (`000010`) → P4-B `download_logs`
-   (`000011`) — plan finalisé D-029 + D-029.1 + D-029.2, non migré
+   (`000009`) → P4-A2 `download_grants` (`000010`) → P4-A2.1 hardening G2/G3
+   (`000011`) → P4-B `download_logs` (`000012`) — P4-A2.1 implémenté non mergé ;
+   P4-B non migré
 5. `events` partitionnée + rollups (analytique)
 6. `campaigns` + `customer_segments` (marketing)
 7. Affiliation dédiée (`affiliate_profiles`, `affiliate_links`, `referrals`,
