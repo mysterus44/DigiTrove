@@ -880,7 +880,7 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --           migration `2026_07_14_000010_create_download_grants_table.php`
 --           frontière harness `000010` (down() ne retire que les objets grants ;
 --           P4-A0 + P4-A1 préservés).
---   P4-A2.1 — Download Grant Integrity Hardening 🟨 IMPLÉMENTÉ, NON MERGÉ
+--   P4-A2.1 — Download Grant Integrity Hardening ✅ MERGÉ PR #14 (`2c25e2a`)
 --           branche `p4-a2-1-grant-integrity-hardening`
 --           migration additive
 --           `2026_07_14_000011_harden_download_grants_integrity.php`
@@ -1095,6 +1095,8 @@ CREATE INDEX download_grants_active_expiry_index   ON download_grants (expires_a
 -- signatures et liaisons des 4 fonctions / 5 triggers G1–G4 sont conservées.
 -- Le down() restaure textuellement les versions G2/G3 de 000010 ; le harness
 -- compare les définitions pg_get_functiondef avant up() et après down().
+-- Validation post-merge : 27 migrations ; P4-A2.1 7/113 ; suite 158/2301 ;
+-- Pint 112 ; rollback isolé vert ; 4 fonctions / 5 triggers et G4 différé intacts.
 
 -- P4-B — JOURNAL DE CONSOMMATION (migration `000012` ; append-only, purgeable
 -- après rétention). Sémantique stricte des statuts : started = grant validé,
@@ -1563,8 +1565,8 @@ Ordre technique des migrations à respecter avant P1 :
 4. P4 en gates isolés, mergés dans l'ordre (D-029.2 + correctif P4-A2.1) : P4-A0 durcissement
    `product_files` (`000008`) → P4-A1 snapshot `order_item_bundle_components`
    (`000009`) → P4-A2 `download_grants` (`000010`) → P4-A2.1 hardening G2/G3
-   (`000011`) → P4-B `download_logs` (`000012`) — P4-A2.1 implémenté non mergé ;
-   P4-B non migré
+   (`000011`, mergé PR #14) → P4-B `download_logs` (`000012`) — P4-A2.1 terminé ;
+   P4-B non migré et non démarré
 5. `events` partitionnée + rollups (analytique)
 6. `campaigns` + `customer_segments` (marketing)
 7. Affiliation dédiée (`affiliate_profiles`, `affiliate_links`, `referrals`,

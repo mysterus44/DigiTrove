@@ -53,18 +53,18 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   `download_grants` (`000010`, **D-029.4** : option A émission immédiate = snapshot
   applicatif, G1–G4, aucun DEFAULT commercial) MERGÉ (PR #13 → `77f3766`)** →
   **P4-A2.1 hardening `download_grants` (`000011`, bénéficiaire G3 null-safe et
-  `updated_at` G2 lié au cycle de vie) IMPLÉMENTÉ, NON MERGÉ** → P4-B
+  `updated_at` G2 lié au cycle de vie) MERGÉ (PR #14 → `2c25e2a`)** → P4-B
   `download_logs` (`000012`) ; `licenses` exclu de P4. Une migration, une branche,
   une frontière de rollback par gate ; migration N+1 jamais créée avant merge du
   gate N. Détail dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
 
-Prochaine étape : **review puis merge de P4-A2.1 — Download Grant Integrity
-Hardening** (branche `p4-a2-1-grant-integrity-hardening`, migration additive
-`000011`). Le hotfix remplace uniquement G2/G3, garde 4 fonctions / 5 triggers et
-préserve `000010` immuable. Validation : 27 migrations ; P4-A2.1 7/113 ; suite
+P4-A2.1 est **terminé et mergé** via
+[PR #14](https://github.com/mysterus44/DigiTrove/pull/14), merge `2c25e2a` : le
+hotfix remplace uniquement G2/G3, garde 4 fonctions / 5 triggers et préserve
+`000010` immuable. Validation post-merge : 27 migrations ; P4-A2.1 7/113 ; suite
 158/2301 ; Pint 112 ; rollback isolé `000011` restaurant exactement G2/G3 d'origine.
-Après merge et clôture seulement : **plan P4-B — Download Logs** (branche
-`p4-b-download-logs`, migration `000012`, frontière `000012`). Rappels D-029.4 :
+Prochaine étape : **plan P4-B — Download Logs** (branche `p4-b-download-logs`,
+migration `000012`, frontière `000012`), dans une exécution séparée. Rappels D-029.4 :
 éligibilité = `orders.status IN ('paid','partially_refunded')` seul (G3 ne relit
 jamais `payments`) ; « pas d'upgrade implicite » = garantie **applicative** ;
 rotation = même `product_file_id` ; snapshot bundle partiel **indétectable** ;

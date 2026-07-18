@@ -977,11 +977,13 @@ imposer un changement de timestamp. Le remplacement conserve les signatures, les
 4 fonctions et les 5 triggers existants, sans mutation de données, table, index,
 CHECK ni trigger supplémentaire. Le `down()` restaure exactement les définitions
 G2/G3 de `000010`, prouvé avec `pg_get_functiondef` dans une base PostgreSQL isolée.
-Validation : 27 migrations ; P4-A2.1 7 tests / 113 assertions ; P4-A2 18/315 ;
-P4-A1 17/216 ; P4-A0 9/130 ; suite complète 158/2301 ; Pint 112 ; rollback isolé
-`000011` vert ; aucune base temporaire résiduelle. Statut : **corrigé sur
-`p4-a2-1-grant-integrity-hardening`, non mergé**. P4-B est renuméroté
-`2026_07_14_000012_create_download_logs_table.php` et reste non démarré.
+Validation post-merge : 27 migrations ; P4-A2.1 7 tests / 113 assertions ; P4-A2
+18/315 ; P4-A1 17/216 ; P4-A0 9/130 ; suite complète 158/2301 ; Pint 112 ;
+rollback isolé `000011` vert ; aucune base temporaire résiduelle. Statut : **mergé
+via [PR #14](https://github.com/mysterus44/DigiTrove/pull/14), merge
+`2c25e2a412a24ac6ae2e5d51ed6929f3f0a397f7` (parents `0633eb0` + `ba834be`)**.
+La branche locale du hotfix est supprimée et sa distante conservée. P4-B est
+renuméroté `2026_07_14_000012_create_download_logs_table.php` et reste non démarré.
 
 **Note d'exécution P4-A1** (aucune décision nouvelle) : implémenté sur
 `p4-a1-bundle-purchase-snapshots` (migration `000009`) conformément à D-029.3, puis
@@ -1052,10 +1054,11 @@ rollbacks), PROGRESS_TRACKER, HANDOFF, CLAUDE.md. Prochaine implémentation :
   [PR #13](https://github.com/mysterus44/DigiTrove/pull/13) → `77f3766`** (plan
   **D-029.4** option A ; 4 fonctions / 5 triggers G1–G4, G4 différé sur
   `download_grants` ET `orders` ; suite 151/2188, Pint 110, rollback isolé `000010`
-   vert). **P4-A2.1 `000011` corrige additivement G2/G3 sans modifier `000010`** :
-   bénéficiaire null-safe, timestamp lié au cycle de vie, rollback exact ; 7/113,
-   suite 158/2301, Pint 112. Prochaine étape : review puis merge P4-A2.1, ensuite
-   plan/implémentation P4-B (`p4-b-download-logs`, migration `000012`,
+   vert). **P4-A2.1 `000011` mergé via
+   [PR #14](https://github.com/mysterus44/DigiTrove/pull/14) → `2c25e2a`** :
+   correction additive G2/G3 sans modifier `000010`, bénéficiaire null-safe,
+   timestamp lié au cycle de vie, rollback exact ; 7/113, suite 158/2301, Pint 112.
+   Prochaine étape : plan P4-B (`p4-b-download-logs`, migration `000012`,
    `download_logs` + G5/G6), dernier gate du schéma P4. TTL (72 h),
   quota (5) et rétention logs (365 j) restent des recommandations de CONFIG
   APPLICATIVE (aucun default BDD, D-029.1-B) à fixer à la phase service. La phase

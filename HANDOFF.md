@@ -8,9 +8,8 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-18
-- **Branche git active** : `p4-a2-1-grant-integrity-hardening` depuis la stable
-  `0633eb0e8c2fb58cf60571296f391afc76741668` ; correctif P4-A2.1 implémenté et
-  validé, non mergé
+- **Branche git active** : `p0-foundations-laravel13`, synchronisée avec
+  `origin/p0-foundations-laravel13` après le merge P4-A2.1 `2c25e2a`
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -48,6 +47,11 @@
   `77f3766 Merge pull request #13 from mysterus44/p4-a2-download-grants`
   (SHA complet `77f376624fa036aceded6b9095bd927f4adfdb7b`, parents `1b6e401` +
   `cea5f2d` ; commit P4-A2 intégré `cea5f2d47b433add09ebd406b90dafdf3176be56`)
+- **Merge P4-A2.1 Download Grant Integrity Hardening** :
+  [PR #14](https://github.com/mysterus44/DigiTrove/pull/14)
+  `2c25e2a Merge pull request #14 from mysterus44/p4-a2-1-grant-integrity-hardening`
+  (SHA complet `2c25e2a412a24ac6ae2e5d51ed6929f3f0a397f7`, parents `0633eb0` +
+  `ba834be` ; commit hotfix intégré `ba834befa63a7212c2f2065f51a3f2ae03f5453b`)
 - **`origin/main`** : `11130f4` (intact après P4-A2.1 ; aucun push direct)
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
@@ -248,15 +252,12 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**P4-A2.1 est corrigé et prêt pour review**, mais non mergé. Deux reproductions
-PostgreSQL réelles ont prouvé puis verrouillé les anomalies suivantes : G3 acceptait
-un bénéficiaire arbitraire sur une commande invitée (`orders.user_id IS NULL`) et G2
-acceptait une modification isolée de `updated_at`. La migration mergée
-`2026_07_14_000010_create_download_grants_table.php` reste immuable ; le hotfix est
-strictement additif dans
-`2026_07_14_000011_harden_download_grants_integrity.php`.
-Statut : **P4-A2 CORRIGÉ PAR P4-A2.1 — EN ATTENTE DE MERGE**. Les reproductions ont
-été rollbackées et n'ont persisté aucune donnée.
+**P4-A2.1 TERMINÉ ET MERGÉ** via
+[PR #14](https://github.com/mysterus44/DigiTrove/pull/14), merge
+`2c25e2a412a24ac6ae2e5d51ed6929f3f0a397f7` (parents `0633eb0` + `ba834be`).
+Le hotfix `ba834befa63a7212c2f2065f51a3f2ae03f5453b` est intégré à la stable par la
+migration additive `2026_07_14_000011_harden_download_grants_integrity.php` ; la
+migration historique `000010` reste immuable (blob Git `f36cd49f62220ac1fea42adc0416bd2b4e60e0af`).
 
 Le nouveau G3 impose `NEW.user_id IS NOT DISTINCT FROM orders.user_id` : invité =
 `NULL`, compte = identifiant strictement identique. Le nouveau G2 exige que tout
@@ -273,10 +274,12 @@ Pint **112 fichiers** ; `git diff --check` propre. Le rollback isolé `000011`
 restaure exactement les définitions G2/G3 de `000010` via `pg_get_functiondef`,
 préserve table/données/G1/G4/P4-A0/P4-A1 et ne laisse aucune base temporaire.
 
-Action suivante : review et merge de `p4-a2-1-grant-integrity-hardening`, puis
-clôture post-merge. P4-B reste non démarré ; branche future
-`p4-b-download-logs`, migration désormais réservée
-`2026_07_14_000012_create_download_logs_table.php` (frontière `000012`).
+La branche locale `p4-a2-1-grant-integrity-hardening` est supprimée ; la branche
+distante est conservée à `ba834bef`. `origin/main` reste intact à `11130f4`.
+
+Action suivante, dans une exécution séparée : **plan technique P4-B — Download
+Logs**. P4-B reste non démarré ; branche future `p4-b-download-logs`, migration
+réservée `2026_07_14_000012_create_download_logs_table.php` (frontière `000012`).
 
 **P4-A0 est mergé et clôturé** dans `p0-foundations-laravel13` via
 [PR #11](https://github.com/mysterus44/DigiTrove/pull/11), merge `a047571` (parents
@@ -474,6 +477,23 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-18 — Codex (clôture post-merge P4-A2.1)
+- Merge prouvé : [PR #14](https://github.com/mysterus44/DigiTrove/pull/14), SHA
+  `2c25e2a412a24ac6ae2e5d51ed6929f3f0a397f7`, parents `0633eb0` + `ba834be` ;
+  hotfix `ba834bef` ancêtre de la stable, `origin/main` intact `11130f4`.
+- PostgreSQL 16 et Redis 7 healthy. Validation post-merge : 27 migrations ;
+  P4-A2.1 7/113 ; P4-A2 18/315 ; P4-A1 17/216 ; P4-A0 9/130 ; Catalog 12/112 ;
+  P3B 18/358 ; P3C-A 16/220 ; P3C-B 13/188 ; P3C-C 16/460 ; suite complète
+  158/2301 ; Pint 112 ; diff-check propre.
+- G3 null-safe et G2 `updated_at` confirmés par transactions PostgreSQL ; topologie
+  inchangée (4 fonctions / 5 triggers), G4 toujours différé sur grants et orders.
+  Rollback isolé `000011` vert, définitions G2/G3 originales restaurées exactement,
+  aucune base temporaire résiduelle.
+- Migration `000010` inchangée ; P2/P3/P4-A0/P4-A1/P4-A2 préservés. Branche locale
+  du hotfix supprimée, distante conservée. Aucun P4-B/P5 créé.
+- Laisse à : plan technique P4-B dans une exécution séparée, branche future
+  `p4-b-download-logs`, migration réservée `000012`.
 
 ### 2026-07-18 — Codex (P4-A2.1 Download Grant Integrity Hardening)
 - Garde-fous : stable locale/distante `0633eb0`, merge-base exact, branche dédiée
