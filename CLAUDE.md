@@ -45,27 +45,31 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   (PR #10 → `122332a`, commit final `1270c53`)
 
 - **Plan P4 Livraison** ✅ finalisé, validé et corrigé (**D-029 + D-029.1 B–A–B +
-  D-029.2 + D-029.3 + D-029.4**) : QUATRE gates isolés mergés dans l'ordre — **P4-A0
+  D-029.2 + D-029.3 + D-029.4**) : gates isolés dans l'ordre — **P4-A0
   durcissement `product_files` (`000008`, trigger G0, `version` FIGÉE avec le
   contenu) MERGÉ (PR #11 → `a047571`)** → **P4-A1 snapshot
   `order_item_bundle_components` (`000009`, D-029.3 : S1/S2/S3, bundles imbriqués
   exclus, exhaustivité applicative) MERGÉ (PR #12 → `93d1f17`)** → **P4-A2
   `download_grants` (`000010`, **D-029.4** : option A émission immédiate = snapshot
-  applicatif, G1–G4, aucun DEFAULT commercial) MERGÉ (PR #13 → `77f3766`)** → P4-B
-  `download_logs` (`000011`) ; `licenses` exclu de P4. Une migration, une branche,
+  applicatif, G1–G4, aucun DEFAULT commercial) MERGÉ (PR #13 → `77f3766`)** →
+  **P4-A2.1 hardening `download_grants` (`000011`, bénéficiaire G3 null-safe et
+  `updated_at` G2 lié au cycle de vie) IMPLÉMENTÉ, NON MERGÉ** → P4-B
+  `download_logs` (`000012`) ; `licenses` exclu de P4. Une migration, une branche,
   une frontière de rollback par gate ; migration N+1 jamais créée avant merge du
   gate N. Détail dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
 
-Prochaine étape : **plan technique puis implémentation P4-B — Download Logs**
-(branche `p4-b-download-logs`, migration `000011` `download_logs` + G5/G6, frontière
-`000011`), dernier gate du schéma P4, en exécution séparée. P4-A2 est mergé et
-clôturé (4 fonctions / 5 triggers, **G4 différé sur `download_grants` ET `orders`**,
-suite 151/2188, Pint 110, rollback isolé `000010` vert). Rappels D-029.4 :
+Prochaine étape : **review puis merge de P4-A2.1 — Download Grant Integrity
+Hardening** (branche `p4-a2-1-grant-integrity-hardening`, migration additive
+`000011`). Le hotfix remplace uniquement G2/G3, garde 4 fonctions / 5 triggers et
+préserve `000010` immuable. Validation : 27 migrations ; P4-A2.1 7/113 ; suite
+158/2301 ; Pint 112 ; rollback isolé `000011` restaurant exactement G2/G3 d'origine.
+Après merge et clôture seulement : **plan P4-B — Download Logs** (branche
+`p4-b-download-logs`, migration `000012`, frontière `000012`). Rappels D-029.4 :
 éligibilité = `orders.status IN ('paid','partially_refunded')` seul (G3 ne relit
 jamais `payments`) ; « pas d'upgrade implicite » = garantie **applicative** ;
 rotation = même `product_file_id` ; snapshot bundle partiel **indétectable** ;
 compteur structurel — **aucune consommation réelle avant P4-B**. P4-B et P5 restent
-non démarrés.
+non démarrés ; aucun code P4-B n'existe.
 
 ## 🔄 EN FIN DE TÂCHE
 

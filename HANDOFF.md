@@ -6,10 +6,11 @@
 
 ## 📍 ÉTAT ACTUEL
 
-- **Dernier agent** : Claude Code
-- **Date** : 2026-07-16
-- **Branche git active** : `p0-foundations-laravel13` à `77f3766` (synchronisée avec
-  `origin/p0-foundations-laravel13` ; P4-A2 mergé et clôturé via PR #13)
+- **Dernier agent** : Codex
+- **Date** : 2026-07-18
+- **Branche git active** : `p4-a2-1-grant-integrity-hardening` depuis la stable
+  `0633eb0e8c2fb58cf60571296f391afc76741668` ; correctif P4-A2.1 implémenté et
+  validé, non mergé
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -47,7 +48,7 @@
   `77f3766 Merge pull request #13 from mysterus44/p4-a2-download-grants`
   (SHA complet `77f376624fa036aceded6b9095bd927f4adfdb7b`, parents `1b6e401` +
   `cea5f2d` ; commit P4-A2 intégré `cea5f2d47b433add09ebd406b90dafdf3176be56`)
-- **`origin/main`** : `11130f4` (intact après P4-A2 ; aucun push direct)
+- **`origin/main`** : `11130f4` (intact après P4-A2.1 ; aucun push direct)
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
   - `php artisan --version` OK via `digitrove-php:dev` → Laravel Framework 13.19.0
@@ -247,6 +248,36 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
+**P4-A2.1 est corrigé et prêt pour review**, mais non mergé. Deux reproductions
+PostgreSQL réelles ont prouvé puis verrouillé les anomalies suivantes : G3 acceptait
+un bénéficiaire arbitraire sur une commande invitée (`orders.user_id IS NULL`) et G2
+acceptait une modification isolée de `updated_at`. La migration mergée
+`2026_07_14_000010_create_download_grants_table.php` reste immuable ; le hotfix est
+strictement additif dans
+`2026_07_14_000011_harden_download_grants_integrity.php`.
+Statut : **P4-A2 CORRIGÉ PAR P4-A2.1 — EN ATTENTE DE MERGE**. Les reproductions ont
+été rollbackées et n'ont persisté aucune donnée.
+
+Le nouveau G3 impose `NEW.user_id IS NOT DISTINCT FROM orders.user_id` : invité =
+`NULL`, compte = identifiant strictement identique. Le nouveau G2 exige que tout
+changement de `updated_at` avance strictement et accompagne une consommation `+1`
+ou une révocation valide. La nullification `user_id` produite par la FK `SET NULL`
+reste autorisée avec timestamp inchangé ; une nullification manuelle reste refusée.
+Le catalogue physique reste **4 fonctions / 5 triggers**, G4 demeure différé sur
+grants et orders, et aucun objet P4-B n'est créé.
+
+Validation réelle : **27 migrations** ; P4-A2.1 **7 tests / 113 assertions** ;
+P4-A2 18/315 ; P4-A1 17/216 ; P4-A0 9/130 ; Catalog 12/112 ; P3B 18/358 ;
+P3C-A 16/220 ; P3C-B 13/188 ; P3C-C 16/460 ; suite complète **158/2301** ;
+Pint **112 fichiers** ; `git diff --check` propre. Le rollback isolé `000011`
+restaure exactement les définitions G2/G3 de `000010` via `pg_get_functiondef`,
+préserve table/données/G1/G4/P4-A0/P4-A1 et ne laisse aucune base temporaire.
+
+Action suivante : review et merge de `p4-a2-1-grant-integrity-hardening`, puis
+clôture post-merge. P4-B reste non démarré ; branche future
+`p4-b-download-logs`, migration désormais réservée
+`2026_07_14_000012_create_download_logs_table.php` (frontière `000012`).
+
 **P4-A0 est mergé et clôturé** dans `p0-foundations-laravel13` via
 [PR #11](https://github.com/mysterus44/DigiTrove/pull/11), merge `a047571` (parents
 `abaea6e` + `8b822c1`). La migration `000008`, la fonction G0
@@ -361,11 +392,11 @@ Points D-029.4 à respecter à la lettre :
 Branche locale `p4-a2-download-grants` supprimée, distante conservée à `cea5f2d`.
 `origin/main` intact `11130f4`.
 
-Action suivante : **plan technique P4-B — Download Logs**, dans une exécution
-séparée, avant toute migration.
-- prochaine branche réservée : `p4-b-download-logs` (depuis la stable `77f3766`) ;
-- prochaine migration réservée : `2026_07_14_000011_create_download_logs_table.php`
-  (frontière rollback `000011`) : table `download_logs` + G5 (append-only :
+Après merge et clôture P4-A2.1 seulement : **plan technique P4-B — Download Logs**,
+dans une exécution séparée, avant toute migration.
+- prochaine branche réservée : `p4-b-download-logs` (depuis la future stable) ;
+- prochaine migration réservée : `2026_07_14_000012_create_download_logs_table.php`
+  (frontière rollback `000012`) : table `download_logs` + G5 (append-only :
   `started` → `completed`|`denied`, terminal non réactivable) et G6 (purge
   contrôlée par rétention, pattern T7 webhooks).
 P4-B devra apparier **atomiquement** le log et l'incrément du compteur (le
@@ -444,6 +475,24 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
 
+### 2026-07-18 — Codex (P4-A2.1 Download Grant Integrity Hardening)
+- Garde-fous : stable locale/distante `0633eb0`, merge-base exact, branche dédiée
+  `p4-a2-1-grant-integrity-hardening`, `origin/main` intact `11130f4`, aucun P4-B/P5.
+- Reproduction avant correctif, transactions annulées : bénéficiaire arbitraire sur
+  commande invitée accepté par G3 ; `updated_at + 1 day` isolé accepté par G2.
+- Correctif : migration additive `000011` remplaçant uniquement les fonctions G2/G3.
+  G3 compare le bénéficiaire avec `IS NOT DISTINCT FROM`; G2 lie le timestamp à une
+  transition réelle, exige une progression stricte et préserve la nullification FK.
+  `000010` n'est pas modifiée ; aucune donnée, table, colonne, FK, CHECK, index ou
+  liaison de trigger n'est changée.
+- Tests : matrice invité/compte SQL + Eloquent, timestamps passé/futur/identique,
+  transitions consommation/révocation, nullification FK, updates adversariaux,
+  non-régression quota/expiration/révocation et rollback isolé exact de `000011`.
+- Validation : 27 migrations ; P4-A2.1 7/113 ; suite 158/2301 ; Pint 112 ;
+  diff-check propre ; 4 fonctions / 5 triggers ; aucune base temporaire résiduelle.
+- Laisse à : review/merge du hotfix, puis clôture. P4-B renuméroté `000012`, non
+  démarré ; P5 non démarré.
+
 ### 2026-07-17 — Claude Code (clôture post-merge P4-A2)
 - Fait : **P4-A2 mergé** via [PR #13](https://github.com/mysterus44/DigiTrove/pull/13),
   merge `77f376624fa036aceded6b9095bd927f4adfdb7b` (exactement deux parents
@@ -485,8 +534,8 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 - Nettoyage : branche locale `p4-a2-download-grants` supprimée (`git branch -d`,
   merge confirmé) ; distante conservée à `cea5f2d`.
 - Décisions : aucune nouvelle (D-029.4 inchangée ; merge consigné).
-- Laisse à : **plan technique P4-B — Download Logs** (branche `p4-b-download-logs`,
-  migration `000011`), exécution séparée. P4-B et P5 non démarrés.
+- Laisse historiquement à P4-B ; cette réservation est désormais remplacée par le
+  hotfix P4-A2.1 `000011`, et P4-B passe à `000012`. P4-B/P5 non démarrés.
 
 ### 2026-07-16 — Claude Code (P4-A2 Download Grants implémenté)
 - Fait : gate **P4-A2** sur branche `p4-a2-download-grants` (depuis `1b6e401`, état
@@ -537,7 +586,8 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 - Décisions : aucune nouvelle (note d'exécution sous D-029.4).
 - Laisse à : review humaine + merge de la PR `p4-a2-download-grants` →
   `p0-foundations-laravel13`, puis clôture documentaire post-merge, puis **plan P4-B**
-  (`000011`) en exécution séparée. P4-B et P5 non démarrés.
+  (désormais réservé à `000012` après le hotfix) en exécution séparée. P4-B et P5
+  non démarrés.
 
 ### 2026-07-16 — Claude Code (plan final P4-A2 + décision D-029.4)
 - Fait : **finalisation documentaire du plan P4-A2** (exécution documentaire,
@@ -767,7 +817,8 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
   (sa frontière `000010` n'aurait pas retiré `000008`/`000009`) → QUATRE gates
   isolés : P4-A0 `p4-a0-product-file-immutability` (`000008`) → P4-A1
   `p4-a1-bundle-purchase-snapshots` (`000009`) → P4-A2 `p4-a2-download-grants`
-  (`000010`) → P4-B `p4-b-download-logs` (`000011`), chacun avec sa frontière de
+  (`000010`) → P4-A2.1 (`000011`) → P4-B `p4-b-download-logs` (`000012`), chacun
+  avec sa frontière de
   rollback, merge obligatoire avant le gate suivant, migration N+1 jamais créée
   avant merge du gate N.
 - État build/tests : aucun fichier PHP touché (docs seuls) ; baseline inchangée
@@ -789,7 +840,8 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
   plan mis à jour : P4-A devient TROIS migrations (`000008` durcissement G0
   `product_files`, `000009` snapshot `order_item_bundle_components` S1/S2,
   `000010` `download_grants` sans DEFAULT commercial, frontière rollback `000010`) ;
-  P4-B `download_logs` passe à `000011`. Précisions d'audit intégrées : règle
+  P4-B `download_logs` est désormais réservé à `000012` après P4-A2.1. Précisions
+  d'audit intégrées : règle
   anti-deadlock de rotation (verrou `orders` d'abord), sémantique stricte
   `download_logs.status` (jamais de token inconnu en table), autorisation =
   conjonction pure sur colonnes vérifiables.

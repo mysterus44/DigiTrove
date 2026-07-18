@@ -12,7 +12,7 @@ SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
-P4 LIVRAISON        : ███████░░░  P4-A0/A1/A2 mergés (PR #11/#12/#13) ; P4-B à venir
+P4 LIVRAISON        : ████████░░  P4-A0/A1/A2 mergés ; P4-A2.1 corrigé, non mergé
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
@@ -25,14 +25,17 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > (`4a077db`)**, P3C-B + hardening mergés via PR #8/#9 et P3C-C `refunds` mergé via
 > PR #10 (`122332a`).
 > **P4 Livraison : plan BDD finalisé et validé (D-029 + D-029.1 B–A–B + D-029.2 +
-> D-029.3 + D-029.4)** — QUATRE gates isolés mergés dans l'ordre : **P4-A0
+> D-029.3 + D-029.4)** — gates isolés dans l'ordre : **P4-A0
 > durcissement `product_files` (`000008`) MERGÉ via PR #11 (`a047571`)** → P4-A1
 > snapshot `order_item_bundle_components` (`000009`, D-029.3 : S1/S2/S3, bundles
 > imbriqués exclus) **MERGÉ via PR #12 (`93d1f17`)** → P4-A2 `download_grants`
 > (`000010`, plan finalisé D-029.4 : option A émission immédiate = snapshot
-> applicatif, G1–G4) → P4-B `download_logs` (`000011`) ; `licenses` exclu.
-> **P4-A2 `000010` MERGÉ via PR #13 (`77f3766`)** — 26 migrations. Prochaine étape :
-> **plan P4-B** (`p4-b-download-logs`, `000011`).
+> applicatif, G1–G4) → P4-A2.1 hardening (`000011`) → P4-B `download_logs`
+> (`000012`) ; `licenses` exclu.
+> **P4-A2 `000010` MERGÉ via PR #13 (`77f3766`)**. Deux anomalies post-merge G2/G3
+> sont corrigées additivement sur `p4-a2-1-grant-integrity-hardening` : 27 migrations,
+> 7 tests / 113 assertions dédiées, suite 158/2301, Pint 112, rollback `000011` vert.
+> Prochaine étape : review/merge P4-A2.1 ; P4-B reste non démarré et réservé à `000012`.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -342,7 +345,8 @@ contrôleur, route, job, listener) créée. P5 non démarré.
 | Plan P4-A2 + décisions D-029.4 (option A : émission immédiate = snapshot applicatif ; 3 findings corrigés) | ✅ DONE — validé par KingKouda |
 | **P4-A2** `p4-a2-download-grants` — migration `000010` `download_grants` G1–G4, modèle/factory/relations (frontière `000010`) | ✅ DONE — **mergé PR #13 → `77f3766`** ; 4 fonctions / 5 triggers, G4 différé sur `download_grants` ET `orders` |
 | P4-A2 tests PostgreSQL (token, autorisation snapshot bundle, quota, concurrence 2 connexions, refund total différé) | ✅ DONE — 18 tests / 315 assertions ; suite complète 151/2188 (1882 − 9 adaptations + 315), Pint 110, rollback isolé `000010` vert |
-| **P4-B** `p4-b-download-logs` — migration `000011` `download_logs` G5–G6 + enum `DownloadLogStatus` + modèle/factory/tests (frontière `000011`) | ⬜ TODO — après merge P4-A2 |
+| **P4-A2.1** `p4-a2-1-grant-integrity-hardening` — migration additive `000011`, remplacement G2/G3 sans modifier `000010` | 🟨 **P4-A2 CORRIGÉ PAR P4-A2.1 — EN ATTENTE DE MERGE** ; bénéficiaire G3 null-safe ; `updated_at` G2 lié aux transitions ; 7/113, suite 158/2301, Pint 112, rollback exact vert |
+| **P4-B** `p4-b-download-logs` — migration `000012` `download_logs` G5–G6 + enum `DownloadLogStatus` + modèle/factory/tests (frontière `000012`) | ⬜ TODO — après merge/clôture P4-A2.1 |
 | Listener IssueDownloadGrants (sur OrderPaid) | ⬜ TODO — après schéma P4 |
 | DownloadService (token haché, expiration, quota atomique) | ⬜ TODO — après schéma P4 |
 | DownloadController + rate limiting | ⬜ TODO — après schéma P4 |

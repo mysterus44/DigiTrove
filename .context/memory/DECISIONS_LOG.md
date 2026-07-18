@@ -663,10 +663,9 @@ puis insérer) ; sémantique stricte de `download_logs.status`
 n'entre jamais dans la table, anti-empoisonnement P3C-B.1) ; autorisation =
 conjonction pure `revoked_at IS NULL AND expires_at > now() AND downloads_count
 < max_downloads` (priorité d'affichage revoked > expired > exhausted purement
-cosmétique). Nouvelle numérotation : P4-A = `000008` + `000009` + `000010`
-(frontière harness `000010`, un seul gate/branche `p4-a-download-grants`) ;
-P4-B = `000011` (frontière `000011`). **[Séquencement remplacé par D-029.2
-ci-dessous : le gate composite P4-A est ABANDONNÉ.]**
+cosmétique). Cette ancienne numérotation et le gate composite P4-A sont
+**remplacés par D-029.2 ci-dessous**, puis par le hotfix P4-A2.1 : la séquence
+active réserve désormais `000011` au hardening et `000012` à P4-B.
 
 **AMENDEMENT D-029.2 — ProductFile version immutability and isolated P4 gate
 sequencing (correction pré-implémentation).** Deux incohérences architecturales
@@ -710,8 +709,11 @@ de D-029.1 sont corrigées avant toute migration :
      Rollback : retire uniquement les objets grants (G1–G4) ; P0–P3C + P4-A0 +
      P4-A1 préservés. Garantit autorisation, quota, expiration, révocation et
      consommation atomique.
+   - **P4-A2.1 — Download Grant Integrity Hardening** : branche
+     `p4-a2-1-grant-integrity-hardening`, migration additive
+     `2026_07_14_000011_harden_download_grants_integrity.php`, frontière `000011`.
    - **P4-B — Download Logs** : branche `p4-b-download-logs`, migration
-     `2026_07_14_000011_create_download_logs_table.php`, frontière `000011`.
+     `2026_07_14_000012_create_download_logs_table.php`, frontière `000012`.
      Rollback : retire uniquement les logs (G5–G6) ; tout le reste préservé.
      Journal métier append-only des consommations et refus sur grant existant.
    Règles de rollback par gate : appliquer uniquement jusqu'à la frontière,
@@ -806,7 +808,8 @@ n'est pas re-décidé ; cet amendement fige les points laissés ouverts :
    merge de `000008`. **Rollback isolé** (frontière `000009`) : le down() retire
    S1/S2/S3 et la table uniquement ; P4-A0 (fonction + trigger G0), P0–P3C,
    `products`, `product_files`, `product_bundles`, `orders`, `order_items` sont
-   préservés ; `000010` et `000011` restent absentes ; nettoyage dans `finally`.
+   préservés ; `000010`, `000011` et `000012` restent absentes ; nettoyage dans
+   `finally`.
 EXCLUSIONS P4-A1 : aucun grant, token, quota, expiration, téléchargement, log ;
 aucun OrderService, checkout, service, endpoint, route, job ou listener ; aucun
 code P4-A2/P4-B/P5.
@@ -919,7 +922,8 @@ fichier inactif refusé, quota/expiration, immutabilité, révocation irréversi
 rotation même ProductFile, grant expiré bloquant la réémission puis
 `expired_reissue`, remboursement total + G4, concurrence, rollback isolé `000010`
 préservant P4-A0/G0 et P4-A1/S1-S3) ; suite complète et Pint verts ; PR jamais
-mergée par l'agent. P4-B (`000011`) et P5 non démarrés.
+mergée par l'agent. P4-A2.1 (`000011`), P4-B (`000012`) et P5 non démarrés à la
+date de cette décision.
 
 **Note d'exécution P4-A2** (aucune décision nouvelle) : implémenté sur
 `p4-a2-download-grants` (migration `000010`) conformément à D-029.4, puis **mergé
@@ -955,7 +959,29 @@ et le test HTML `StorefrontPreviewTest` conservés ; compteur de migrations P4-A
 porté de 25 à 26. Validation : 26 migrations ; P4-A2 **18 tests / 315 assertions** ;
 suite complète **151 / 2188** ; Pint **110** ; rollback isolé `000010` vert (P4-A1
 et P4-A0/G0 préservés) ; aucune base temporaire résiduelle. PR en attente de
-review ; P4-B (`000011`) et P5 non démarrés.
+review ; P4-B (`000012`) et P5 non démarrés.
+
+**Correctif d'exécution P4-A2.1 — Grant beneficiary and timestamp integrity
+hardening** (amendement factuel à D-029.4, aucune nouvelle décision) : deux
+transactions PostgreSQL post-merge ont démontré que G3 acceptait un `user_id`
+arbitraire lorsque `orders.user_id IS NULL`, et que G2 acceptait une modification
+isolée de `updated_at`. Ces reproductions ont été rollbackées sans donnée persistée.
+Le gate correctif utilise exclusivement la migration
+additive `2026_07_14_000011_harden_download_grants_integrity.php` ; la migration
+mergée `000010` reste byte-for-byte inchangée. G3 exige désormais
+`NEW.user_id IS NOT DISTINCT FROM orders.user_id`, soit la matrice stricte invité
+`NULL`/compte même identifiant. G2 n'accepte un changement d'`updated_at` que s'il
+avance strictement et accompagne une consommation `downloads_count + 1` ou une
+révocation valide ; la nullification FK légitime de `user_id` reste autorisée sans
+imposer un changement de timestamp. Le remplacement conserve les signatures, les
+4 fonctions et les 5 triggers existants, sans mutation de données, table, index,
+CHECK ni trigger supplémentaire. Le `down()` restaure exactement les définitions
+G2/G3 de `000010`, prouvé avec `pg_get_functiondef` dans une base PostgreSQL isolée.
+Validation : 27 migrations ; P4-A2.1 7 tests / 113 assertions ; P4-A2 18/315 ;
+P4-A1 17/216 ; P4-A0 9/130 ; suite complète 158/2301 ; Pint 112 ; rollback isolé
+`000011` vert ; aucune base temporaire résiduelle. Statut : **corrigé sur
+`p4-a2-1-grant-integrity-hardening`, non mergé**. P4-B est renuméroté
+`2026_07_14_000012_create_download_logs_table.php` et reste non démarré.
 
 **Note d'exécution P4-A1** (aucune décision nouvelle) : implémenté sur
 `p4-a1-bundle-purchase-snapshots` (migration `000009`) conformément à D-029.3, puis
@@ -1026,9 +1052,11 @@ rollbacks), PROGRESS_TRACKER, HANDOFF, CLAUDE.md. Prochaine implémentation :
   [PR #13](https://github.com/mysterus44/DigiTrove/pull/13) → `77f3766`** (plan
   **D-029.4** option A ; 4 fonctions / 5 triggers G1–G4, G4 différé sur
   `download_grants` ET `orders` ; suite 151/2188, Pint 110, rollback isolé `000010`
-  vert). Prochaine étape : **plan puis implémentation P4-B**
-  (`p4-b-download-logs`, migration `000011`, `download_logs` + G5/G6), dernier gate
-  du schéma P4. TTL (72 h),
+   vert). **P4-A2.1 `000011` corrige additivement G2/G3 sans modifier `000010`** :
+   bénéficiaire null-safe, timestamp lié au cycle de vie, rollback exact ; 7/113,
+   suite 158/2301, Pint 112. Prochaine étape : review puis merge P4-A2.1, ensuite
+   plan/implémentation P4-B (`p4-b-download-logs`, migration `000012`,
+   `download_logs` + G5/G6), dernier gate du schéma P4. TTL (72 h),
   quota (5) et rétention logs (365 j) restent des recommandations de CONFIG
   APPLICATIVE (aucun default BDD, D-029.1-B) à fixer à la phase service. La phase
   licences reste une décision produit ouverte (liée à la question `usb` du legacy).
