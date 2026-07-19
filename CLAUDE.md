@@ -53,26 +53,38 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   `download_grants` (`000010`, **D-029.4** : option A émission immédiate = snapshot
   applicatif, G1–G4, aucun DEFAULT commercial) MERGÉ (PR #13 → `77f3766`)** →
   **P4-A2.1 hardening `download_grants` (`000011`, bénéficiaire G3 null-safe et
-  `updated_at` G2 lié au cycle de vie) MERGÉ (PR #14 → `2c25e2a`)** → P4-B
-  `download_logs` (`000012`) ; `licenses` exclu de P4. Une migration, une branche,
-  une frontière de rollback par gate ; migration N+1 jamais créée avant merge du
-  gate N. Détail dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
+  `updated_at` G2 lié au cycle de vie) MERGÉ (PR #14 → `2c25e2a`)** → **P4-B0
+  frontière de privilèges runtime (`000012` ACL, D-029.6) — PRÉREQUIS** → **P4-B
+  `download_logs` (renuméroté `000013`, implémenté `8cf24a8` mais BLOQUÉ)** ;
+  `licenses` exclu de P4. Une migration, une branche, une frontière de rollback par
+  gate ; migration N+1 jamais créée avant merge du gate N. Détail dans le bloc P4 de
+  `DigiTrove_Schema_BDD_v1.md`.
 
 P4-A2.1 est **terminé et mergé** via
 [PR #14](https://github.com/mysterus44/DigiTrove/pull/14), merge `2c25e2a` : le
 hotfix remplace uniquement G2/G3, garde 4 fonctions / 5 triggers et préserve
 `000010` immuable. Validation post-merge : 27 migrations ; P4-A2.1 7/113 ; suite
 158/2301 ; Pint 112 ; rollback isolé `000011` restaurant exactement G2/G3 d'origine.
-Le **plan P4-B — Download Logs** (branche `p4-b-download-logs`,
-migration `000012`, frontière `000012`) est désormais **FINALISÉ — NON IMPLÉMENTÉ**
-par D-029.5. Décisions : consommation à `started` atomique log+compteur, rétention
-NOT NULL explicite, HMAC IP versionné, secret de tentative dédié (digest seulement,
-expiration courte), une unité pour Range/retries de la même tentative, HEAD sans
-log/quota, et `completed` = remise au mécanisme, jamais réception client. G5 ajoute
-2 fonctions/2 triggers P4-B avec G6 et remplace G2 en place ; rollback `000012`
-fail-closed et restauration exacte de G2 `000011`. Prochaine étape : **implémenter
-P4-B sur la branche réservée dans une nouvelle exécution**. Branche, migration et
-code P4-B sont encore absents ; P5 non démarré.
+**P4-B a été implémenté** sur `p4-b-download-logs` (`8cf24a8`, poussée) selon
+D-029.5 — mais est **BLOQUÉ AU MERGE**. Un audit offensif a prouvé que l'autorité
+de consommation de G2, `pg_trigger_depth() > 1`, démontre seulement l'imbrication,
+jamais l'origine : un trigger temporaire ou permanent créé par le rôle applicatif
+incrémente `downloads_count` **sans** créer de `download_logs`. Le rôle unique
+`digitrove` est superuser, propriétaire, migrateur ET runtime — aggravant le risque.
+
+**Correctif décidé — D-029.6, gate préalable P4-B0** (option A renforcée) :
+séparation de rôles PostgreSQL (`digitrove` migrateur/propriétaire ·
+`digitrove_runtime` restreint sans TEMP/DDL/UPDATE compteur · `digitrove_download_
+executor` NOLOGIN propriétaire de G5), G5 `SECURITY DEFINER` avec `search_path`
+épinglé et objets qualifiés, G2 exigeant `current_user = digitrove_download_executor`
+comme preuve d'origine principale, fermeture explicite de TEMP/CREATE/EXECUTE à
+PUBLIC + `ALTER DEFAULT PRIVILEGES`, double connexion Laravel (`pgsql` runtime +
+`pgsql_migration` migrateur), provisioning cluster par script idempotent
+(`docker/postgres/provision-runtime-roles.sql`) + migration ACL `000012`. **P4-B
+sera renuméroté `000013`** après merge de P4-B0. Plan P4-B0 documentaire finalisé,
+**NON IMPLÉMENTÉ**. Prochaine étape : implémenter P4-B0, puis rebaser/corriger P4-B.
+La branche `8cf24a8` reste inchangée ; sa PR ne s'ouvre pas avant P4-B0. P5 non
+démarré.
 
 ## 🔄 EN FIN DE TÂCHE
 

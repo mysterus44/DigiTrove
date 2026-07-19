@@ -12,7 +12,7 @@ SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
-P4 LIVRAISON        : █████████░  P4-A0/A1/A2/A2.1 mergés ; P4-B planifié, non implémenté
+P4 LIVRAISON        : █████████░  P4-A* mergés ; P4-B implémenté mais BLOQUÉ (D-029.6) ; gate P4-B0 planifié
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
@@ -36,11 +36,16 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > [PR #14](https://github.com/mysterus44/DigiTrove/pull/14) (`2c25e2a`)** : G3
 > bénéficiaire null-safe et G2 `updated_at` lié aux transitions, 27 migrations,
 > 7 tests / 113 assertions dédiées, suite 158/2301, Pint 112, rollback exact vert.
-> **P4-B est PLANIFIÉ — NON IMPLÉMENTÉ** : 1A/2A/3A + R1A/R2A/R3A figent
-> consommation à `started`, rétention explicite, HMAC IP versionné, tentative
-> dédiée regroupant Range/retries, HEAD sans effet et `completed` = remise au
-> mécanisme. Prochaine étape : implémentation isolée sur la branche réservée,
-> migration `000012`.
+> **P4-B a été implémenté** sur `p4-b-download-logs` (`8cf24a8`) conformément à
+> D-029.5, mais est **BLOQUÉ AU MERGE** : un audit offensif a prouvé que l'autorité
+> de consommation `pg_trigger_depth() > 1` de G2 est contournable par un trigger
+> temporaire ou permanent (compteur +1 sans `download_logs`). **D-029.6** décide le
+> gate préalable **P4-B0** (séparation de rôles PostgreSQL `digitrove` /
+> `digitrove_runtime` / `digitrove_download_executor` + G5 `SECURITY DEFINER` +
+> vérification d'identité dans G2 + fermeture TEMP/CREATE/EXECUTE). P4-B sera
+> renuméroté `000013` après merge de la migration ACL P4-B0 `000012`. Prochaine
+> étape : implémenter P4-B0 (script de provisioning + migration ACL + double
+> connexion + tests sous runtime), PUIS rebaser/corriger P4-B.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -352,8 +357,11 @@ route, job, listener) créée. P5 non démarré.
 | **P4-A2** `p4-a2-download-grants` — migration `000010` `download_grants` G1–G4, modèle/factory/relations (frontière `000010`) | ✅ DONE — **mergé PR #13 → `77f3766`** ; 4 fonctions / 5 triggers, G4 différé sur `download_grants` ET `orders` |
 | P4-A2 tests PostgreSQL (token, autorisation snapshot bundle, quota, concurrence 2 connexions, refund total différé) | ✅ DONE — 18 tests / 315 assertions ; suite complète 151/2188 (1882 − 9 adaptations + 315), Pint 110, rollback isolé `000010` vert |
 | **P4-A2.1** `p4-a2-1-grant-integrity-hardening` — migration additive `000011`, remplacement G2/G3 sans modifier `000010` | ✅ DONE — **mergé PR #14 → `2c25e2a`** ; bénéficiaire G3 null-safe ; `updated_at` G2 lié aux transitions ; 7/113, suite 158/2301, Pint 112, rollback exact vert |
-| Plan P4-B + décision D-029.5 (1A/2A/3A + R1A/R2A/R3A, schéma exact, tentative/Range/HEAD/completed, G5/G6, rollback, tests/threat model) | ✅ DONE — **P4-B PLANIFIÉ, NON IMPLÉMENTÉ** |
-| **P4-B** `p4-b-download-logs` — migration `000012` `download_logs` G5–G6 + enum `DownloadLogStatus` + modèle/factory/tests (frontière `000012`) | ⬜ TODO — prochaine implémentation isolée ; branche/migration encore absentes |
+| Plan P4-B + décision D-029.5 (1A/2A/3A + R1A/R2A/R3A, schéma exact, tentative/Range/HEAD/completed, G5/G6, rollback, tests/threat model) | ✅ DONE — validé par KingKouda |
+| **P4-B** `p4-b-download-logs` (`8cf24a8`) — migration `000012` `download_logs` G5–G6 + modèle/factory/tests | ⚠️ IMPLÉMENTÉ (19/599, suite 177/2885, Pint 116) mais **BLOQUÉ AU MERGE** — audit offensif : autorité `pg_trigger_depth() > 1` de G2 contournable (trigger temporaire/permanent → +1 sans log). PR NON ouverte |
+| Audit offensif P4-B (sondes trigger temporaire/permanent, rôle superuser) | ✅ DONE — vulnérabilité confirmée ; verdict ANOMALIE ; option A renforcée validée |
+| Plan P4-B0 + décision D-029.6 (3 rôles PostgreSQL, G5 `SECURITY DEFINER`, identité effective dans G2, fermeture TEMP/CREATE/EXECUTE, double connexion, provisioning) | ✅ DONE — validé par KingKouda |
+| **P4-B0** migration ACL `000012_harden_database_runtime_privileges` + `docker/postgres/provision-runtime-roles.sql` + double connexion + tests sous runtime | ⬜ TODO — **PRÉREQUIS AU MERGE DE P4-B** ; renumérote P4-B en `000013` |
 | Listener IssueDownloadGrants (sur OrderPaid) | ⬜ TODO — après schéma P4 |
 | DownloadService (token haché, expiration, quota atomique) | ⬜ TODO — après schéma P4 |
 | DownloadController + rate limiting | ⬜ TODO — après schéma P4 |

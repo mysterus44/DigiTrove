@@ -887,15 +887,35 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --           G3 : bénéficiaire null-safe strict avec orders.user_id ; G2 :
 --           updated_at avance uniquement avec consommation/révocation ; 4 fonctions
 --           / 5 triggers inchangés ; rollback restaure exactement G2/G3 de 000010.
+--   P4-B0 — Frontière de privilèges PostgreSQL runtime (gate préalable, D-029.6)
+--           migration ACL réservée
+--           `2026_07_14_000012_harden_database_runtime_privileges.php`
+--           + script cluster `docker/postgres/provision-runtime-roles.sql`.
+--           Trois rôles : `digitrove` (migrateur/propriétaire, plus runtime),
+--           `digitrove_runtime` (LOGIN restreint, sans TEMP/DDL/TRIGGER, sans
+--           UPDATE table-level ni colonne `downloads_count`),
+--           `digitrove_download_executor` (NOLOGIN, propriétaire de G5).
+--           G5 devient `SECURITY DEFINER` (propriétaire exécuteur, search_path
+--           épinglé, objets qualifiés) ; G2 vérifie `current_user =
+--           digitrove_download_executor` comme preuve d'origine PRINCIPALE,
+--           `pg_trigger_depth()` restant secondaire. REVOKE TEMP/CREATE/EXECUTE
+--           à PUBLIC + ALTER DEFAULT PRIVILEGES. **PLANIFIÉ — NON IMPLÉMENTÉ ;
+--           PRÉREQUIS AU MERGE DE P4-B.**
 --   P4-B  — Download Logs
---           branche `p4-b-download-logs`
---           migration `2026_07_14_000012_create_download_logs_table.php`
---           frontière harness `000012` (down() ne retire que les logs ;
---           tout P4-A préservé).
---           ✅ PLAN D-029.5 FINALISÉ ; NON IMPLÉMENTÉ (1A/2A/3A + R1A/R2A/R3A).
+--           branche `p4-b-download-logs` (commit `8cf24a8`)
+--           migration ACTUELLE `2026_07_14_000012_create_download_logs_table.php`,
+--           à RENUMÉROTER en `000013_create_download_logs_table.php` après le
+--           gate P4-B0 (frontière harness `000013`).
+--           ⚠️ IMPLÉMENTÉ mais **BLOQUÉ AU MERGE** (D-029.6) : l'autorité de
+--           consommation `pg_trigger_depth() > 1` de G2 est contournable par un
+--           trigger temporaire ou permanent (prouvé). Le rebasage sur la stable
+--           durcie exige : G5 `SECURITY DEFINER` (propriétaire exécuteur), G2
+--           vérifiant l'identité effective, et les tests de contournement sous
+--           `digitrove_runtime` refusés.
 -- Ordre des merges OBLIGATOIRE : `000009` ne se crée qu'après merge de `000008`,
--- `000010` après `000009`, le hotfix `000011` après `000010`, puis `000012`
--- seulement après merge/clôture du hotfix.
+-- `000010` après `000009`, le hotfix `000011` après `000010`, puis **P4-B0
+-- `000012` (ACL) avant P4-B**, et enfin P4-B renuméroté `000013` seulement après
+-- merge du gate P4-B0.
 -- Responsabilités : A0 = référence de contenu historiquement stable ;
 -- A1 = composition de bundle achetée indépendante du pivot mutable courant ;
 -- A2/A2.1 = grant, quota structurel, expiration, révocation et intégrité G1-G4 ;
