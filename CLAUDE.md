@@ -45,7 +45,7 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   (PR #10 → `122332a`, commit final `1270c53`)
 
 - **Plan P4 Livraison** ✅ finalisé, validé et corrigé (**D-029 + D-029.1 B–A–B +
-  D-029.2 + D-029.3 + D-029.4**) : gates isolés dans l'ordre — **P4-A0
+  D-029.2 + D-029.3 + D-029.4 + D-029.5**) : gates isolés dans l'ordre — **P4-A0
   durcissement `product_files` (`000008`, trigger G0, `version` FIGÉE avec le
   contenu) MERGÉ (PR #11 → `a047571`)** → **P4-A1 snapshot
   `order_item_bundle_components` (`000009`, D-029.3 : S1/S2/S3, bundles imbriqués
@@ -63,13 +63,16 @@ P4-A2.1 est **terminé et mergé** via
 hotfix remplace uniquement G2/G3, garde 4 fonctions / 5 triggers et préserve
 `000010` immuable. Validation post-merge : 27 migrations ; P4-A2.1 7/113 ; suite
 158/2301 ; Pint 112 ; rollback isolé `000011` restaurant exactement G2/G3 d'origine.
-Prochaine étape : **plan P4-B — Download Logs** (branche `p4-b-download-logs`,
-migration `000012`, frontière `000012`), dans une exécution séparée. Rappels D-029.4 :
-éligibilité = `orders.status IN ('paid','partially_refunded')` seul (G3 ne relit
-jamais `payments`) ; « pas d'upgrade implicite » = garantie **applicative** ;
-rotation = même `product_file_id` ; snapshot bundle partiel **indétectable** ;
-compteur structurel — **aucune consommation réelle avant P4-B**. P4-B et P5 restent
-non démarrés ; aucun code P4-B n'existe.
+Le **plan P4-B — Download Logs** (branche `p4-b-download-logs`,
+migration `000012`, frontière `000012`) est désormais **FINALISÉ — NON IMPLÉMENTÉ**
+par D-029.5. Décisions : consommation à `started` atomique log+compteur, rétention
+NOT NULL explicite, HMAC IP versionné, secret de tentative dédié (digest seulement,
+expiration courte), une unité pour Range/retries de la même tentative, HEAD sans
+log/quota, et `completed` = remise au mécanisme, jamais réception client. G5 ajoute
+2 fonctions/2 triggers P4-B avec G6 et remplace G2 en place ; rollback `000012`
+fail-closed et restauration exacte de G2 `000011`. Prochaine étape : **implémenter
+P4-B sur la branche réservée dans une nouvelle exécution**. Branche, migration et
+code P4-B sont encore absents ; P5 non démarré.
 
 ## 🔄 EN FIN DE TÂCHE
 

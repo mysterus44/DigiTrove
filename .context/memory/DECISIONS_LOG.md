@@ -567,8 +567,9 @@ CHOIX :
 6. **Consommation et concurrence** : compteur `downloads_count BIGINT` protégé par
    `CHECK (0 <= downloads_count <= max_downloads)` + trigger G2 (incrément +1
    EXACT, refusé si révoqué, expiré ou quota atteint). Point de sérialisation = la
-   ligne grant elle-même (UPDATE conditionnel atomique côté service, pattern
-   SECURITE_TELECHARGEMENT) ; deux téléchargements simultanés sur la dernière
+   ligne grant elle-même ; **D-029.5 remplace l'ancien UPDATE conditionnel du
+   service par l'appariement PostgreSQL G5 log+compteur**. Deux tentatives
+   simultanées sur la dernière
    utilisation → un seul réussit, jamais de compteur négatif ni de dépassement ;
    grants distincts sans blocage mutuel. Modèle HYBRIDE retenu : compteur protégé
    sur le grant + journal `download_logs` (audit/détection de partage).
@@ -600,12 +601,15 @@ CHOIX :
     P4 purgeable, `retention_until` + garde BEFORE DELETE (statut terminal ET
     rétention échue, pattern T7 webhooks ; job de purge hors P4). `ip_hash` =
     HMAC-SHA-256 (clé hors BDD), jamais d'IP brute ; `user_agent` tronqué (500) ;
-    minimisation RGPD ; rétention recommandée 365 j (valeur à confirmer — non
-    bloquant). FK `download_logs.download_grant_id ON DELETE RESTRICT` (aucune
+    minimisation RGPD ; **D-029.5/2A fixe la rétention NOT NULL sans DEFAULT**,
+    365 j restant une recommandation de configuration. FK
+    `download_logs.download_grant_id ON DELETE RESTRICT` (aucune
     cascade détruisant l'audit).
 CATALOGUE D'OBJETS : G1–G4 (P4-A) et G5–G6 (P4-B), schéma exact, CHECK nommés,
 index partiels, matrice de tests et threat model consignés dans le bloc P4 de
-`DigiTrove_Schema_BDD_v1.md`. Les triggers REFUSENT et ne mutent jamais.
+`DigiTrove_Schema_BDD_v1.md`. G0/S1-S3/G1-G4 vérifient et refusent sans mutation ;
+**D-029.5 autorise uniquement G5 à muter `downloads_count` pour rendre l'insertion
+`started` atomique**.
 **[Note D-029.2 : le séquencement et la branche cités dans l'IMPACT ci-dessous
 sont remplacés — première implémentation = P4-A0 sur
 `p4-a0-product-file-immutability`, voir l'amendement D-029.2.]**
@@ -985,6 +989,228 @@ via [PR #14](https://github.com/mysterus44/DigiTrove/pull/14), merge
 La branche locale du hotfix est supprimée et sa distante conservée. P4-B est
 renuméroté `2026_07_14_000012_create_download_logs_table.php` et reste non démarré.
 
+### D-029.5 — Download consumption and audit logging ✅
+**Décision** : le gate P4-B est planifié sur la branche future
+`p4-b-download-logs`, dans l'unique migration future
+`2026_07_14_000012_create_download_logs_table.php`. Il consomme des grants déjà
+émis ; il ne crée ni grant, ni route, ni contrôleur, ni streaming. Décisions
+humaines figées : **1A** consommation à `started`, **2A** rétention obligatoire
+sans DEFAULT, **3A** HMAC IP versionné, **R1A** une tentative authentifiée regroupe
+Range/retries, **R2A** HEAD n'a aucun effet commercial, **R3A** `completed` prouve
+la remise au mécanisme de livraison et jamais la réception intégrale par le client.
+
+**Unité consommante et atomicité** : une tentative de téléchargement consomme une
+unité. La première autorisation GET réussie calcule les secrets en mémoire, retrouve
+le grant, verrouille **Order puis DownloadGrant**, revalide statut financier,
+révocation, expiration, quota et ProductFile, insère un log `started` avec
+`quota_consumed=true`, incrémente `downloads_count` exactement de `+1`, puis commit.
+La livraison commence seulement après le commit ; aucune transaction ne reste
+ouverte pendant le streaming ou la remise à X-Accel/X-Sendfile/stockage. Un refus
+préalable sur grant connu crée directement `denied + quota_consumed=false`, sans
+incrément. Un échec après `started` produit `started → denied`, conserve
+`quota_consumed=true` et ne restitue jamais le quota. Un token de grant inconnu ne
+crée aucun DownloadLog.
+
+**Schéma exact planifié** : `download_logs` comporte uniquement `id BIGSERIAL`,
+`public_id UUID`, `download_grant_id BIGINT`, `status VARCHAR(20)`,
+`quota_consumed BOOLEAN`, `attempt_token_hash VARCHAR(64)`,
+`attempt_expires_at TIMESTAMPTZ`, `denial_reason_code VARCHAR(64)`,
+`ip_hash VARCHAR(64)`, `ip_hash_key_version SMALLINT`,
+`user_agent VARCHAR(500)`, `bytes_sent BIGINT`, `terminal_at TIMESTAMPTZ`,
+`retention_until TIMESTAMPTZ` et `created_at TIMESTAMPTZ`. `id` est la PK ;
+`public_id`, `download_grant_id`, `status`, `quota_consumed`, `retention_until` et
+`created_at` sont NOT NULL ; `download_grant_id` référence `download_grants(id)`
+en `ON DELETE RESTRICT`. Aucun DEFAULT métier : ni statut, ni quota consommé, ni
+expiration de tentative, ni rétention. Seul `created_at DEFAULT now()` est
+technique. Aucun `updated_at` générique, soft delete, JSONB, token brut, préfixe,
+IP brute, email, chemin, checksum ou copie du token/digest du grant.
+
+| Colonne | Type / NULL / DEFAULT | Contraintes et index | Mutabilité / rôle |
+|---|---|---|---|
+| `id` | `BIGSERIAL NOT NULL` (séquence technique) | PK | immuable, identité interne |
+| `public_id` | `UUID NOT NULL`, sans DEFAULT | UNIQUE | immuable, identifiant public non secret |
+| `download_grant_id` | `BIGINT NOT NULL`, sans DEFAULT | FK `download_grants.id RESTRICT`; index grant/date | immuable, fixe grant et ProductFile |
+| `status` | `VARCHAR(20) NOT NULL`, sans DEFAULT | CHECK fermé `started/completed/denied`; G5 | seule transition `started → completed/denied` |
+| `quota_consumed` | `BOOLEAN NOT NULL`, sans DEFAULT | CHECK d'état + G5 | immuable, preuve historique de l'incrément |
+| `attempt_token_hash` | `VARCHAR(64) NULL`, sans DEFAULT | regex SHA-256; unique partiel non NULL | immuable, digest du secret dédié |
+| `attempt_expires_at` | `TIMESTAMPTZ NULL`, sans DEFAULT | pairé au hash; `created_at < valeur <= retention_until`; index started | immuable, fenêtre courte de reprise |
+| `denial_reason_code` | `VARCHAR(64) NULL`, sans DEFAULT | CHECK ensemble fermé | NULL→code seulement lors de `started→denied`; sinon figé |
+| `ip_hash` | `VARCHAR(64) NULL`, sans DEFAULT | HMAC lowercase, pairé à la version | immuable, pseudonyme réseau |
+| `ip_hash_key_version` | `SMALLINT NULL`, sans DEFAULT | pairé au hash et `> 0` | immuable, version non secrète |
+| `user_agent` | `VARCHAR(500) NULL`, sans DEFAULT | non blanc si présent | immuable, audit minimisé |
+| `bytes_sent` | `BIGINT NULL`, sans DEFAULT | `>= 0` si présent | monotone pendant `started`, figé au terminal |
+| `terminal_at` | `TIMESTAMPTZ NULL`, sans DEFAULT | pairé au statut, `>= created_at` | set-once au terminal ; timestamp partagé minimal, sans colonnes redondantes |
+| `retention_until` | `TIMESTAMPTZ NOT NULL`, sans DEFAULT | `> created_at`; index partiel terminal | réduction interdite, extension seule |
+| `created_at` | `TIMESTAMPTZ NOT NULL DEFAULT now()` | horloge technique | immuable, naissance du log |
+
+**Machine d'état stricte** : INSERT autorise `started` ou `denied`, jamais
+`completed`. `started` exige quota consommé, secret/expiration présents, motif et
+`terminal_at` NULL, et `bytes_sent` NULL à l'insertion. Le seul `denied` insérable
+directement exige quota non consommé, aucun secret/expiration, motif fermé et
+`terminal_at` renseigné. Les seules transitions sont `started → completed` et
+`started → denied`; elles conservent `quota_consumed=true` et le secret. Le motif
+reste NULL pour `completed` et devient obligatoire pour `denied`. `completed` et
+`denied` sont terminaux, non réactivables ; seule une extension de rétention reste
+possible. `terminal_at` est set-once et au moins égal à `created_at`.
+
+Codes fermés de `denial_reason_code` : `authorization_denied`, `quota_exhausted`,
+`grant_expired`, `grant_revoked`, `order_not_deliverable`,
+`product_file_unavailable`, `attempt_expired`, `delivery_interrupted`,
+`storage_failure`, `internal_error`. Aucun texte libre, exception, token, digest,
+email, chemin ou message fournisseur.
+
+**Secret de tentative (R1A)** : CSPRNG distinct du token/public_id du grant et du
+public_id du log ; communiqué une fois par la future couche HTTP, gardé en mémoire,
+persisté seulement comme SHA-256 lowercase `[0-9a-f]{64}`. G5 refuse notamment un
+digest identique à `download_grants.token_hash`. Le digest est unique lorsqu'il
+est non NULL et immuable. `attempt_token_hash IS NULL ⇔ attempt_expires_at IS NULL`;
+l'expiration est explicite, courte, strictement postérieure à `created_at`, au plus
+égale à `retention_until`, immuable, sans prolongation ni rotation en place. Elle
+est obligatoire pour `started`, `completed` et `denied` issu de `started`, absente
+du refus direct non consommant. Aucune durée n'est un DEFAULT BDD. Une reprise
+présente `public_id + secret`; `public_id` seul n'autorise rien. Le secret futur
+voyage dans un header dédié ou un cookie sécurisé à décider au gate HTTP, jamais
+en query string, logs, exceptions, analytics ou documentation.
+
+**Range, retries et HEAD** : Range/reprise/retry avec tentative valide réutilisent
+la même ligne et le même grant donc le même ProductFile immuable, sans log ni
+incrément supplémentaire. Ils revalident secret, expiration, révocation, état
+livrable de l'Order et absence de substitution. Des retries concurrents se
+résolvent par le lookup unique du digest et des transitions terminales atomiques ;
+aucun segment Range ne crée de ligne. Après expiration, une nouvelle autorisation
+et une nouvelle unité sont nécessaires si du quota reste. Révocation ou
+remboursement total annulent l'autorité de reprise, même avec un secret valide.
+Un log déjà `completed` peut authentifier les retries jusqu'à l'expiration sans
+être rouvert ni muté. `HEAD` ne crée ni log, ni tentative, ni secret, ni incrément ;
+il répond de façon non énumérable. Rate limit, journal sécurité et détection d'abus
+HEAD restent hors de `download_logs`. Le futur UI exige une action GET explicite et
+n'expose aucune URL consommante à un mécanisme de préchargement.
+
+**Sémantique de `completed` (R3A)** : remise réussie au composant de livraison
+(réponse Laravel initialisée, X-Accel, X-Sendfile, URL temporaire ou mécanisme
+futur explicitement supporté). Elle ne prouve ni réception de tous les octets, ni
+écriture disque client, ni absence de coupure, ni ouverture humaine. `bytes_sent`
+reste nullable ; lorsqu'il est mesurable, il est BIGINT non négatif et progresse
+de façon monotone pendant `started`, puis devient immuable. Il peut rester NULL ou
+être inférieur à `product_files.size_bytes` lors de `completed`; il ne restitue
+jamais un quota. Une panne après commit avant remise laisse `started` consommé
+jusqu'à une réconciliation explicite ; aucune transition BDD par timeout. Une
+panne après `completed` ne change pas cette sémantique et relève de la télémétrie
+du mécanisme, pas d'une preuve de réception client.
+
+**Rétention et identité IP** : `retention_until TIMESTAMPTZ NOT NULL`, fournie
+explicitement, strictement postérieure à `created_at`, réduction interdite,
+extension autorisée ; 365 jours est seulement une recommandation de configuration.
+`ip_hash` est un HMAC-SHA-256 lowercase en `VARCHAR(64)`, jamais un SHA simple ;
+`ip_hash_key_version SMALLINT > 0`. Hash/version sont tous deux NULL ou tous deux
+présents et sont immuables. Le secret HMAC reste hors BDD ; une rotation ne modifie
+pas les anciennes lignes. `user_agent` nullable et borné à 500 caractères suit la
+même rétention.
+
+**Contraintes/index planifiés** : CHECK nommés et stricts (`CASE ... ELSE FALSE END
+IS TRUE`) pour statut/quota/motif/secret/timestamp terminal, format du digest,
+couple hash-expiration et fenêtre temporelle, rétention, paire HMAC/version,
+user-agent non blanc et `bytes_sent >= 0`. Uniques : `public_id`, puis index unique
+partiel `attempt_token_hash WHERE attempt_token_hash IS NOT NULL`. Index :
+`(download_grant_id, created_at DESC)`, `(download_grant_id, attempt_expires_at)
+WHERE status='started'`, et `(retention_until) WHERE status IN
+('completed','denied')`. Aucun prédicat ne dépend de `now()`.
+
+**G2/G5/G6 et catalogue exact** : `000012` ajoute exactement **deux fonctions et
+deux triggers** P4-B : `enforce_download_logs_integrity()` reliée par
+`download_logs_enforce_integrity_trigger` (`BEFORE INSERT OR UPDATE`) et
+`enforce_download_logs_retention_delete()` reliée par
+`download_logs_retention_delete_trigger` (`BEFORE DELETE`). Elle remplace aussi
+en place la fonction G2 existante `enforce_download_grants_immutability()` sans
+ajouter de trigger grant. G5 est l'unique exception P4 explicitement mutante : sur
+INSERT `started`, elle verrouille Order puis Grant, revalide, et effectue l'UPDATE
+`downloads_count + 1`; l'INSERT et l'UPDATE rollbackent ensemble. G2 conserve
+toutes les protections P4-A2.1 (`user_id` FK, révocation, bornes, `updated_at`) mais
+refuse tout incrément direct à profondeur 1 et n'accepte l'exact `+1` que depuis
+le trigger G5 imbriqué (`pg_trigger_depth() > 1`). Le rôle applicatif ne possède
+aucun privilège DDL permettant de fabriquer un trigger concurrent. G5 contrôle
+insertions, transitions, immutabilité, progression des octets et extension de
+rétention, sans réécrire silencieusement NEW. G6 autorise une suppression seulement
+pour une ligne terminale arrivée à rétention ; un DELETE multi-lignes contenant une
+ligne inéligible échoue atomiquement. La purge ne touche jamais compteur, grant,
+OrderItem ou ProductFile et ne rend aucun quota.
+
+**Concurrence** : ordre global `orders → payments → coupons → refunds →
+download_grants`. P4-B effectue une lecture minimale, verrouille l'Order, puis le
+Grant, revalide, insère et incrémente. Avec une unité restante, une seule création
+`started` réussit ; l'autre attend puis produit un refus direct non consommant ou
+une réponse uniforme selon l'orchestration, sans dépassement. Les retries d'une
+même tentative n'acquièrent aucune nouvelle unité ; les transitions terminales
+sérialisées ne peuvent ni rouvrir la ligne ni la terminaliser deux fois. Grants
+distincts ne subissent aucun verrou global.
+
+**Artefacts Laravel futurs** : enum `DownloadLogStatus` strictement
+`started|completed|denied` et enum fermé `DownloadDenialReasonCode` aligné sur le
+CHECK ; modèle `DownloadLog` avec `grant(): BelongsTo`, casts bool/int/datetime et
+hashes de tentative/IP masqués ; relation minimale
+`DownloadGrant::downloadLogs(): HasMany`. La factory produit par défaut un
+`started` cohérent sur grant valide avec digests factices uniques et aucune valeur
+brute. Les scénarios `completed` et `denied` après consommation doivent créer
+d'abord `started` puis effectuer la transition (jamais contourner G5 par un state
+d'insertion invalide) ; le refus direct est un state distinct non consommant.
+Aucun state ne modifie silencieusement Order/Grant hors l'effet G5 attendu, ne
+désactive un trigger ou n'effectue d'appel réseau.
+
+**Rollback fail-closed `000012`** : `down()` refuse en SQLSTATE `23514` si la
+table contient une ligne. Aucun audit n'est détruit, aucun compteur n'est remis à
+zéro ou décrémenté. Table vide seulement : supprimer triggers puis fonctions P4-B,
+restaurer textuellement G2 P4-A2.1 issu de `000011`, puis supprimer la table ;
+préserver P4-A0, P4-A1, P4-A2, P4-A2.1 et leurs données/objets. Le harness isolé
+teste séparément le refus avec ligne, puis le rollback vide à frontière exacte
+`000012`, sans migration future ni base résiduelle.
+
+**Matrice de tests obligatoire** : PostgreSQL réel, introspection types/FK/CHECK/
+index/fonctions/triggers, anti-`CHECK = UNKNOWN`, insertion `started` et incrément
+atomiques, rollback commun, refus direct non consommant, transitions et champs
+immuables, rétention et purge multi-lignes, HMAC versionné, absence de secrets et
+colonnes interdites. Deux connexions réelles couvrent dernière unité, retries et
+transitions concurrents, grants distincts et absence de deadlock. Range/retries
+vérifient un seul log, secret/public_id appariés, même grant/fichier, expiration,
+révocation/remboursement et substitution refusée. HEAD reste sans effet. Les tests
+de mécanisme documentent Laravel/X-Accel/X-Sendfile/URL temporaire, `bytes_sent`
+NULL ou inférieur à la taille, sans prétendre à la réception client. Rollback
+isolé prouve restauration exacte de G2 `000011` et préservation de P4-A. La cible
+après l'unique migration est **28 migrations** ; les adaptations historiques
+retirent `download_logs` uniquement des assertions globales devenues obsolètes,
+conservent son absence dans toutes les frontières antérieures à `000012`, et
+laissent P2/P3/P4-A intégralement verts.
+
+**Threat model final** :
+
+| Menace | Prévention | Détection | Risque résiduel | Gate responsable |
+|---|---|---|---|---|
+| vol du secret de tentative | CSPRNG, digest seul, transport header/cookie, TTL court | IP HMAC/version + logs sécurité | usage possible pendant la fenêtre | HTTP + P4-B |
+| rejeu pendant validité | revalidation secret, Grant et Order à chaque requête | retries/IP/rate limit | rejeu légitime et malveillant difficiles à distinguer | HTTP/Redis |
+| collision de digest | 256 bits + unique partiel | violation `23505`/télémétrie | risque cryptographique négligeable, non nul | P4-B |
+| tentative sur autre fichier | lignée immuable log→grant→ProductFile | refus uniforme + audit du log | rôle SQL privilégié | P4-B + permissions |
+| usage après révocation | Grant revalidé à chaque Range/retry | code `grant_revoked` si tentative connue | course sérialisée par verrou | HTTP + G5/G4 |
+| usage après remboursement total | Order revalidée livrable | code `order_not_deliverable` | course avant commit financier | HTTP + G4 |
+| secret en query string | query interdite par contrat | tests route/proxy et revue de logs | mauvaise configuration HTTP | gate HTTP |
+| secret journalisé | masquage, aucune exception/analytics avec secret | tests de confidentialité + scan logs | infrastructure externe mal configurée | HTTP/Ops |
+| retries concurrents | unique digest/log, transitions atomiques | tests deux connexions | charge sans dépassement commercial | P4-B + Redis |
+| Range abusive | même tentative, quota non multiplié ; rate limit futur | métriques/rate limit | bande passante consommée | HTTP/Redis |
+| tentative expirée rejouée | expiration explicite immuable, nouvelle autorisation | refus uniforme + audit sécurité | horloge/configuration incorrecte | HTTP + P4-B |
+| préchargement automatique | action GET explicite, aucune balise préchargeable | métriques front/sécurité | préfetch externe non maîtrisé | UI/HTTP |
+| HEAD d'énumération | réponse uniforme, aucun log/quota/secret | rate limit et logs sécurité séparés | trafic d'énumération | HTTP/Redis |
+| `completed` interprété comme réception | définition R3A et aucune condition `bytes=size` | revue tests/docs | aucune preuve de réception client | P4-B/Ops |
+| `bytes_sent` non fiable | nullable, non utilisé pour quota/terminal | télémétrie du mécanisme | mesure absente avec délégation | HTTP/Ops |
+| panne après commit avant remise | transaction courte, log `started` consommé | détection des `started` anciens | quota consommé sans livraison ; pas de compensation MVP | Ops futur |
+| panne après `completed` | sémantique limitée à la remise | télémétrie X-Accel/stockage | livraison client finale inconnaissable | Ops futur |
+
+Détection d'abus et rate limiting relèvent de Redis/logs sécurité/gate HTTP,
+jamais de lignes `download_logs` pour un token inconnu.
+
+**Exclusions/statut** : aucune émission de grant, compensation quota, listener
+OrderPaid, e-mail, route, contrôleur, service, streaming, endpoint public, P5 ou
+code fournisseur. Le choix header/cookie, la durée exacte de tentative/rétention,
+le rate limiting et la réconciliation sont des paramètres/gates applicatifs
+futurs, sans DEFAULT commercial BDD. **P4-B PLANIFIÉ — NON IMPLÉMENTÉ**.
+
 **Note d'exécution P4-A1** (aucune décision nouvelle) : implémenté sur
 `p4-a1-bundle-purchase-snapshots` (migration `000009`) conformément à D-029.3, puis
 **mergé via [PR #12](https://github.com/mysterus44/DigiTrove/pull/12) → `93d1f17`**
@@ -1058,8 +1284,9 @@ rollbacks), PROGRESS_TRACKER, HANDOFF, CLAUDE.md. Prochaine implémentation :
    [PR #14](https://github.com/mysterus44/DigiTrove/pull/14) → `2c25e2a`** :
    correction additive G2/G3 sans modifier `000010`, bénéficiaire null-safe,
    timestamp lié au cycle de vie, rollback exact ; 7/113, suite 158/2301, Pint 112.
-   Prochaine étape : plan P4-B (`p4-b-download-logs`, migration `000012`,
-   `download_logs` + G5/G6), dernier gate du schéma P4. TTL (72 h),
+   **D-029.5 finalise le plan P4-B** (`p4-b-download-logs`, migration `000012`,
+   `download_logs` + G5/G6) ; prochaine étape = implémentation isolée de ce dernier
+   gate du schéma P4. TTL grant (72 h),
   quota (5) et rétention logs (365 j) restent des recommandations de CONFIG
   APPLICATIVE (aucun default BDD, D-029.1-B) à fixer à la phase service. La phase
   licences reste une décision produit ouverte (liée à la question `usb` du legacy).

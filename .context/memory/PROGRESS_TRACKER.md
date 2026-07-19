@@ -12,7 +12,7 @@ SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
-P4 LIVRAISON        : ████████░░  P4-A0/A1/A2/A2.1 mergés ; P4-B non démarré
+P4 LIVRAISON        : █████████░  P4-A0/A1/A2/A2.1 mergés ; P4-B planifié, non implémenté
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
@@ -25,7 +25,7 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > (`4a077db`)**, P3C-B + hardening mergés via PR #8/#9 et P3C-C `refunds` mergé via
 > PR #10 (`122332a`).
 > **P4 Livraison : plan BDD finalisé et validé (D-029 + D-029.1 B–A–B + D-029.2 +
-> D-029.3 + D-029.4)** — gates isolés dans l'ordre : **P4-A0
+> D-029.3 + D-029.4 + D-029.5)** — gates isolés dans l'ordre : **P4-A0
 > durcissement `product_files` (`000008`) MERGÉ via PR #11 (`a047571`)** → P4-A1
 > snapshot `order_item_bundle_components` (`000009`, D-029.3 : S1/S2/S3, bundles
 > imbriqués exclus) **MERGÉ via PR #12 (`93d1f17`)** → P4-A2 `download_grants`
@@ -36,7 +36,11 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > [PR #14](https://github.com/mysterus44/DigiTrove/pull/14) (`2c25e2a`)** : G3
 > bénéficiaire null-safe et G2 `updated_at` lié aux transitions, 27 migrations,
 > 7 tests / 113 assertions dédiées, suite 158/2301, Pint 112, rollback exact vert.
-> Prochaine étape : plan P4-B ; P4-B reste non démarré et réservé à `000012`.
+> **P4-B est PLANIFIÉ — NON IMPLÉMENTÉ** : 1A/2A/3A + R1A/R2A/R3A figent
+> consommation à `started`, rétention explicite, HMAC IP versionné, tentative
+> dédiée regroupant Range/retries, HEAD sans effet et `completed` = remise au
+> mécanisme. Prochaine étape : implémentation isolée sur la branche réservée,
+> migration `000012`.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -328,12 +332,13 @@ corrigé pré-implémentation (**D-029.2**) : `product_files.version` FIGÉE ave
 contenu (`original_name` audité = libellé d'affichage, mutable) et gate composite
 P4-A ABANDONNÉ au profit de **quatre gates isolés** — une migration, une branche,
 une frontière de rollback chacun, merge obligatoire avant le gate suivant. Schéma
-cible + catalogue G0–G6/S1–S2 + table de préservation des rollbacks dans le bloc
+cible + catalogue G0–G6/S1–S3 + table de préservation des rollbacks dans le bloc
 P4 de `DigiTrove_Schema_BDD_v1.md`. `licenses` exclu de P4 (décision produit
 ouverte). **P4-A0 `000008` (durcissement `product_files`, trigger G0) mergé via
 PR #11 (`a047571`)** ; **P4-A1 `000009` (snapshot bundle, S1/S2/S3) mergé via PR #12
-(`93d1f17`)** ; A2/B non démarrés. Aucune logique applicative P4 (OrderService,
-contrôleur, route, job, listener) créée. P5 non démarré.
+(`93d1f17`)** ; P4-A2/P4-A2.1 sont mergés et **le plan P4-B D-029.5 est finalisé,
+sans implémentation**. Aucune logique applicative P4 (OrderService, contrôleur,
+route, job, listener) créée. P5 non démarré.
 
 | Tâche | Statut |
 |-------|--------|
@@ -347,7 +352,8 @@ contrôleur, route, job, listener) créée. P5 non démarré.
 | **P4-A2** `p4-a2-download-grants` — migration `000010` `download_grants` G1–G4, modèle/factory/relations (frontière `000010`) | ✅ DONE — **mergé PR #13 → `77f3766`** ; 4 fonctions / 5 triggers, G4 différé sur `download_grants` ET `orders` |
 | P4-A2 tests PostgreSQL (token, autorisation snapshot bundle, quota, concurrence 2 connexions, refund total différé) | ✅ DONE — 18 tests / 315 assertions ; suite complète 151/2188 (1882 − 9 adaptations + 315), Pint 110, rollback isolé `000010` vert |
 | **P4-A2.1** `p4-a2-1-grant-integrity-hardening` — migration additive `000011`, remplacement G2/G3 sans modifier `000010` | ✅ DONE — **mergé PR #14 → `2c25e2a`** ; bénéficiaire G3 null-safe ; `updated_at` G2 lié aux transitions ; 7/113, suite 158/2301, Pint 112, rollback exact vert |
-| **P4-B** `p4-b-download-logs` — migration `000012` `download_logs` G5–G6 + enum `DownloadLogStatus` + modèle/factory/tests (frontière `000012`) | ⬜ TODO — plan technique dans une exécution séparée |
+| Plan P4-B + décision D-029.5 (1A/2A/3A + R1A/R2A/R3A, schéma exact, tentative/Range/HEAD/completed, G5/G6, rollback, tests/threat model) | ✅ DONE — **P4-B PLANIFIÉ, NON IMPLÉMENTÉ** |
+| **P4-B** `p4-b-download-logs` — migration `000012` `download_logs` G5–G6 + enum `DownloadLogStatus` + modèle/factory/tests (frontière `000012`) | ⬜ TODO — prochaine implémentation isolée ; branche/migration encore absentes |
 | Listener IssueDownloadGrants (sur OrderPaid) | ⬜ TODO — après schéma P4 |
 | DownloadService (token haché, expiration, quota atomique) | ⬜ TODO — après schéma P4 |
 | DownloadController + rate limiting | ⬜ TODO — après schéma P4 |

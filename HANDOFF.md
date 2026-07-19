@@ -7,9 +7,9 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Codex
-- **Date** : 2026-07-18
-- **Branche git active** : `p0-foundations-laravel13`, synchronisée avec
-  `origin/p0-foundations-laravel13` après le merge P4-A2.1 `2c25e2a`
+- **Date** : 2026-07-19
+- **Branche git active** : `p0-foundations-laravel13`; base locale/distante
+  vérifiée à `0d3014016beb9f16137fcd993f8a3c8033e57c72` avant cette clôture documentaire
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -52,6 +52,9 @@
   `2c25e2a Merge pull request #14 from mysterus44/p4-a2-1-grant-integrity-hardening`
   (SHA complet `2c25e2a412a24ac6ae2e5d51ed6929f3f0a397f7`, parents `0633eb0` +
   `ba834be` ; commit hotfix intégré `ba834befa63a7212c2f2065f51a3f2ae03f5453b`)
+- **Plan P4-B Download Logs** : D-029.5 finalisée (1A/2A/3A + R1A/R2A/R3A),
+  **PLANIFIÉ — NON IMPLÉMENTÉ** ; branche `p4-b-download-logs` et migration
+  `2026_07_14_000012_create_download_logs_table.php` toujours absentes/réservées
 - **`origin/main`** : `11130f4` (intact après P4-A2.1 ; aucun push direct)
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
@@ -252,34 +255,38 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**P4-A2.1 TERMINÉ ET MERGÉ** via
-[PR #14](https://github.com/mysterus44/DigiTrove/pull/14), merge
-`2c25e2a412a24ac6ae2e5d51ed6929f3f0a397f7` (parents `0633eb0` + `ba834be`).
-Le hotfix `ba834befa63a7212c2f2065f51a3f2ae03f5453b` est intégré à la stable par la
-migration additive `2026_07_14_000011_harden_download_grants_integrity.php` ; la
-migration historique `000010` reste immuable (blob Git `f36cd49f62220ac1fea42adc0416bd2b4e60e0af`).
+**P4-B PLANIFIÉ — NON IMPLÉMENTÉ.** D-029.5 fige le contrat de la future branche
+`p4-b-download-logs` et de l'unique migration
+`2026_07_14_000012_create_download_logs_table.php` (frontière `000012`). Aucun de
+ces objets n'est encore créé.
 
-Le nouveau G3 impose `NEW.user_id IS NOT DISTINCT FROM orders.user_id` : invité =
-`NULL`, compte = identifiant strictement identique. Le nouveau G2 exige que tout
-changement de `updated_at` avance strictement et accompagne une consommation `+1`
-ou une révocation valide. La nullification `user_id` produite par la FK `SET NULL`
-reste autorisée avec timestamp inchangé ; une nullification manuelle reste refusée.
-Le catalogue physique reste **4 fonctions / 5 triggers**, G4 demeure différé sur
-grants et orders, et aucun objet P4-B n'est créé.
+Décisions humaines : **1A** consommation à l'INSERT `started`, **2A**
+`retention_until NOT NULL` explicite sans DEFAULT, **3A** HMAC IP SHA-256 versionné,
+**R1A** une tentative authentifiée regroupe Range/retries en une unité, **R2A** HEAD
+ne crée ni log/secret/incrément, **R3A** `completed` signifie remise au mécanisme
+de livraison, jamais réception intégrale par le client.
 
-Validation réelle : **27 migrations** ; P4-A2.1 **7 tests / 113 assertions** ;
-P4-A2 18/315 ; P4-A1 17/216 ; P4-A0 9/130 ; Catalog 12/112 ; P3B 18/358 ;
-P3C-A 16/220 ; P3C-B 13/188 ; P3C-C 16/460 ; suite complète **158/2301** ;
-Pint **112 fichiers** ; `git diff --check` propre. Le rollback isolé `000011`
-restaure exactement les définitions G2/G3 de `000010` via `pg_get_functiondef`,
-préserve table/données/G1/G4/P4-A0/P4-A1 et ne laisse aucune base temporaire.
+Schéma futur exact : 15 colonnes (`id`, `public_id`, `download_grant_id`, `status`,
+`quota_consumed`, `attempt_token_hash`, `attempt_expires_at`,
+`denial_reason_code`, `ip_hash`, `ip_hash_key_version`, `user_agent`, `bytes_sent`,
+`terminal_at`, `retention_until`, `created_at`). Secret de tentative CSPRNG distinct
+du token du grant, digest SHA-256 uniquement, expiration courte/explicite, aucun
+préfixe/query string. Range/retries valides réutilisent le même log/grant/fichier ;
+tentative expirée = nouvelle autorisation et nouvelle consommation. `bytes_sent`
+est nullable et n'est jamais une preuve de réception.
 
-La branche locale `p4-a2-1-grant-integrity-hardening` est supprimée ; la branche
-distante est conservée à `ba834bef`. `origin/main` reste intact à `11130f4`.
+Atomicité future : G5 verrouille **Order puis DownloadGrant**, revalide, insère le
+log `started` et provoque l'exact `downloads_count +1` dans une transaction courte,
+avant toute livraison. `denied + quota_consumed=false` journalise seulement un
+refus préalable sur grant connu ; token inconnu absent. `started → denied` conserve
+le quota. `000012` ajoutera exactement 2 fonctions/2 triggers G5–G6 et remplacera
+G2 en place pour refuser tout UPDATE direct du compteur ; rollback table vide
+restaure exactement G2 `000011`, tandis qu'un rollback avec logs est refusé.
 
-Action suivante, dans une exécution séparée : **plan technique P4-B — Download
-Logs**. P4-B reste non démarré ; branche future `p4-b-download-logs`, migration
-réservée `2026_07_14_000012_create_download_logs_table.php` (frontière `000012`).
+**Prochaine tâche** : implémenter exclusivement P4-B dans une nouvelle exécution,
+après recréation des garde-fous Git. Créer alors seulement la branche réservée et
+`000012`, puis enum/modèle/factory/tests. Le gate BDD ne doit toujours créer aucune
+route, aucun contrôleur, service, streaming, listener OrderPaid, e-mail ou P5.
 
 **P4-A0 est mergé et clôturé** dans `p0-foundations-laravel13` via
 [PR #11](https://github.com/mysterus44/DigiTrove/pull/11), merge `a047571` (parents
@@ -395,16 +402,13 @@ Points D-029.4 à respecter à la lettre :
 Branche locale `p4-a2-download-grants` supprimée, distante conservée à `cea5f2d`.
 `origin/main` intact `11130f4`.
 
-Après merge et clôture P4-A2.1 seulement : **plan technique P4-B — Download Logs**,
-dans une exécution séparée, avant toute migration.
-- prochaine branche réservée : `p4-b-download-logs` (depuis la future stable) ;
-- prochaine migration réservée : `2026_07_14_000012_create_download_logs_table.php`
-  (frontière rollback `000012`) : table `download_logs` + G5 (append-only :
-  `started` → `completed`|`denied`, terminal non réactivable) et G6 (purge
-  contrôlée par rétention, pattern T7 webhooks).
-P4-B devra apparier **atomiquement** le log et l'incrément du compteur (le
-structurel est déjà en place côté `download_grants` : G2 borne le +1 ; aucune
-consommation applicative n'existe encore). Rappels D-029/D-029.4 : `download_logs`
+Le **plan technique P4-B — Download Logs est finalisé par D-029.5**, avant toute
+migration. La prochaine exécution implémente seulement la branche réservée
+`p4-b-download-logs` et la migration
+`2026_07_14_000012_create_download_logs_table.php` (frontière `000012`). G5 apparie
+atomiquement l'INSERT `started` et le compteur, regroupe Range/retries par secret
+de tentative dédié ; G6 contrôle la purge. HEAD n'écrit rien et `completed` ne
+prouve que la remise au mécanisme. Rappels D-029/D-029.4/D-029.5 : `download_logs`
 est la SEULE table P4 purgeable ; `ip_hash` = HMAC-SHA-256 (clé hors BDD), jamais
 d'IP brute ; `user_agent` tronqué (500) ; rétention 365 j = recommandation de
 config, aucun DEFAULT commercial ; **un token inconnu n'entre JAMAIS dans la table**
@@ -477,6 +481,19 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-19 — Codex (plan final P4-B + décision D-029.5)
+- Stable locale/distante confirmée à `0d3014016beb9f16137fcd993f8a3c8033e57c72`,
+  ahead/behind `0/0`, `origin/main` intact `11130f4`; aucune branche, migration
+  `000012`, classe DownloadLog, table `download_logs` ni artefact P5.
+- Décisions 1A/2A/3A et R1A/R2A/R3A consignées : consommation à `started`,
+  rétention explicite, HMAC IP versionné, secret de tentative dédié et haché,
+  Range/retries regroupés, HEAD sans effet, `completed` = remise au mécanisme.
+- Schéma exact des 15 colonnes, CHECK anti-UNKNOWN, uniques/index, machine d'état,
+  concurrence Order→Grant, G5/G6 (2 fonctions/2 triggers), remplacement futur de
+  G2, rollback fail-closed `000012`, matrice de tests et threat model finalisés.
+- Aucun code, branche, migration, fonction, trigger, endpoint P4-B ou P5 créé.
+  Laisse à : implémentation P4-B isolée sur la branche/migration réservées.
 
 ### 2026-07-18 — Codex (clôture post-merge P4-A2.1)
 - Merge prouvé : [PR #14](https://github.com/mysterus44/DigiTrove/pull/14), SHA
