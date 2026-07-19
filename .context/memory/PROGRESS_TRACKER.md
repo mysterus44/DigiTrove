@@ -336,9 +336,10 @@ cible + catalogue G0–G6/S1–S3 + table de préservation des rollbacks dans le
 P4 de `DigiTrove_Schema_BDD_v1.md`. `licenses` exclu de P4 (décision produit
 ouverte). **P4-A0 `000008` (durcissement `product_files`, trigger G0) mergé via
 PR #11 (`a047571`)** ; **P4-A1 `000009` (snapshot bundle, S1/S2/S3) mergé via PR #12
-(`93d1f17`)** ; P4-A2/P4-A2.1 sont mergés et **le plan P4-B D-029.5 est finalisé,
-sans implémentation**. Aucune logique applicative P4 (OrderService, contrôleur,
-route, job, listener) créée. P5 non démarré.
+(`93d1f17`)** ; P4-A2/P4-A2.1 sont mergés et **P4-B est IMPLÉMENTÉ conformément à
+D-029.5 sur la branche `p4-b-download-logs` (migration `000012`), EN ATTENTE DE
+MERGE**. Aucune logique applicative P4 (OrderService, contrôleur, route, job,
+listener) créée. P5 non démarré.
 
 | Tâche | Statut |
 |-------|--------|
@@ -352,7 +353,8 @@ route, job, listener) créée. P5 non démarré.
 | **P4-A2** `p4-a2-download-grants` — migration `000010` `download_grants` G1–G4, modèle/factory/relations (frontière `000010`) | ✅ DONE — **mergé PR #13 → `77f3766`** ; 4 fonctions / 5 triggers, G4 différé sur `download_grants` ET `orders` |
 | P4-A2 tests PostgreSQL (token, autorisation snapshot bundle, quota, concurrence 2 connexions, refund total différé) | ✅ DONE — 18 tests / 315 assertions ; suite complète 151/2188 (1882 − 9 adaptations + 315), Pint 110, rollback isolé `000010` vert |
 | **P4-A2.1** `p4-a2-1-grant-integrity-hardening` — migration additive `000011`, remplacement G2/G3 sans modifier `000010` | ✅ DONE — **mergé PR #14 → `2c25e2a`** ; bénéficiaire G3 null-safe ; `updated_at` G2 lié aux transitions ; 7/113, suite 158/2301, Pint 112, rollback exact vert |
-| Plan P4-B + décision D-029.5 (1A/2A/3A + R1A/R2A/R3A, schéma exact, tentative/Range/HEAD/completed, G5/G6, rollback, tests/threat model) | ✅ DONE — **P4-B PLANIFIÉ, NON IMPLÉMENTÉ** |
+| Plan P4-B + décision D-029.5 (1A/2A/3A + R1A/R2A/R3A, schéma exact, tentative/Range/HEAD/completed, G5/G6, rollback, tests/threat model) | ✅ DONE — validé par KingKouda |
+| **P4-B** `p4-b-download-logs` — migration `000012` `download_logs` 15 colonnes, G5/G6 (2 fn / 2 triggers), G2 remplacée en place (`pg_trigger_depth() > 1`), modèle/factory/relations (frontière `000012`) | ✅ IMPLÉMENTÉ — **EN ATTENTE DE MERGE** ; 19 tests / 599 assertions ; suite complète 177/2885 ; Pint 116 ; rollback vide restaurant G2 `000011` à l'octet près + rollback occupé refusé en 23514 ; concurrence 2 connexions (55P03/23505/23514) ; aucun endpoint/streaming/P5 |
 | **P4-B** `p4-b-download-logs` — migration `000012` `download_logs` G5–G6 + enum `DownloadLogStatus` + modèle/factory/tests (frontière `000012`) | ⬜ TODO — prochaine implémentation isolée ; branche/migration encore absentes |
 | Listener IssueDownloadGrants (sur OrderPaid) | ⬜ TODO — après schéma P4 |
 | DownloadService (token haché, expiration, quota atomique) | ⬜ TODO — après schéma P4 |

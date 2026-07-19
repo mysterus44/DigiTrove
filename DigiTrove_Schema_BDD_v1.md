@@ -887,12 +887,15 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --           G3 : bénéficiaire null-safe strict avec orders.user_id ; G2 :
 --           updated_at avance uniquement avec consommation/révocation ; 4 fonctions
 --           / 5 triggers inchangés ; rollback restaure exactement G2/G3 de 000010.
---   P4-B  — Download Logs
+--   P4-B  — Download Logs ✅ IMPLÉMENTÉ — EN ATTENTE DE MERGE
 --           branche `p4-b-download-logs`
 --           migration `2026_07_14_000012_create_download_logs_table.php`
---           frontière harness `000012` (down() ne retire que les logs ;
---           tout P4-A préservé).
---           ✅ PLAN D-029.5 FINALISÉ ; NON IMPLÉMENTÉ (1A/2A/3A + R1A/R2A/R3A).
+--           frontière harness `000012` (down() ne retire que les logs, refuse
+--           en 23514 si une ligne existe, restaure G2 `000011` à l'identique ;
+--           tout P4-A préservé). Conforme D-029.5 (1A/2A/3A + R1A/R2A/R3A) :
+--           15 colonnes, G5/G6 (2 fonctions / 2 triggers), G2 remplacée en place
+--           (consommation acceptée uniquement depuis G5, `pg_trigger_depth() > 1`).
+--           19 tests / 599 assertions ; suite 177/2885 ; PR en attente de merge.
 -- Ordre des merges OBLIGATOIRE : `000009` ne se crée qu'après merge de `000008`,
 -- `000010` après `000009`, le hotfix `000011` après `000010`, puis `000012`
 -- seulement après merge/clôture du hotfix.
@@ -1099,9 +1102,13 @@ CREATE INDEX download_grants_active_expiry_index   ON download_grants (expires_a
 -- Validation post-merge : 27 migrations ; P4-A2.1 7/113 ; suite 158/2301 ;
 -- Pint 112 ; rollback isolé vert ; 4 fonctions / 5 triggers et G4 différé intacts.
 
--- P4-B — JOURNAL DE CONSOMMATION (D-029.5 ; migration future `000012`).
--- STATUT : P4-B PLANIFIÉ — NON IMPLÉMENTÉ. Ce bloc est le contrat exact de la
--- prochaine migration, pas la description d'objets déjà présents.
+-- P4-B — JOURNAL DE CONSOMMATION (D-029.5 ; migration `000012`).
+-- STATUT : P4-B IMPLÉMENTÉ — EN ATTENTE DE MERGE (branche `p4-b-download-logs`).
+-- Ce bloc est le contrat exact de la migration livrée ; les objets décrits sont
+-- installés par `000012`. Précision physique : les timestamptz Laravel sont en
+-- précision 0 (secondes entières) — G5 fait donc avancer `updated_at` du grant
+-- d'au moins une seconde entière par consommation (strictement croissant même
+-- pour plusieurs consommations dans la même seconde ou la même transaction).
 -- Décisions : 1A consommation à `started` ; 2A rétention NOT NULL explicite ;
 -- 3A HMAC IP versionné ; R1A une tentative authentifiée regroupe Range/retries ;
 -- R2A HEAD ne consomme rien et ne journalise rien ; R3A `completed` signifie
@@ -1774,8 +1781,9 @@ Ordre technique des migrations à respecter avant P1 :
 4. P4 en gates isolés, mergés dans l'ordre (D-029.2 + correctif P4-A2.1) : P4-A0 durcissement
    `product_files` (`000008`) → P4-A1 snapshot `order_item_bundle_components`
    (`000009`) → P4-A2 `download_grants` (`000010`) → P4-A2.1 hardening G2/G3
-   (`000011`, mergé PR #14) → P4-B `download_logs` (`000012`) — **plan D-029.5
-   finalisé (1A/2A/3A + R1A/R2A/R3A), non migré et non implémenté**
+   (`000011`, mergé PR #14) → P4-B `download_logs` (`000012`) — **implémenté
+   conformément à D-029.5 (1A/2A/3A + R1A/R2A/R3A) sur `p4-b-download-logs`,
+   EN ATTENTE DE MERGE**
 5. `events` partitionnée + rollups (analytique)
 6. `campaigns` + `customer_segments` (marketing)
 7. Affiliation dédiée (`affiliate_profiles`, `affiliate_links`, `referrals`,

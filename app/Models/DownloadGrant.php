@@ -6,6 +6,7 @@ use Database\Factories\DownloadGrantFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * A bounded authorisation to download one purchased ProductFile.
@@ -68,6 +69,16 @@ class DownloadGrant extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * The consumption audit trail: every attempt logged against this grant.
+     *
+     * @return HasMany<DownloadLog, $this>
+     */
+    public function downloadLogs(): HasMany
+    {
+        return $this->hasMany(DownloadLog::class);
     }
 
     /**

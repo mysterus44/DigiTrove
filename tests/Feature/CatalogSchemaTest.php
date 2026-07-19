@@ -97,7 +97,6 @@ it('has explicit indexes for reverse catalog lookups', function () {
 
 it('does not create P3C, payment, delivery, analytics, or affiliation tables', function () {
     $forbiddenTables = [
-        'download_logs',
         'affiliate_profiles',
         'affiliate_links',
         'referrals',

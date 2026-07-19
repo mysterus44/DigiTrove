@@ -1248,6 +1248,44 @@ IMPACT : bloc P4 du schéma v1 réécrit (gates, G0 durci, table de préservatio
 rollbacks), PROGRESS_TRACKER, HANDOFF, CLAUDE.md. Prochaine implémentation :
 **P4-A0 uniquement** (aucun snapshot bundle, aucun grant, aucun log dans ce gate).
 
+**Note d'exécution P4-B** (aucune décision nouvelle) : implémenté sur
+`p4-b-download-logs` (unique migration `000012`) conformément à D-029.5.
+**P4-B IMPLÉMENTÉ — EN ATTENTE DE MERGE.** Livré : table `download_logs`
+(15 colonnes exactes, FK grant RESTRICT, 10 CHECK nommés stricts, uniques
+`public_id` + digest de tentative partiel, index grant/date, tentatives started
+et purge terminale, aucun prédicat `now()`, seul DEFAULT technique
+`created_at CURRENT_TIMESTAMP`) ; G5 `enforce_download_logs_integrity` /
+`download_logs_enforce_integrity_trigger` (BEFORE INSERT OR UPDATE) ; G6
+`enforce_download_logs_retention_delete` / `download_logs_retention_delete_trigger`
+(BEFORE DELETE) ; G2 remplacée EN PLACE (`CREATE OR REPLACE`, aucun trigger grant
+ajouté) : toutes les protections P4-A2.1 conservées, l'exact `+1` n'est accepté
+que depuis l'UPDATE imbriqué de G5 (`pg_trigger_depth() > 1`), tout UPDATE direct
+du compteur (SQL brut, Query Builder, Eloquent) est refusé. Atomicité prouvée :
+INSERT `started` et incrément commit/rollback ensemble ; verrous **Order puis
+Grant** ; refus direct `denied + quota_consumed=false` sans incrément ; INSERT
+`completed` direct impossible ; transitions terminales set-once ; quota jamais
+restitué (y compris après purge G6). **Précision d'implémentation signalée** :
+les timestamptz Laravel sont en précision 0 (secondes entières) — G5 fait donc
+progresser `updated_at` du grant via
+`GREATEST(clock_timestamp(), updated_at + interval '1 second')`, strictement
+croissant même pour plusieurs consommations dans la même seconde/transaction
+(le pas d'une microseconde de la formulation initiale était silencieusement
+arrondi par la colonne). Rollback `000012` : refusé en SQLSTATE 23514 si une
+ligne existe (aucun objet touché) ; table vide, G5/G6 et leurs triggers retirés,
+G2 restaurée OCTET POUR OCTET depuis `000011` (égalité `pg_get_functiondef`
+prouvée), P0–P3C et tout P4-A préservés. Adaptations historiques : compteur 28
+migrations (3 assertions), `download_logs` retiré de 12 assertions globales de
+tables futures, consommations directes des suites P4-A2/P4-A2.1 converties en
+refus attendus (la couverture quota/updated_at passe par G5 dans la suite P4-B) ;
+toutes les frontières de rollback ≤ `000011` conservent l'absence de
+`download_logs`. Validation : 28 migrations ; P4-B **19 tests / 599 assertions**
+(schéma, machine d'état, atomicité, G2 durci, tentative/Range/retries, HEAD hors
+BDD, bytes_sent, HMAC IP versionné, rétention, purge, concurrence à 2 connexions
+réelles — SQLSTATE observés 55P03/23505/23514 —, 2 rollbacks isolés) ; suite
+complète **177/2885** ; Pint **116** ; diff-check propre ; aucune base temporaire
+résiduelle ; aucun endpoint/route/contrôleur/service/listener/job/streaming/P5.
+PR en attente de merge.
+
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
@@ -1285,8 +1323,8 @@ rollbacks), PROGRESS_TRACKER, HANDOFF, CLAUDE.md. Prochaine implémentation :
    correction additive G2/G3 sans modifier `000010`, bénéficiaire null-safe,
    timestamp lié au cycle de vie, rollback exact ; 7/113, suite 158/2301, Pint 112.
    **D-029.5 finalise le plan P4-B** (`p4-b-download-logs`, migration `000012`,
-   `download_logs` + G5/G6) ; prochaine étape = implémentation isolée de ce dernier
-   gate du schéma P4. TTL grant (72 h),
+   `download_logs` + G5/G6) ; **P4-B IMPLÉMENTÉ — EN ATTENTE DE MERGE** (19/599,
+   suite 177/2885, Pint 116 — voir la note d'exécution P4-B). TTL grant (72 h),
   quota (5) et rétention logs (365 j) restent des recommandations de CONFIG
   APPLICATIVE (aucun default BDD, D-029.1-B) à fixer à la phase service. La phase
   licences reste une décision produit ouverte (liée à la question `usb` du legacy).

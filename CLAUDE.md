@@ -53,8 +53,9 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   `download_grants` (`000010`, **D-029.4** : option A émission immédiate = snapshot
   applicatif, G1–G4, aucun DEFAULT commercial) MERGÉ (PR #13 → `77f3766`)** →
   **P4-A2.1 hardening `download_grants` (`000011`, bénéficiaire G3 null-safe et
-  `updated_at` G2 lié au cycle de vie) MERGÉ (PR #14 → `2c25e2a`)** → P4-B
-  `download_logs` (`000012`) ; `licenses` exclu de P4. Une migration, une branche,
+  `updated_at` G2 lié au cycle de vie) MERGÉ (PR #14 → `2c25e2a`)** → **P4-B
+  `download_logs` (`000012`, D-029.5) IMPLÉMENTÉ — EN ATTENTE DE MERGE sur
+  `p4-b-download-logs`** ; `licenses` exclu de P4. Une migration, une branche,
   une frontière de rollback par gate ; migration N+1 jamais créée avant merge du
   gate N. Détail dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
 
@@ -63,16 +64,20 @@ P4-A2.1 est **terminé et mergé** via
 hotfix remplace uniquement G2/G3, garde 4 fonctions / 5 triggers et préserve
 `000010` immuable. Validation post-merge : 27 migrations ; P4-A2.1 7/113 ; suite
 158/2301 ; Pint 112 ; rollback isolé `000011` restaurant exactement G2/G3 d'origine.
-Le **plan P4-B — Download Logs** (branche `p4-b-download-logs`,
-migration `000012`, frontière `000012`) est désormais **FINALISÉ — NON IMPLÉMENTÉ**
-par D-029.5. Décisions : consommation à `started` atomique log+compteur, rétention
-NOT NULL explicite, HMAC IP versionné, secret de tentative dédié (digest seulement,
-expiration courte), une unité pour Range/retries de la même tentative, HEAD sans
-log/quota, et `completed` = remise au mécanisme, jamais réception client. G5 ajoute
-2 fonctions/2 triggers P4-B avec G6 et remplace G2 en place ; rollback `000012`
-fail-closed et restauration exacte de G2 `000011`. Prochaine étape : **implémenter
-P4-B sur la branche réservée dans une nouvelle exécution**. Branche, migration et
-code P4-B sont encore absents ; P5 non démarré.
+**P4-B — Download Logs est IMPLÉMENTÉ — EN ATTENTE DE MERGE** (branche
+`p4-b-download-logs`, unique migration `000012`, frontière `000012`), conforme à
+D-029.5 : consommation à `started` atomique log+compteur (verrous Order PUIS
+Grant), rétention NOT NULL explicite, HMAC IP versionné, secret de tentative
+dédié (digest seulement, distinct du token du grant, expiration courte), une
+unité pour Range/retries de la même tentative, HEAD sans log/quota, `completed`
+= remise au mécanisme, jamais réception client. Livré : table 15 colonnes +
+10 CHECK, G5/G6 (2 fonctions / 2 triggers), G2 remplacée en place (l'exact `+1`
+n'est accepté que depuis G5, `pg_trigger_depth() > 1` ; tout UPDATE direct du
+compteur refusé), modèle `DownloadLog`/factory/relations, rollback `000012`
+fail-closed (23514 si lignes) et restauration OCTET POUR OCTET de G2 `000011`.
+Validation : 28 migrations ; P4-B 19/599 ; suite 177/2885 ; Pint 116 ; aucune
+base résiduelle ; aucun endpoint/streaming/P5. Prochaine étape : **review + merge
+de la PR P4-B par KingKouda** ; P5 non démarré.
 
 ## 🔄 EN FIN DE TÂCHE
 

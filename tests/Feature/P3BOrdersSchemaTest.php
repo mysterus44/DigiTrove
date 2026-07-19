@@ -1015,7 +1015,6 @@ it('does not create later P3C, delivery, analytics, or affiliation tables', func
     // `payments` is introduced by the P3C-A gate; only the remaining P3C-B/P3C-C
     // and downstream phase tables must still be absent here.
     $forbiddenTables = [
-        'download_logs',
         'events',
         'analytics_sessions',
         'campaigns',

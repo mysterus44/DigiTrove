@@ -6,10 +6,11 @@
 
 ## 📍 ÉTAT ACTUEL
 
-- **Dernier agent** : Codex
+- **Dernier agent** : Claude Code
 - **Date** : 2026-07-19
-- **Branche git active** : `p0-foundations-laravel13`; base locale/distante
-  vérifiée à `0d3014016beb9f16137fcd993f8a3c8033e57c72` avant cette clôture documentaire
+- **Branche git active** : `p4-b-download-logs` (créée depuis la stable
+  `p0-foundations-laravel13` à `ccf9c383c9d3df617200b19f625cbc1fcd69ed1b`,
+  merge-base exact vérifié)
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -52,9 +53,11 @@
   `2c25e2a Merge pull request #14 from mysterus44/p4-a2-1-grant-integrity-hardening`
   (SHA complet `2c25e2a412a24ac6ae2e5d51ed6929f3f0a397f7`, parents `0633eb0` +
   `ba834be` ; commit hotfix intégré `ba834befa63a7212c2f2065f51a3f2ae03f5453b`)
-- **Plan P4-B Download Logs** : D-029.5 finalisée (1A/2A/3A + R1A/R2A/R3A),
-  **PLANIFIÉ — NON IMPLÉMENTÉ** ; branche `p4-b-download-logs` et migration
-  `2026_07_14_000012_create_download_logs_table.php` toujours absentes/réservées
+- **P4-B Download Logs** : **IMPLÉMENTÉ — EN ATTENTE DE MERGE** conformément à
+  D-029.5 (1A/2A/3A + R1A/R2A/R3A) sur `p4-b-download-logs` ; unique migration
+  `2026_07_14_000012_create_download_logs_table.php` (table 15 colonnes, G5/G6,
+  G2 remplacée en place `pg_trigger_depth() > 1`, rollback fail-closed) ;
+  P4-B 19/599, suite 177/2885, Pint 116
 - **`origin/main`** : `11130f4` (intact après P4-A2.1 ; aucun push direct)
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
@@ -255,38 +258,46 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**P4-B PLANIFIÉ — NON IMPLÉMENTÉ.** D-029.5 fige le contrat de la future branche
-`p4-b-download-logs` et de l'unique migration
-`2026_07_14_000012_create_download_logs_table.php` (frontière `000012`). Aucun de
-ces objets n'est encore créé.
+**P4-B IMPLÉMENTÉ — EN ATTENTE DE MERGE.** La branche `p4-b-download-logs`
+porte l'unique migration `2026_07_14_000012_create_download_logs_table.php`
+(frontière `000012`) et son commit unique
+`feat: implement P4-B download logs [par Claude]`, conformes à D-029.5.
 
-Décisions humaines : **1A** consommation à l'INSERT `started`, **2A**
-`retention_until NOT NULL` explicite sans DEFAULT, **3A** HMAC IP SHA-256 versionné,
-**R1A** une tentative authentifiée regroupe Range/retries en une unité, **R2A** HEAD
-ne crée ni log/secret/incrément, **R3A** `completed` signifie remise au mécanisme
-de livraison, jamais réception intégrale par le client.
+**Prochaine tâche : review + merge de la PR P4-B par KingKouda** (base
+`p0-foundations-laravel13`, compare `p4-b-download-logs`), puis clôture
+post-merge (vérifications post-merge, suppression de la branche locale,
+mise à jour documentaire — pattern des gates précédents).
 
-Schéma futur exact : 15 colonnes (`id`, `public_id`, `download_grant_id`, `status`,
-`quota_consumed`, `attempt_token_hash`, `attempt_expires_at`,
-`denial_reason_code`, `ip_hash`, `ip_hash_key_version`, `user_agent`, `bytes_sent`,
-`terminal_at`, `retention_until`, `created_at`). Secret de tentative CSPRNG distinct
-du token du grant, digest SHA-256 uniquement, expiration courte/explicite, aucun
-préfixe/query string. Range/retries valides réutilisent le même log/grant/fichier ;
-tentative expirée = nouvelle autorisation et nouvelle consommation. `bytes_sent`
-est nullable et n'est jamais une preuve de réception.
+Livré et prouvé sur PostgreSQL réel :
+- table `download_logs` 15 colonnes exactes (aucun DEFAULT métier ; seul
+  `created_at CURRENT_TIMESTAMP` technique), FK grant `ON DELETE RESTRICT`,
+  10 CHECK nommés anti-UNKNOWN, unique `public_id`, unique partiel
+  `attempt_token_hash`, index grant/date + tentatives `started` + purge
+  terminale, aucun prédicat `now()` ;
+- G5 `enforce_download_logs_integrity` / `download_logs_enforce_integrity_trigger`
+  (BEFORE INSERT OR UPDATE) : consommation à `started` atomique log+compteur
+  sous verrous **Order PUIS Grant** avec revalidation complète, digest de
+  tentative ≠ token du grant, refus direct `denied` non consommant, `completed`
+  direct impossible, transitions terminales set-once, `bytes_sent` monotone,
+  rétention extensible seulement ;
+- G6 `enforce_download_logs_retention_delete` /
+  `download_logs_retention_delete_trigger` (BEFORE DELETE) : purge uniquement
+  terminale à rétention échue, DELETE multi-lignes atomique, aucun décrément ;
+- G2 remplacée EN PLACE : protections P4-A2.1 intactes, exact `+1` accepté
+  uniquement depuis G5 (`pg_trigger_depth() > 1`), tout UPDATE direct refusé ;
+  `updated_at` avance de `GREATEST(clock_timestamp(), updated_at + interval
+  '1 second')` (timestamptz précision 0 — strictement croissant garanti) ;
+- rollback `000012` : occupé → refus 23514 sans destruction ; vide → G2
+  restaurée octet pour octet depuis `000011`, tout P4-A préservé ;
+- validation : 28 migrations ; P4-B 19/599 ; suite complète 177/2885 ; Pint 116 ;
+  concurrence 2 connexions (55P03/23505/23514) ; aucune base résiduelle.
 
-Atomicité future : G5 verrouille **Order puis DownloadGrant**, revalide, insère le
-log `started` et provoque l'exact `downloads_count +1` dans une transaction courte,
-avant toute livraison. `denied + quota_consumed=false` journalise seulement un
-refus préalable sur grant connu ; token inconnu absent. `started → denied` conserve
-le quota. `000012` ajoutera exactement 2 fonctions/2 triggers G5–G6 et remplacera
-G2 en place pour refuser tout UPDATE direct du compteur ; rollback table vide
-restaure exactement G2 `000011`, tandis qu'un rollback avec logs est refusé.
-
-**Prochaine tâche** : implémenter exclusivement P4-B dans une nouvelle exécution,
-après recréation des garde-fous Git. Créer alors seulement la branche réservée et
-`000012`, puis enum/modèle/factory/tests. Le gate BDD ne doit toujours créer aucune
-route, aucun contrôleur, service, streaming, listener OrderPaid, e-mail ou P5.
+Rappels pour la suite (post-merge) : la couche applicative P4 (OrderService,
+listener OrderPaid, contrôleur de téléchargement, streaming, rate limiting,
+job de purge, e-mails) reste ENTIÈREMENT à venir dans des gates dédiés — le
+gate BDD n'a rien créé de tout cela. TTL tentative/rétention (365 j recommandé)
+= config applicative future, jamais un DEFAULT BDD. Un token inconnu n'entre
+JAMAIS dans `download_logs`. `licenses` reste exclu de P4 ; P5 non démarré.
 
 **P4-A0 est mergé et clôturé** dans `p0-foundations-laravel13` via
 [PR #11](https://github.com/mysterus44/DigiTrove/pull/11), merge `a047571` (parents
@@ -481,6 +492,55 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-19 — Claude Code (P4-B Download Logs implémenté)
+- Garde-fous Git : stable locale = distante = `ccf9c383` (ahead/behind 0/0),
+  merge-base exact, ancêtres `0d30140`/`2c25e2a`/`ba834be`/`77f3766`/`cea5f2d`
+  confirmés, `origin/main` intact `11130f4` ; branche `p4-b-download-logs` créée.
+  (`git fetch` unique tenté : réseau indisponible ; refs locales conformes à
+  l'état de référence prouvé.)
+- Unique migration `2026_07_14_000012_create_download_logs_table.php` : table
+  `download_logs` 15 colonnes (aucun DEFAULT métier, seul `created_at
+  CURRENT_TIMESTAMP` technique), FK grant RESTRICT, 10 CHECK nommés stricts,
+  unique `public_id` + unique partiel du digest de tentative, index grant/date,
+  tentatives `started` et purge terminale (aucun `now()` en prédicat).
+- G5 `enforce_download_logs_integrity` (BEFORE INSERT OR UPDATE) : INSERT
+  `started` = verrou Order PUIS Grant, revalidation complète (livrable, non
+  révoqué, non expiré, quota, fichier actif, digest ≠ token du grant), puis
+  incrément exact `+1` atomique avec le log ; refus direct `denied` non
+  consommant ; `completed` direct impossible ; transitions terminales set-once ;
+  `bytes_sent` monotone ; rétention extensible seulement. G6
+  `enforce_download_logs_retention_delete` (BEFORE DELETE) : purge uniquement
+  terminale et à rétention échue, DELETE multi-lignes atomique.
+- G2 remplacée EN PLACE (aucun trigger grant ajouté) : protections P4-A2.1
+  intactes, l'exact `+1` n'est accepté que depuis l'UPDATE imbriqué de G5
+  (`pg_trigger_depth() > 1`) ; tout UPDATE direct du compteur (SQL brut, Query
+  Builder, Eloquent) est refusé. Précision signalée : timestamptz Laravel en
+  précision 0 → G5 avance `updated_at` de `GREATEST(clock_timestamp(),
+  updated_at + interval '1 second')` (strictement croissant même dans la même
+  seconde/transaction).
+- Modèle `DownloadLog` (created_at seul, digests `$hidden`, aucun helper de
+  secret/streaming), factory (started réel consommant via G5, state
+  `deniedDirectly()` non consommant, jamais de `completed` direct, aucun secret
+  brut persisté), relations `DownloadGrant::downloadLogs()` /
+  `DownloadLog::downloadGrant()`.
+- Rollback `000012` prouvé dans les deux sens : occupé → refus 23514 sans
+  toucher aucun objet/donnée ; vide → G5/G6 retirés et G2 restaurée OCTET POUR
+  OCTET depuis `000011` (égalité `pg_get_functiondef`), P0–P3C et tout P4-A
+  préservés.
+- Adaptations historiques : compteurs 27→28 (3 assertions), `download_logs`
+  retiré de 12 assertions globales de tables futures, consommations directes
+  P4-A2/P4-A2.1 converties en refus attendus (couverture quota/updated_at via
+  G5 dans la suite P4-B) ; toutes les frontières de rollback ≤ `000011`
+  conservent l'absence de `download_logs`.
+- Validation réelle : 28 migrations ; P4-B **19 tests / 599 assertions** ;
+  suite complète **177/2885** ; Pint **116** ; diff-check propre ; concurrence
+  2 connexions réelles (55P03/23505/23514, ordre Order→Grant, aucun deadlock) ;
+  introspection PostgreSQL conforme (6 fonctions / 7 triggers du domaine, G4
+  différé, G0/S1–S3 intacts) ; aucune base temporaire résiduelle.
+- Aucun endpoint, route, contrôleur, service, listener, job, e-mail, streaming,
+  rate limiter ni code P5. Migrations `000001`–`000011` intactes.
+  Laisse à : review + merge de la PR P4-B, puis clôture post-merge.
 
 ### 2026-07-19 — Codex (plan final P4-B + décision D-029.5)
 - Stable locale/distante confirmée à `0d3014016beb9f16137fcd993f8a3c8033e57c72`,
