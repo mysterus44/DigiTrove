@@ -9,11 +9,11 @@ use App\Models\Product;
 use App\Models\ProductFile;
 use App\Models\User;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Concerns\RefreshesDatabaseAsOwner as RefreshDatabase;
 use Tests\Support\PhaseMigrationHarness;
 
 uses(RefreshDatabase::class);
@@ -116,12 +116,14 @@ function runP4A21Migration(string $database, string $command, string $migration)
             $command,
             '--env=testing',
             '--force',
+            // P4-B0: gate migrations always run under the migrator/owner identity.
+            '--database=pgsql_migration',
             '--path=database/migrations/'.$migration,
         ],
         base_path(),
         [
             'APP_ENV' => 'testing',
-            'DB_CONNECTION' => 'pgsql',
+            'DB_CONNECTION' => 'pgsql_migration',
             'DB_DATABASE' => $database,
         ],
     );
@@ -134,7 +136,7 @@ function runP4A21Migration(string $database, string $command, string $migration)
 }
 
 it('applies additive migration 000011 without changing the P4-A2 object topology', function () {
-    expect(DB::table('migrations')->count())->toBe(27)
+    expect(DB::table('migrations')->count())->toBe(28)
         ->and(DB::table('migrations')->where('migration', '2026_07_14_000011_harden_download_grants_integrity')->exists())->toBeTrue()
         ->and(Schema::hasTable('download_grants'))->toBeTrue()
         ->and(Schema::hasTable('download_logs'))->toBeFalse();
@@ -406,7 +408,7 @@ it('rolls back only 000011 and restores the exact original G2 and G3 definitions
         $applied = $harness->applyMigrationsThrough('2026_07_14_000010_create_download_grants_table.php');
         expect(end($applied))->toBe('2026_07_14_000010_create_download_grants_table');
 
-        $connection = config('database.connections.pgsql');
+        $connection = config('database.connections.pgsql_migration');
         $pdo = new PDO(
             sprintf('pgsql:host=%s;port=%s;dbname=%s', $connection['host'], $connection['port'] ?? 5432, $harness->databaseName()),
             $connection['username'],

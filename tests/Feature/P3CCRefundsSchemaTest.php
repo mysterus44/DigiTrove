@@ -10,11 +10,11 @@ use App\Models\Product;
 use App\Models\Refund;
 use App\Models\User;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Concerns\RefreshesDatabaseAsMigrator as RefreshDatabase;
 use Tests\Support\PhaseMigrationHarness;
 
 uses(RefreshDatabase::class);
@@ -805,7 +805,7 @@ it('rolls back only the P3C-C refunds migration while preserving P3C-B, P3C-A an
 
 it('serialises concurrent succeeded refunds on the payment row and never exceeds the capture', function () {
     $harness = new PhaseMigrationHarness('digitrove_p3cc_concurrency_'.strtolower(Str::random(10)));
-    $connection = config('database.connections.pgsql');
+    $connection = config('database.connections.pgsql_migration');
     $dsn = sprintf('pgsql:host=%s;port=%s;dbname=%s', $connection['host'], $connection['port'] ?? 5432, $harness->databaseName());
     $pdo = fn (): PDO => new PDO($dsn, $connection['username'], $connection['password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     $a = null;
@@ -831,7 +831,8 @@ it('serialises concurrent succeeded refunds on the payment row and never exceeds
         echo 'SEED:'.$make().';'.$make().';'.$make().';'.$make();
         PHP;
         $process = new Process([PHP_BINARY, 'artisan', 'tinker', '--execute', $seed], base_path(), [
-            'APP_ENV' => 'testing', 'DB_CONNECTION' => 'pgsql', 'DB_DATABASE' => $harness->databaseName(),
+            // P4-B0: throwaway fixtures are seeded with the migrator/owner identity.
+            'APP_ENV' => 'testing', 'DB_CONNECTION' => 'pgsql_migration', 'DB_DATABASE' => $harness->databaseName(),
         ]);
         $process->setTimeout(60);
         $process->run();

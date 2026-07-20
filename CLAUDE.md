@@ -78,13 +78,27 @@ séparation de rôles PostgreSQL (`digitrove` migrateur/propriétaire ·
 executor` NOLOGIN propriétaire de G5), G5 `SECURITY DEFINER` avec `search_path`
 épinglé et objets qualifiés, G2 exigeant `current_user = digitrove_download_executor`
 comme preuve d'origine principale, fermeture explicite de TEMP/CREATE/EXECUTE à
-PUBLIC + `ALTER DEFAULT PRIVILEGES`, double connexion Laravel (`pgsql` runtime +
-`pgsql_migration` migrateur), provisioning cluster par script idempotent
-(`docker/postgres/provision-runtime-roles.sql`) + migration ACL `000012`. **P4-B
-sera renuméroté `000013`** après merge de P4-B0. Plan P4-B0 documentaire finalisé,
-**NON IMPLÉMENTÉ**. Prochaine étape : implémenter P4-B0, puis rebaser/corriger P4-B.
-La branche `8cf24a8` reste inchangée ; sa PR ne s'ouvre pas avant P4-B0. P5 non
-démarré.
+PUBLIC, double connexion Laravel (`pgsql` runtime + `pgsql_migration` migrateur),
+provisioning cluster par script idempotent
+(`docker/postgres/provision-runtime-roles.sql`) + migration ACL `000012`.
+
+**P4-B0 est IMPLÉMENTÉ — EN ATTENTE DE MERGE** (branche
+`p4-b0-postgresql-runtime-privileges`) : faisabilité prouvée avant tout code (la
+danse `SET LOCAL ROLE` donne la propriété de G5 à l'exécuteur sans CREATE
+permanent ; un trigger `SECURITY DEFINER` se déclenche même sans EXECUTE pour le
+rôle déclencheur, avec `session_user=runtime` / `current_user=executor`). Suite
+P4-B0 13/84 sous le vrai rôle restreint (tous les vecteurs de contournement
+refusés en 42501), suite complète 171/2385, Pint 117, CI durcie. **Trois pièges
+retenus pour P4-B** : un `REVOKE EXECUTE` par fonction doit venir du propriétaire ;
+l'exécuteur exige `SELECT` en plus de `UPDATE` ; pour les default privileges des
+FONCTIONS, la forme GLOBALE `ALTER DEFAULT PRIVILEGES FOR ROLE r REVOKE EXECUTE ON
+FUNCTIONS FROM PUBLIC` fonctionne (la forme `IN SCHEMA public` non), elle est propre
+au rôle créateur (migrateur ET exécuteur via `SET ROLE`) — la migration `000012`
+les pose, donc G5 naîtra verrouillée mais devra recevoir `GRANT EXECUTE … TO
+digitrove` pour attacher son trigger. **P4-B sera renuméroté `000013`** après merge
+de P4-B0. Prochaine
+étape : merger P4-B0, puis rebaser/corriger P4-B. La branche `8cf24a8` reste
+inchangée ; sa PR ne s'ouvre pas avant P4-B0. P5 non démarré.
 
 ## 🔄 EN FIN DE TÂCHE
 

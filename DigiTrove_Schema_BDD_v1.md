@@ -899,8 +899,21 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --           épinglé, objets qualifiés) ; G2 vérifie `current_user =
 --           digitrove_download_executor` comme preuve d'origine PRINCIPALE,
 --           `pg_trigger_depth()` restant secondaire. REVOKE TEMP/CREATE/EXECUTE
---           à PUBLIC + ALTER DEFAULT PRIVILEGES. **PLANIFIÉ — NON IMPLÉMENTÉ ;
---           PRÉREQUIS AU MERGE DE P4-B.**
+--           à PUBLIC + default privileges TABLES/SEQUENCES.
+--           ✅ IMPLÉMENTÉ — EN ATTENTE DE MERGE (branche
+--           `p4-b0-postgresql-runtime-privileges`) ; PRÉREQUIS AU MERGE DE P4-B.
+--           Faisabilité prouvée : la danse SET LOCAL ROLE donne la propriété de
+--           G5 à l'exécuteur sans lui laisser de CREATE permanent, et un trigger
+--           SECURITY DEFINER se déclenche même sans EXECUTE pour le rôle
+--           déclencheur (session_user=runtime, current_user=executor).
+--           Attention (PG 16.14) : la FORME GLOBALE `ALTER DEFAULT PRIVILEGES
+--           FOR ROLE r REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` fonctionne et fait
+--           naître les fonctions futures sans EXECUTE PUBLIC ; la forme
+--           `IN SCHEMA public` ne retire PAS le privilège intégré global. Les
+--           défauts suivent le rôle créateur (pas d'héritage) → migrateur ET
+--           exécuteur (via SET ROLE) reçoivent chacun le leur ; les fonctions
+--           existantes gardent un REVOKE explicite. 13 tests / 84 assertions ;
+--           suite 171/2385 ; Pint 117.
 --   P4-B  — Download Logs
 --           branche `p4-b-download-logs` (commit `8cf24a8`)
 --           migration ACTUELLE `2026_07_14_000012_create_download_logs_table.php`,

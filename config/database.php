@@ -84,6 +84,10 @@ return [
             ]) : [],
         ],
 
+        // Default runtime connection. Under the P4-B0 privilege boundary (D-029.6)
+        // this identity is the RESTRICTED runtime role: no DDL, no TEMP, no direct
+        // write to download_grants.downloads_count. The application, workers and
+        // business tests use this connection.
         'pgsql' => [
             'driver' => 'pgsql',
             'url' => env('DB_URL'),
@@ -92,6 +96,25 @@ return [
             'database' => env('DB_DATABASE', 'digitrove'),
             'username' => env('DB_USERNAME', 'digitrove'),
             'password' => env('DB_PASSWORD', ''),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('DB_SSLMODE', 'prefer'),
+        ],
+
+        // Migration/owner connection (P4-B0, D-029.6). This identity owns the
+        // objects and runs migrations, provisioning and the phase migration
+        // harness. It is NEVER the application runtime. Migrations must target it
+        // explicitly: php artisan migrate --database=pgsql_migration.
+        'pgsql_migration' => [
+            'driver' => 'pgsql',
+            'url' => env('DB_MIGRATION_URL'),
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '5432'),
+            'database' => env('DB_DATABASE', 'digitrove'),
+            'username' => env('DB_MIGRATION_USERNAME', 'digitrove'),
+            'password' => env('DB_MIGRATION_PASSWORD', ''),
             'charset' => env('DB_CHARSET', 'utf8'),
             'prefix' => '',
             'prefix_indexes' => true,
