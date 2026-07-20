@@ -54,8 +54,9 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   applicatif, G1–G4, aucun DEFAULT commercial) MERGÉ (PR #13 → `77f3766`)** →
   **P4-A2.1 hardening `download_grants` (`000011`, bénéficiaire G3 null-safe et
   `updated_at` G2 lié au cycle de vie) MERGÉ (PR #14 → `2c25e2a`)** → **P4-B0
-  frontière de privilèges runtime (`000012` ACL, D-029.6) — PRÉREQUIS** → **P4-B
-  `download_logs` (renuméroté `000013`, implémenté `8cf24a8` mais BLOQUÉ)** ;
+  frontière de privilèges runtime (`000012` ACL, D-029.6) MERGÉ (PR #15 →
+  `6d23e546`)** → **P4-B `download_logs` (à renuméroter `000013`, implémenté
+  `8cf24a8` mais BLOQUÉ — à reprendre)** ;
   `licenses` exclu de P4. Une migration, une branche, une frontière de rollback par
   gate ; migration N+1 jamais créée avant merge du gate N. Détail dans le bloc P4 de
   `DigiTrove_Schema_BDD_v1.md`.
@@ -82,13 +83,15 @@ PUBLIC, double connexion Laravel (`pgsql` runtime + `pgsql_migration` migrateur)
 provisioning cluster par script idempotent
 (`docker/postgres/provision-runtime-roles.sql`) + migration ACL `000012`.
 
-**P4-B0 est IMPLÉMENTÉ — EN ATTENTE DE MERGE** (branche
-`p4-b0-postgresql-runtime-privileges`) : faisabilité prouvée avant tout code (la
-danse `SET LOCAL ROLE` donne la propriété de G5 à l'exécuteur sans CREATE
-permanent ; un trigger `SECURITY DEFINER` se déclenche même sans EXECUTE pour le
-rôle déclencheur, avec `session_user=runtime` / `current_user=executor`). Suite
-P4-B0 13/84 sous le vrai rôle restreint (tous les vecteurs de contournement
-refusés en 42501), suite complète 171/2385, Pint 117, CI durcie. **Trois pièges
+**P4-B0 est TERMINÉ ET MERGÉ** (PR #15 → `6d23e546`, parents `a3eac5e` +
+`9b69f192`) : frontière de privilèges PostgreSQL runtime active sur la stable.
+Faisabilité prouvée avant tout code (la danse `SET LOCAL ROLE` donne la propriété
+de G5 à l'exécuteur sans CREATE permanent ; un trigger `SECURITY DEFINER` se
+déclenche même sans EXECUTE pour le rôle déclencheur, avec `session_user=runtime`
+/ `current_user=executor`). Validation post-merge : provisioning idempotent,
+identités migration/runtime prouvées, 26 fonctions trigger sans EXECUTE runtime,
+suite P4-B0 13/84, suite complète 171/2385, Pint 117, 28 migrations, zéro résidu.
+**Trois pièges
 retenus pour P4-B** : un `REVOKE EXECUTE` par fonction doit venir du propriétaire ;
 l'exécuteur exige `SELECT` en plus de `UPDATE` ; pour les default privileges des
 FONCTIONS, la forme GLOBALE `ALTER DEFAULT PRIVILEGES FOR ROLE r REVOKE EXECUTE ON

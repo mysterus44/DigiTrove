@@ -12,7 +12,7 @@ SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
-P4 LIVRAISON        : █████████░  P4-A* mergés ; P4-B0 implémenté (PR en attente) ; P4-B BLOQUÉ jusqu'au merge de P4-B0
+P4 LIVRAISON        : █████████░  P4-A* + P4-B0 mergés (PR #15 → 6d23e546) ; P4-B BLOQUÉ (D-029.6), à reprendre
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
@@ -44,11 +44,14 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > `digitrove_runtime` / `digitrove_download_executor` + G5 `SECURITY DEFINER` +
 > vérification d'identité dans G2 + fermeture TEMP/CREATE/EXECUTE). P4-B sera
 > renuméroté `000013` après merge de la migration ACL P4-B0 `000012`.
-> **P4-B0 est désormais IMPLÉMENTÉ** sur `p4-b0-postgresql-runtime-privileges`
-> (migration ACL `000012`, script de provisioning cluster, double connexion,
-> harness dual-identité, CI durcie, 13 tests sous le vrai rôle runtime) et
-> **attend son merge**. Prochaine étape : merger P4-B0, PUIS rebaser/corriger
-> P4-B (renumérotation `000013` + G5 `SECURITY DEFINER`).
+> **P4-B0 est MERGÉ** via [PR #15](https://github.com/mysterus44/DigiTrove/pull/15)
+> (merge `6d23e546`, parents `a3eac5e` + `9b69f192`) : migration ACL `000012`,
+> provisioning cluster, double connexion, harness dual-identité, CI durcie, 13
+> tests sous le vrai rôle runtime. Validation post-merge : 28 migrations, P4-B0
+> 13/84, suite 171/2385, Pint 117, provisioning idempotent, identités
+> migration/runtime prouvées, zéro résidu. Prochaine étape : **reprendre P4-B**
+> (rebase, renumérotation `000013`, G5 `SECURITY DEFINER`, autorité `current_user`
+> dans G2).
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -364,7 +367,7 @@ route, job, listener) créée. P5 non démarré.
 | **P4-B** `p4-b-download-logs` (`8cf24a8`) — migration `000012` `download_logs` G5–G6 + modèle/factory/tests | ⚠️ IMPLÉMENTÉ (19/599, suite 177/2885, Pint 116) mais **BLOQUÉ AU MERGE** — audit offensif : autorité `pg_trigger_depth() > 1` de G2 contournable (trigger temporaire/permanent → +1 sans log). PR NON ouverte |
 | Audit offensif P4-B (sondes trigger temporaire/permanent, rôle superuser) | ✅ DONE — vulnérabilité confirmée ; verdict ANOMALIE ; option A renforcée validée |
 | Plan P4-B0 + décision D-029.6 (3 rôles PostgreSQL, G5 `SECURITY DEFINER`, identité effective dans G2, fermeture TEMP/CREATE/EXECUTE, double connexion, provisioning) | ✅ DONE — validé par KingKouda |
-| **P4-B0** `p4-b0-postgresql-runtime-privileges` — migration ACL `000012_harden_database_runtime_privileges` + `docker/postgres/provision-runtime-roles.sql` + `db:provision-runtime-roles` + double connexion + harness dual-identité + CI durcie | ✅ IMPLÉMENTÉ — **EN ATTENTE DE MERGE** ; **PRÉREQUIS AU MERGE DE P4-B** ; 13 tests / 84 assertions, suite complète 171/2385, Pint 117, 28 migrations, rollback ACL sans réouverture ; faisabilité G5 prouvée (SET LOCAL ROLE + trigger qui fire sans EXECUTE) |
+| **P4-B0** `p4-b0-postgresql-runtime-privileges` — migration ACL `000012_harden_database_runtime_privileges` + `docker/postgres/provision-runtime-roles.sql` + `db:provision-runtime-roles` + double connexion + harness dual-identité + CI durcie | ✅ **MERGÉ PR #15 → `6d23e546`** (parents `a3eac5e` + `9b69f192`) ; validation post-merge : 13 tests / 84 assertions, suite complète 171/2385, Pint 117, 28 migrations, provisioning idempotent, identités migration/runtime prouvées, 26 fonctions trigger sans EXECUTE runtime, défauts fonctions globaux (ns=0), rollback ACL sans réouverture, zéro résidu |
 | Findings P4-B0 (REVOKE EXECUTE réservé au propriétaire · exécuteur exige SELECT · default privileges FONCTIONS : forme GLOBALE efficace / `IN SCHEMA` inefficace, propre au rôle créateur → migrateur ET exécuteur) | ✅ DOCUMENTÉS + testés ; la migration applique les deux défauts globaux + REVOKE explicite sur l'existant ; P4-B devra `GRANT EXECUTE` sur G5 au migrateur pour attacher le trigger |
 | Listener IssueDownloadGrants (sur OrderPaid) | ⬜ TODO — après schéma P4 |
 | DownloadService (token haché, expiration, quota atomique) | ⬜ TODO — après schéma P4 |

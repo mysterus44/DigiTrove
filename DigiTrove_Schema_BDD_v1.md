@@ -900,8 +900,8 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --           digitrove_download_executor` comme preuve d'origine PRINCIPALE,
 --           `pg_trigger_depth()` restant secondaire. REVOKE TEMP/CREATE/EXECUTE
 --           à PUBLIC + default privileges TABLES/SEQUENCES.
---           ✅ IMPLÉMENTÉ — EN ATTENTE DE MERGE (branche
---           `p4-b0-postgresql-runtime-privileges`) ; PRÉREQUIS AU MERGE DE P4-B.
+--           ✅ MERGÉ PR #15 → `6d23e546` (parents `a3eac5e` + `9b69f192`).
+--           Frontière active sur la stable ; branche distante conservée.
 --           Faisabilité prouvée : la danse SET LOCAL ROLE donne la propriété de
 --           G5 à l'exécuteur sans lui laisser de CREATE permanent, et un trigger
 --           SECURITY DEFINER se déclenche même sans EXECUTE pour le rôle

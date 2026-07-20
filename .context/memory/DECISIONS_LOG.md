@@ -1565,5 +1565,30 @@ membership.
 reste **inchangée à `8cf24a8`** et sa PR ne s'ouvre pas avant le merge de P4-B0 ;
 elle devra ensuite être renumérotée `000013` et passer G5 en `SECURITY DEFINER`.
 
+**Clôture P4-B0 (2026-07-20) — `P4-B0 TERMINÉ ET MERGÉ`.** Mergé via
+[PR #15](https://github.com/mysterus44/DigiTrove/pull/15), merge
+`6d23e5462f9ee786b7e229f6962740be3e7da741` (deux parents : stable `a3eac5e` +
+P4-B0 `9b69f192`, sujet « Merge pull request #15 from
+mysterus44/p4-b0-postgresql-runtime-privileges »). Périmètre mergé audité
+(`a3eac5e..6d23e546`) : seule la migration `000012` ajoutée (`000001`–`000011`
+intactes), aucune table `download_logs`, aucun `000013`, aucun G5/G6 réel
+(`SECURITY DEFINER` en commentaires seulement, 0 `CREATE FUNCTION`/`CREATE
+TRIGGER`), aucun endpoint/service/streaming/P5, aucun secret. Validation
+post-merge sur PostgreSQL réel : provisioning `db:provision-runtime-roles`
+idempotent (rejoué 2×, aucun secret affiché) ; identités prouvées (migrations
+sous `digitrove`, requêtes métier sous `digitrove_runtime`) ; frontière runtime
+confirmée par introspection (TEMP/CREATE/CREATE FUNCTION/TRIGGER refusés, pas
+d'UPDATE table-level ni `downloads_count`, EXECUTE refusé sur les 26 fonctions
+trigger, `SET ROLE` refusé, membership unique `digitrove → executor` SET-only,
+défauts fonctions **globaux ns=0** pour migrateur ET exécuteur) ; 28 migrations ;
+suite P4-B0 **13/84** ; suite complète **171/2385** ; Pint **117** ; zéro base/rôle
+de sonde résiduel. Branche locale P4-B0 supprimée, distante conservée à `9b69f192`,
+`origin/main` toujours `11130f4`, P4-B toujours `8cf24a8`. **Prochaine étape :
+reprendre P4-B** (rebase sur la stable durcie, renumérotation `000013`, G5
+`SECURITY DEFINER` possédée par l'exécuteur avec `GRANT EXECUTE … TO digitrove`
+pour l'attachement du trigger, autorité `current_user = digitrove_download_executor`
+dans G2, `pg_trigger_depth()` en défense secondaire, tests de contournement sous
+runtime). Aucune décision nouvelle.
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]
