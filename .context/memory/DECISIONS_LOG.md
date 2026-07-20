@@ -1209,7 +1209,10 @@ jamais de lignes `download_logs` pour un token inconnu.
 OrderPaid, e-mail, route, contrôleur, service, streaming, endpoint public, P5 ou
 code fournisseur. Le choix header/cookie, la durée exacte de tentative/rétention,
 le rate limiting et la réconciliation sont des paramètres/gates applicatifs
-futurs, sans DEFAULT commercial BDD. **P4-B PLANIFIÉ — NON IMPLÉMENTÉ**.
+futurs, sans DEFAULT commercial BDD. **P4-B implémenté sur `p4-b-download-logs`
+(`8cf24a8`) mais BLOQUÉ AU MERGE** : l'audit offensif a prouvé que l'autorité
+`pg_trigger_depth() > 1` de G2 est contournable — voir **D-029.6** (gate préalable
+P4-B0, séparation de rôles + G5 `SECURITY DEFINER`).
 
 **Note d'exécution P4-A1** (aucune décision nouvelle) : implémenté sur
 `p4-a1-bundle-purchase-snapshots` (migration `000009`) conformément à D-029.3, puis
@@ -1248,44 +1251,6 @@ IMPACT : bloc P4 du schéma v1 réécrit (gates, G0 durci, table de préservatio
 rollbacks), PROGRESS_TRACKER, HANDOFF, CLAUDE.md. Prochaine implémentation :
 **P4-A0 uniquement** (aucun snapshot bundle, aucun grant, aucun log dans ce gate).
 
-**Note d'exécution P4-B** (aucune décision nouvelle) : implémenté sur
-`p4-b-download-logs` (unique migration `000012`) conformément à D-029.5.
-**P4-B IMPLÉMENTÉ — EN ATTENTE DE MERGE.** Livré : table `download_logs`
-(15 colonnes exactes, FK grant RESTRICT, 10 CHECK nommés stricts, uniques
-`public_id` + digest de tentative partiel, index grant/date, tentatives started
-et purge terminale, aucun prédicat `now()`, seul DEFAULT technique
-`created_at CURRENT_TIMESTAMP`) ; G5 `enforce_download_logs_integrity` /
-`download_logs_enforce_integrity_trigger` (BEFORE INSERT OR UPDATE) ; G6
-`enforce_download_logs_retention_delete` / `download_logs_retention_delete_trigger`
-(BEFORE DELETE) ; G2 remplacée EN PLACE (`CREATE OR REPLACE`, aucun trigger grant
-ajouté) : toutes les protections P4-A2.1 conservées, l'exact `+1` n'est accepté
-que depuis l'UPDATE imbriqué de G5 (`pg_trigger_depth() > 1`), tout UPDATE direct
-du compteur (SQL brut, Query Builder, Eloquent) est refusé. Atomicité prouvée :
-INSERT `started` et incrément commit/rollback ensemble ; verrous **Order puis
-Grant** ; refus direct `denied + quota_consumed=false` sans incrément ; INSERT
-`completed` direct impossible ; transitions terminales set-once ; quota jamais
-restitué (y compris après purge G6). **Précision d'implémentation signalée** :
-les timestamptz Laravel sont en précision 0 (secondes entières) — G5 fait donc
-progresser `updated_at` du grant via
-`GREATEST(clock_timestamp(), updated_at + interval '1 second')`, strictement
-croissant même pour plusieurs consommations dans la même seconde/transaction
-(le pas d'une microseconde de la formulation initiale était silencieusement
-arrondi par la colonne). Rollback `000012` : refusé en SQLSTATE 23514 si une
-ligne existe (aucun objet touché) ; table vide, G5/G6 et leurs triggers retirés,
-G2 restaurée OCTET POUR OCTET depuis `000011` (égalité `pg_get_functiondef`
-prouvée), P0–P3C et tout P4-A préservés. Adaptations historiques : compteur 28
-migrations (3 assertions), `download_logs` retiré de 12 assertions globales de
-tables futures, consommations directes des suites P4-A2/P4-A2.1 converties en
-refus attendus (la couverture quota/updated_at passe par G5 dans la suite P4-B) ;
-toutes les frontières de rollback ≤ `000011` conservent l'absence de
-`download_logs`. Validation : 28 migrations ; P4-B **19 tests / 599 assertions**
-(schéma, machine d'état, atomicité, G2 durci, tentative/Range/retries, HEAD hors
-BDD, bytes_sent, HMAC IP versionné, rétention, purge, concurrence à 2 connexions
-réelles — SQLSTATE observés 55P03/23505/23514 —, 2 rollbacks isolés) ; suite
-complète **177/2885** ; Pint **116** ; diff-check propre ; aucune base temporaire
-résiduelle ; aucun endpoint/route/contrôleur/service/listener/job/streaming/P5.
-PR en attente de merge.
-
 ---
 
 ## 🔶 EN ATTENTE DE VALIDATION PAR KINGKOUDA
@@ -1323,13 +1288,307 @@ PR en attente de merge.
    correction additive G2/G3 sans modifier `000010`, bénéficiaire null-safe,
    timestamp lié au cycle de vie, rollback exact ; 7/113, suite 158/2301, Pint 112.
    **D-029.5 finalise le plan P4-B** (`p4-b-download-logs`, migration `000012`,
-   `download_logs` + G5/G6) ; **P4-B IMPLÉMENTÉ — EN ATTENTE DE MERGE** (19/599,
-   suite 177/2885, Pint 116 — voir la note d'exécution P4-B). TTL grant (72 h),
+   `download_logs` + G5/G6) ; P4-B a été implémenté (`8cf24a8`) mais **BLOQUÉ au
+   merge** par la vulnérabilité d'autorité G2/G5 — **D-029.6** impose le gate
+   préalable **P4-B0** (séparation de rôles PostgreSQL + G5 `SECURITY DEFINER`)
+   avant tout merge P4-B. TTL grant (72 h),
   quota (5) et rétention logs (365 j) restent des recommandations de CONFIG
   APPLICATIVE (aucun default BDD, D-029.1-B) à fixer à la phase service. La phase
   licences reste une décision produit ouverte (liée à la question `usb` du legacy).
 
 ---
+
+### D-029.6 — Frontière de privilèges PostgreSQL runtime (gate P4-B0) ✅
+**Date** : 2026-07-19. **Statut** : PLAN FINALISÉ — NON IMPLÉMENTÉ. **P4-B BLOQUÉ**
+jusqu'au merge et à la validation de P4-B0.
+
+**Contexte — vulnérabilité prouvée.** L'implémentation P4-B (branche
+`p4-b-download-logs`, commit `8cf24a8`) faisait reposer l'autorité de consommation
+sur `pg_trigger_depth() > 1` dans G2. Un audit offensif (transactions réelles
+terminées par ROLLBACK, rôle `digitrove`) a prouvé que cette condition démontre
+seulement l'imbrication, jamais l'origine :
+
+| Vecteur | Profondeur du UPDATE | `downloads_count` | `download_logs` | Résultat |
+|---|---:|---:|---:|---|
+| UPDATE direct | 1 | 0 → 0 | 0 | refusé 23514 |
+| trigger TEMP BEFORE INSERT | 2 | 0 → 1 | 0 | **contournement** |
+| trigger TEMP AFTER INSERT | 2 | 0 → 1 | 0 | **contournement** |
+| trigger PERMANENT sur `products` | 2 | 0 → 1 | 0 | **contournement** |
+| G5 légitime (INSERT started) | 2 | 0 → 1 | 1 | conforme |
+
+L'invariant « aucun incrément sans DownloadLog consommant atomique » est donc
+contournable par tout contexte de trigger imbriqué. Le setup actuel aggrave le
+risque : le rôle **unique** `digitrove` est **superuser** (rolsuper=t, confirmé),
+propriétaire de toutes les tables/fonctions, et sert simultanément de migrateur,
+de runtime et d'identité de test (`config/database.php` connexion `pgsql`,
+`phpunit.xml`, CI `ci.yml`, `PhaseMigrationHarness`).
+
+**ACL par défaut PostgreSQL 16.14 (mesurées, rôle non privilégié frais)** :
+`TEMP = accordé via PUBLIC` (datacl NULL) — c'est le vecteur du trigger temporaire ;
+`CREATE ON SCHEMA public = refusé` (défaut durci PG15+, `public` appartient à
+`pg_database_owner`) ; `USAGE ON public = accordé` ; `EXECUTE` sur toute fonction
+`= accordé à PUBLIC` par défaut ; `UPDATE` de table `= refusé` sans grant explicite.
+Point durci confirmé : `REVOKE TEMPORARY ON DATABASE … FROM PUBLIC` ramène TEMP à
+refusé. Un privilège `UPDATE` accordé au niveau **table** annulerait toute
+révocation par colonne — donc le runtime ne doit jamais recevoir d'UPDATE table.
+
+**Décision humaine (KingKouda)** : **Option A renforcée** — séparation de rôles
+PostgreSQL + G5 `SECURITY DEFINER`, dans un gate BDD **préalable P4-B0** mergé
+AVANT P4-B. Options B (invariant compteur ≡ nombre de logs) et C (fonction de
+consommation unique API) écartées : B est incompatible avec la purge G6 sans
+nouveau ledger durable, C impose une refonte plus large du plan D-029.5.
+
+**Trois rôles PostgreSQL cibles.**
+1. `digitrove` — **migrateur/propriétaire** : exécute les migrations, possède les
+   objets, applique GRANT/REVOKE, attribue la propriété de G5 à l'exécuteur. **Ne
+   sert plus d'identité runtime.** En production, PAS superuser ; en local, droits
+   administratifs tolérés uniquement pour les migrations/harness, jamais comme
+   runtime.
+2. `digitrove_runtime` — **runtime** : `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+   NOREPLICATION NOBYPASSRLS`, aucun membership vers `digitrove` ni l'exécuteur,
+   aucune propriété d'objet, aucun DDL, aucun TRIGGER, **aucun TEMP**, **aucun
+   UPDATE table-level sur `download_grants`**, **aucun privilège sur
+   `download_grants.downloads_count`**. Identité de l'app web, des workers, des
+   commandes métier et des sondes d'autorisation.
+3. `digitrove_download_executor` — **exécuteur G5** : `NOLOGIN NOSUPERUSER
+   NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`, non accordé au runtime,
+   propriétaire de G5 uniquement, privilèges minimaux (SELECT orders/download_grants/
+   product_files + UPDATE des seules colonnes `download_grants.downloads_count` et
+   `updated_at`). Ne possède aucune table.
+
+**Propriété non forgeable de G5.** G5 devient `SECURITY DEFINER`, **propriétaire =
+`digitrove_download_executor`**, avec `search_path` épinglé
+`pg_catalog, public, pg_temp` (pg_temp en dernier ; `public` non inscriptible par
+le runtime, confirmé) et **tous les objets qualifiés par schéma** (`public.orders`,
+`public.download_grants`, `public.download_logs`, `public.product_files`, plus audit
+opérateurs/casts/types/séquences). La preuve d'origine principale n'est plus la
+profondeur mais **l'identité effective** : sous G5 `SECURITY DEFINER`,
+`current_user = digitrove_download_executor`; G2 exige désormais
+`current_user = 'digitrove_download_executor'` pour autoriser l'incrément, condition
+qu'un trigger forgé (exécuté sous `digitrove_runtime`, SECURITY INVOKER) ne peut
+satisfaire. `pg_trigger_depth() > 1` **reste une défense secondaire**, jamais la
+preuve principale. Le runtime ne peut ni forger de fonction (ni TEMP ni CREATE
+public), ni exécuter/rattacher G5 (EXECUTE révoqué), ni devenir l'exécuteur
+(pas de membership), ni obtenir l'UPDATE du compteur.
+
+**Fermeture des ACL implicites** (traitées explicitement, dans la même transaction
+que les créations/remplacements) : `REVOKE TEMPORARY ON DATABASE <db> FROM PUBLIC` ;
+`REVOKE CREATE ON SCHEMA public FROM PUBLIC` (défense en profondeur — déjà refusé
+en PG16, mais versionné) ; `REVOKE ALL ON FUNCTION … FROM PUBLIC` et `FROM
+digitrove_runtime` pour G5 (audit de G0/S1–S3/G1–G6) ; `ALTER DEFAULT PRIVILEGES …
+REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` pour les fonctions futures ; aucun
+privilège `TRIGGER` au runtime ; runtime non propriétaire de la base et non membre
+de `pg_database_owner` (sinon CREATE sur public réapparaît).
+
+**Matrice de privilèges runtime (colonnes).** `download_grants` : SELECT ; UPDATE
+**uniquement** sur les colonnes réellement mutées par le runtime (à confirmer sur
+le code réel : `revoked_at`, `revoked_reason_code`, `updated_at` pour la révocation
+support/refund) ; **JAMAIS** `downloads_count`, `max_downloads`, `token_hash`,
+`order_item_id`, `product_file_id`, `user_id`, `expires_at`, `created_at`,
+`public_id` ; aucun UPDATE table-level. `download_logs` : SELECT + INSERT + UPDATE
+(transitions autorisées par G5) + DELETE (purge contrôlée par G6) — G5/G6 restent
+les autorités ; aucun de ces droits n'atteint le compteur du grant. Séquences
+associées accordées au strict nécessaire. Jamais de `ALL` au runtime.
+
+**Double connexion Laravel.** Connexion par défaut `pgsql` = identité `runtime`
+(app, workers, commandes, sondes) ; connexion `pgsql_migration` = identité
+`migrateur` (migrations, provisioning contrôlé, `PhaseMigrationHarness`, tâches
+admin). Variables d'environnement : `DB_USERNAME`/`DB_PASSWORD` (runtime) +
+`DB_MIGRATION_USERNAME`/`DB_MIGRATION_PASSWORD` (migrateur) — **aucun secret dans
+Git**, valeurs en `.env`/secrets CI seulement ; l'exécuteur est NOLOGIN (aucun mot
+de passe). `php artisan migrate` cible explicitement `pgsql_migration`. Asymétrie
+assumée et documentée pour les tests : la connexion de migration/schéma des tests
+reste le migrateur (pour que `RefreshDatabase` puisse migrer et préserver les
+suites vertes existantes), tandis que le nouveau **suite P4-B0 et les tests de
+frontière de consommation P4-B ouvrent explicitement une connexion `pgsql_runtime`**
+pour prouver le refus ; un test d'autorisation ne doit jamais passer sous le
+propriétaire (garde-fou d'audit + assertion CI que le runtime est non-superuser).
+
+**Provisioning — deux vecteurs (recommandation argumentée).** (1) **Rôles
+cluster-level** (`CREATE ROLE … LOGIN PASSWORD` / `NOLOGIN`) → **script SQL
+versionné idempotent** (candidat `docker/postgres/provision-runtime-roles.sql`),
+exécuté par un administrateur : les rôles sont cluster-globaux, ne peuvent pas
+vivre dans une migration Laravel par-base sans embarquer de mot de passe dans Git,
+et `/docker-entrypoint-initdb.d` ne s'exécute qu'à l'initialisation initiale du
+volume — le plan prévoit donc aussi une commande de re-provisioning explicite et
+idempotente (`CREATE ROLE … IF NOT EXISTS` via bloc `DO`) pour les volumes
+existants, sans supprimer de données. (2) **ACL d'objets** (REVOKE TEMP/CREATE/
+EXECUTE, GRANT colonnes, ALTER DEFAULT PRIVILEGES, propriété/SECURITY DEFINER de
+G5) → **migration Laravel dédiée**, afin que `migrate:fresh` les reproduise dans
+toutes les bases (tests, CI, bases temporaires du harness, prod) et qu'elles soient
+versionnées avec le schéma. `REVOKE TEMPORARY … FROM PUBLIC` s'écrit sur
+`current_database()` via `EXECUTE format('… %I …', current_database())`.
+
+**Impact numérotation.** P4-B0 nécessite une migration ACL réservée
+`2026_07_14_000012_harden_database_runtime_privileges.php` ; l'implémentation P4-B
+non mergée (`download_logs`, actuellement `000012`) sera **renumérotée en
+`000013_create_download_logs_table.php`** au moment de son rebasage sur la stable
+durcie, et son G5 passera en `SECURITY DEFINER` (propriétaire exécuteur, search_path
+épinglé) avec l'ajout de la vérification d'identité dans G2. **Aucune renumérotation
+n'est effectuée dans cette décision** (documentaire). La branche `8cf24a8` reste
+inchangée.
+
+**Docker, CI, harness, production.** Docker : provisionner les deux rôles (script +
+re-provisioning idempotent), aucun mot de passe en clair dans Git, fonctionner sur
+base fraîche ET existante, ne pas dépendre du seul entrypoint init. CI : démarrer
+Postgres → provisionner les 3 rôles → migrer avec le migrateur → exécuter app et
+sondes de sécurité **sous le runtime** → asserter runtime non-superuser + ACL +
+**rejouer la sonde du trigger temporaire et obtenir un refus** → tests de rollback
+sous les bons rôles ; les tests P4-B ne valent plus s'ils tournent seulement en
+superuser. Harness : provisionner/hériter les rôles cluster, migrer sous migrateur,
+exposer un `runtimePdo()` pour les sondes, nettoyer intégralement, ne jamais masquer
+un défaut d'ACL en superuser. Production : déploiement sans interruption (backup +
+audit ACL → création runtime → création exécuteur NOLOGIN → REVOKE/GRANT → double
+connexion → migration migrateur → bascule app vers runtime → sondes santé →
+vérifier que l'app n'utilise plus `digitrove` → puis P4-B) ; rollback opérationnel
+qui ne redonne jamais SUPERUSER/TEMP/CREATE, ne restaure la connexion migrateur que
+sous action explicite d'un opérateur, et conserve les données.
+
+**Threat model (synthèse)** : runtime compromis (ne détient ni UPDATE compteur ni
+identité exécuteur) ; credentials migrateur compromis (surface réduite, hors
+runtime) ; membership accidentel vers migrateur/exécuteur (interdit, testé) ; TEMP/
+CREATE/EXECUTE réaccordés à PUBLIC (revoke versionné + ALTER DEFAULT PRIVILEGES +
+assertion CI) ; SECURITY DEFINER à search_path vulnérable (épinglé + objets
+qualifiés + public non inscriptible) ; rattachement/forge de G5 (EXECUTE révoqué,
+pas de CREATE/TEMP) ; UPDATE table-level réintroduit (interdit, testé) ; CI/harness
+en superuser masquant le défaut (sondes obligatoires sous runtime) ; restauration
+perdant les ACL (ACL en migration reproduite par migrate:fresh). Chaque menace a
+prévention + détection + test + risque résiduel + gate responsable dans le bloc P4
+du schéma v1.
+
+**Statut** : `P4-B0 PLANIFIÉ — PRÉREQUIS AU MERGE DE P4-B` ;
+`P4-B BLOQUÉ — AUTORITÉ G2/G5 NON ENCORE CORRIGÉE`. Aucun code, rôle, privilège,
+migration, script, branche ou test P4-B0 créé dans cette décision.
+
+**Note d'exécution P4-B0** (aucune décision nouvelle) : implémenté sur
+`p4-b0-postgresql-runtime-privileges` conformément à D-029.6.
+**P4-B0 IMPLÉMENTÉ — EN ATTENTE DE MERGE.**
+
+*Gate de faisabilité (prouvé avant tout code, base temporaire nettoyée, migrateur
+non-superuser `rolsuper=f` propriétaire de la base)* : la danse de propriété de G5
+fonctionne — `GRANT CREATE ON SCHEMA public TO <executor>` temporaire →
+`SET LOCAL ROLE <executor>` → `CREATE FUNCTION … SECURITY DEFINER` → `RESET ROLE`
+→ `REVOKE CREATE`, en une transaction, l'exécuteur ne conservant **aucun** CREATE
+permanent. Et un trigger `SECURITY DEFINER` **se déclenche même quand le rôle
+déclencheur n'a pas EXECUTE** sur la fonction : à l'intérieur,
+`session_user = digitrove_runtime` et `current_user = digitrove_download_executor`
+— c'est la preuve d'origine non forgeable sur laquelle G2 s'appuiera en P4-B.
+
+*Trois findings d'implémentation qui changent le contrat* :
+1. **Le `REVOKE EXECUTE … FROM PUBLIC` doit être exécuté par le PROPRIÉTAIRE de la
+   fonction** ; fait par le migrateur non-propriétaire, c'est un no-op silencieux
+   (`WARNING: no privileges could be revoked`). Le lockdown de G5 se fera donc
+   dans la danse, sous l'identité exécuteur.
+2. **L'exécuteur a besoin de `SELECT` en plus de `UPDATE`** : `SET downloads_count
+   = downloads_count + 1` *lit* la colonne. Matrice retenue : SELECT sur `orders`,
+   `order_items`, `download_grants`, `product_files` + UPDATE des seules colonnes
+   `downloads_count` et `updated_at`.
+3. **`ALTER DEFAULT PRIVILEGES … REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` — forme
+   globale vs `IN SCHEMA`** (mesuré sur PostgreSQL 16.14, migrateur non-superuser) :
+   - la **forme GLOBALE** (sans `IN SCHEMA`) FONCTIONNE : elle enregistre une
+     entrée `pg_default_acl` de type `f` à `defaclnamespace = 0` et une nouvelle
+     fonction naît avec `proacl = {owner=X/owner}` — **PUBLIC n'a pas EXECUTE, sans
+     aucun REVOKE explicite** ;
+   - la forme **`IN SCHEMA public`** ne peut PAS retirer le privilège intégré
+     global : elle n'enregistre AUCUNE entrée `pg_default_acl` (elle ne sait
+     qu'annuler un GRANT par défaut ajouté au niveau schéma), et la fonction
+     conserve `=X` (EXECUTE PUBLIC). C'était la cause de l'observation initiale
+     erronée (la migration utilisait par erreur `IN SCHEMA public`) ;
+   - les défauts s'appliquent au **rôle qui crée réellement** l'objet, sans
+     héritage depuis ses memberships → l'exécuteur (créateur de G5) doit avoir SON
+     PROPRE défaut global. Un migrateur non-superuser ne peut pas fixer le défaut
+     d'un autre rôle directement (`permission denied`) : il passe par
+     `SET ROLE digitrove_download_executor` (le chemin SET provisionné) ;
+   - les **fonctions existantes** (créées avant `000012`) ne sont pas couvertes par
+     un défaut : elles restent protégées par la **boucle de REVOKE explicite** sur
+     chaque fonction trigger, exécutée par leur propriétaire.
+   La migration `000012` applique donc les DEUX défauts globaux (migrateur +
+   exécuteur via SET ROLE) ET la boucle de REVOKE sur l'existant. **Conséquence
+   pour P4-B** : une fois PUBLIC privé d'EXECUTE à la naissance, un migrateur
+   non-superuser qui attache un trigger à G5 doit recevoir `GRANT EXECUTE` explicite
+   sur G5 (le trigger sinon échoue `permission denied`) — pattern prouvé par le
+   test P4-B0. Des tests épinglent la forme globale (migrateur ET exécuteur) et la
+   présence des deux entrées `pg_default_acl` à `namespace = 0`.
+
+*Livré* : script cluster idempotent `docker/postgres/provision-runtime-roles.sql`
+(mot de passe injecté par GUC de session paramétré, jamais en clair ni en
+argument), commande `php artisan db:provision-runtime-roles`, migration ACL
+`2026_07_14_000012_harden_database_runtime_privileges.php` fail-closed (refuse si
+les rôles manquent, ont des attributs dangereux, si le runtime est membre du
+migrateur/exécuteur ou si le migrateur n'a pas le chemin SET). ACL appliquées :
+`REVOKE TEMPORARY … FROM PUBLIC` + runtime + exécuteur, `REVOKE CREATE ON SCHEMA
+public` idem, USAGE/CONNECT explicites, DML runtime en verbes explicites (jamais
+`ALL`), `REVOKE UPDATE`/`DELETE` table-level sur `download_grants` puis
+`GRANT UPDATE (revoked_at, revoked_reason_code, updated_at)` seulement, grants
+minimaux de l'exécuteur, REVOKE EXECUTE sur **toutes les fonctions trigger** de
+`public` (extensions comme citext épargnées), et default privileges TABLES/
+SEQUENCES pour couvrir `download_logs` en P4-B. **`down()` fail-closed** : retire
+les grants runtime/exécuteur mais **ne réouvre jamais** TEMP/CREATE/EXECUTE à
+PUBLIC, ne supprime aucun rôle ni donnée.
+
+*Double connexion* : `pgsql` = `digitrove_runtime` (app, workers, suite métier),
+`pgsql_migration` = `digitrove` (migrations, provisioning, harness) ;
+`DB_MIGRATION_USERNAME`/`DB_MIGRATION_PASSWORD` ; aucun secret dans Git.
+
+*Identité d'exécution des tests* : la suite métier tourne réellement sous
+`digitrove_runtime` (`session_user`/`current_user` asserté), les migrations sous
+le propriétaire via le trait `RefreshesDatabaseAsMigrator`. Exception assumée et
+documentée : **P4-A2 et P4-A2.1 tournent sous le propriétaire**
+(`RefreshesDatabaseAsOwner`), car leurs sondes mutent des colonnes que le runtime
+ne peut pas atteindre par conception (`downloads_count`, `user_id`, suppression
+physique) — sous runtime l'ACL répondrait 42501 *avant* que les triggers G1–G4
+puissent répondre 23514, faisant perdre la couverture de la logique trigger. La
+preuve complémentaire que le runtime est bien refusé sur ces mêmes opérations vit
+dans la suite P4-B0, sous le vrai rôle restreint : aucune des deux couches n'est
+validée par le seul superuser. Les fixtures de bases temporaires du harness
+utilisent l'identité propriétaire, et `PhaseMigrationHarness` expose désormais
+`runtimePdo()` pour les sondes de frontière.
+
+*Validation réelle* : 28 migrations ; suite P4-B0 **13 tests / 84 assertions**
+(rôles et memberships, identité runtime effective, TEMP/CREATE/SCHEMA/FUNCTION
+refusés, `SET ROLE` refusé, EXECUTE retiré mais triggers existants qui se
+déclenchent quand même, matrice de colonnes `download_grants`, **tous les vecteurs
+de contournement historiques rejoués sous runtime et refusés en 42501 sans le
+moindre incrément**, Query Builder/Eloquent refusés, chemin `SECURITY DEFINER`
+prouvé en base isolée, **défauts globaux prouvés : toute fonction future (créée
+par le migrateur OU l'exécuteur) naît sans EXECUTE PUBLIC**, propagation des grants
+aux tables futures, rollback ACL sans réouverture — y compris fail-closed sur les
+défauts de fonctions) ; suite complète **171 tests / 2385 assertions** ; Pint **117
+fichiers** ; aucune base temporaire résiduelle. CI durcie : création de la base de
+test, provisioning des rôles, puis une étape d'assertion de frontière qui échoue
+si le runtime redevient superuser, récupère TEMP/CREATE, un UPDATE table-level,
+l'écriture de `downloads_count`, l'EXECUTE des fonctions protégées ou un
+membership.
+
+*Limites* : aucune table `download_logs`, aucune fonction G5/G6, aucune migration
+`000013`, aucun endpoint/route/contrôleur/service/streaming/P5. La branche P4-B
+reste **inchangée à `8cf24a8`** et sa PR ne s'ouvre pas avant le merge de P4-B0 ;
+elle devra ensuite être renumérotée `000013` et passer G5 en `SECURITY DEFINER`.
+
+**Clôture P4-B0 (2026-07-20) — `P4-B0 TERMINÉ ET MERGÉ`.** Mergé via
+[PR #15](https://github.com/mysterus44/DigiTrove/pull/15), merge
+`6d23e5462f9ee786b7e229f6962740be3e7da741` (deux parents : stable `a3eac5e` +
+P4-B0 `9b69f192`, sujet « Merge pull request #15 from
+mysterus44/p4-b0-postgresql-runtime-privileges »). Périmètre mergé audité
+(`a3eac5e..6d23e546`) : seule la migration `000012` ajoutée (`000001`–`000011`
+intactes), aucune table `download_logs`, aucun `000013`, aucun G5/G6 réel
+(`SECURITY DEFINER` en commentaires seulement, 0 `CREATE FUNCTION`/`CREATE
+TRIGGER`), aucun endpoint/service/streaming/P5, aucun secret. Validation
+post-merge sur PostgreSQL réel : provisioning `db:provision-runtime-roles`
+idempotent (rejoué 2×, aucun secret affiché) ; identités prouvées (migrations
+sous `digitrove`, requêtes métier sous `digitrove_runtime`) ; frontière runtime
+confirmée par introspection (TEMP/CREATE/CREATE FUNCTION/TRIGGER refusés, pas
+d'UPDATE table-level ni `downloads_count`, EXECUTE refusé sur les 26 fonctions
+trigger, `SET ROLE` refusé, membership unique `digitrove → executor` SET-only,
+défauts fonctions **globaux ns=0** pour migrateur ET exécuteur) ; 28 migrations ;
+suite P4-B0 **13/84** ; suite complète **171/2385** ; Pint **117** ; zéro base/rôle
+de sonde résiduel. Branche locale P4-B0 supprimée, distante conservée à `9b69f192`,
+`origin/main` toujours `11130f4`, P4-B toujours `8cf24a8`. **Prochaine étape :
+reprendre P4-B** (rebase sur la stable durcie, renumérotation `000013`, G5
+`SECURITY DEFINER` possédée par l'exécuteur avec `GRANT EXECUTE … TO digitrove`
+pour l'attachement du trigger, autorité `current_user = digitrove_download_executor`
+dans G2, `pg_trigger_depth()` en défense secondaire, tests de contournement sous
+runtime). Aucune décision nouvelle.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

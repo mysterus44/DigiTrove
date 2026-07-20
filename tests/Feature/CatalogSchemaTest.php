@@ -7,11 +7,11 @@ use App\Models\Product;
 use App\Models\ProductFile;
 use App\Models\ProductPrice;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
+use Tests\Concerns\RefreshesDatabaseAsMigrator as RefreshDatabase;
 
 uses(RefreshDatabase::class);
 

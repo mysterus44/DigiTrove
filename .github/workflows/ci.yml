@@ -56,11 +56,67 @@ jobs:
           cp .env.example .env
           php artisan key:generate --ansi
 
+      # P4-B0 (D-029.6): the test database and the two cluster roles must exist
+      # before migrations run, because migration 000012 is fail-closed on them.
+      - name: Create the test database
+        env:
+          PGPASSWORD: digitrove_local
+        run: psql -h 127.0.0.1 -U digitrove -d digitrove -c 'CREATE DATABASE digitrove_testing'
+
+      - name: Provision the runtime privilege boundary roles
+        env:
+          PGPASSWORD: digitrove_local
+          RUNTIME_PASSWORD: digitrove_runtime_local
+        run: |
+          psql -h 127.0.0.1 -U digitrove -d digitrove_testing -v ON_ERROR_STOP=1 \
+            -c "SET digitrove.runtime_password TO '$RUNTIME_PASSWORD'" \
+            -f docker/postgres/provision-runtime-roles.sql
+
       - name: Syntax check
         run: git ls-files '*.php' | xargs -n 1 php -l
 
       - name: Pint
         run: ./vendor/bin/pint --test
 
+      # Migrations run as the owner; the suite itself runs as the restricted
+      # runtime role (phpunit.xml pins both identities).
       - name: Tests
         run: php artisan test
+
+      # Fail the build if the boundary ever regresses, independently of the suite:
+      # a security gate must never be validated by the superuser alone.
+      - name: Assert the runtime privilege boundary
+        env:
+          PGPASSWORD: digitrove_local
+        run: |
+          psql -h 127.0.0.1 -U digitrove -d digitrove_testing -v ON_ERROR_STOP=1 -c "
+            DO \$\$
+            BEGIN
+              IF (SELECT rolsuper FROM pg_roles WHERE rolname = 'digitrove_runtime') THEN
+                RAISE EXCEPTION 'digitrove_runtime must not be superuser';
+              END IF;
+              IF has_database_privilege('digitrove_runtime', current_database(), 'TEMP') THEN
+                RAISE EXCEPTION 'digitrove_runtime must not hold TEMP';
+              END IF;
+              IF has_schema_privilege('digitrove_runtime', 'public', 'CREATE') THEN
+                RAISE EXCEPTION 'digitrove_runtime must not hold CREATE on public';
+              END IF;
+              IF has_table_privilege('digitrove_runtime', 'download_grants', 'UPDATE') THEN
+                RAISE EXCEPTION 'digitrove_runtime must not hold table-level UPDATE on download_grants';
+              END IF;
+              IF has_column_privilege('digitrove_runtime', 'download_grants', 'downloads_count', 'UPDATE') THEN
+                RAISE EXCEPTION 'digitrove_runtime must not be able to write downloads_count';
+              END IF;
+              IF has_function_privilege('digitrove_runtime', 'public.enforce_download_grants_immutability()', 'EXECUTE') THEN
+                RAISE EXCEPTION 'digitrove_runtime must not hold EXECUTE on the protected trigger functions';
+              END IF;
+              IF EXISTS (
+                SELECT 1 FROM pg_auth_members m
+                JOIN pg_roles member ON member.oid = m.member
+                WHERE member.rolname = 'digitrove_runtime'
+              ) THEN
+                RAISE EXCEPTION 'digitrove_runtime must not be a member of any role';
+              END IF;
+            END
+            \$\$;
+          "

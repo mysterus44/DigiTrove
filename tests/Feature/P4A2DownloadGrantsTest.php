@@ -11,10 +11,10 @@ use App\Models\ProductFile;
 use App\Models\Refund;
 use App\Models\User;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Tests\Concerns\RefreshesDatabaseAsOwner as RefreshDatabase;
 use Tests\Support\PhaseMigrationHarness;
 
 uses(RefreshDatabase::class);
@@ -722,7 +722,7 @@ it('requires every active grant to belong to a deliverable order at commit', fun
 
 it('serialises issuance against a concurrent refund through the order lock', function () {
     $harness = new PhaseMigrationHarness('digitrove_p4a2_concurrency_'.strtolower(Str::random(10)));
-    $connection = config('database.connections.pgsql');
+    $connection = config('database.connections.pgsql_migration');
     $dsn = sprintf('pgsql:host=%s;port=%s;dbname=%s', $connection['host'], $connection['port'] ?? 5432, $harness->databaseName());
 
     $issuer = null;

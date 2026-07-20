@@ -887,18 +887,48 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --           G3 : bénéficiaire null-safe strict avec orders.user_id ; G2 :
 --           updated_at avance uniquement avec consommation/révocation ; 4 fonctions
 --           / 5 triggers inchangés ; rollback restaure exactement G2/G3 de 000010.
---   P4-B  — Download Logs ✅ IMPLÉMENTÉ — EN ATTENTE DE MERGE
---           branche `p4-b-download-logs`
---           migration `2026_07_14_000012_create_download_logs_table.php`
---           frontière harness `000012` (down() ne retire que les logs, refuse
---           en 23514 si une ligne existe, restaure G2 `000011` à l'identique ;
---           tout P4-A préservé). Conforme D-029.5 (1A/2A/3A + R1A/R2A/R3A) :
---           15 colonnes, G5/G6 (2 fonctions / 2 triggers), G2 remplacée en place
---           (consommation acceptée uniquement depuis G5, `pg_trigger_depth() > 1`).
---           19 tests / 599 assertions ; suite 177/2885 ; PR en attente de merge.
+--   P4-B0 — Frontière de privilèges PostgreSQL runtime (gate préalable, D-029.6)
+--           migration ACL réservée
+--           `2026_07_14_000012_harden_database_runtime_privileges.php`
+--           + script cluster `docker/postgres/provision-runtime-roles.sql`.
+--           Trois rôles : `digitrove` (migrateur/propriétaire, plus runtime),
+--           `digitrove_runtime` (LOGIN restreint, sans TEMP/DDL/TRIGGER, sans
+--           UPDATE table-level ni colonne `downloads_count`),
+--           `digitrove_download_executor` (NOLOGIN, propriétaire de G5).
+--           G5 devient `SECURITY DEFINER` (propriétaire exécuteur, search_path
+--           épinglé, objets qualifiés) ; G2 vérifie `current_user =
+--           digitrove_download_executor` comme preuve d'origine PRINCIPALE,
+--           `pg_trigger_depth()` restant secondaire. REVOKE TEMP/CREATE/EXECUTE
+--           à PUBLIC + default privileges TABLES/SEQUENCES.
+--           ✅ MERGÉ PR #15 → `6d23e546` (parents `a3eac5e` + `9b69f192`).
+--           Frontière active sur la stable ; branche distante conservée.
+--           Faisabilité prouvée : la danse SET LOCAL ROLE donne la propriété de
+--           G5 à l'exécuteur sans lui laisser de CREATE permanent, et un trigger
+--           SECURITY DEFINER se déclenche même sans EXECUTE pour le rôle
+--           déclencheur (session_user=runtime, current_user=executor).
+--           Attention (PG 16.14) : la FORME GLOBALE `ALTER DEFAULT PRIVILEGES
+--           FOR ROLE r REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` fonctionne et fait
+--           naître les fonctions futures sans EXECUTE PUBLIC ; la forme
+--           `IN SCHEMA public` ne retire PAS le privilège intégré global. Les
+--           défauts suivent le rôle créateur (pas d'héritage) → migrateur ET
+--           exécuteur (via SET ROLE) reçoivent chacun le leur ; les fonctions
+--           existantes gardent un REVOKE explicite. 13 tests / 84 assertions ;
+--           suite 171/2385 ; Pint 117.
+--   P4-B  — Download Logs
+--           branche `p4-b-download-logs` (commit `8cf24a8`)
+--           migration ACTUELLE `2026_07_14_000012_create_download_logs_table.php`,
+--           à RENUMÉROTER en `000013_create_download_logs_table.php` après le
+--           gate P4-B0 (frontière harness `000013`).
+--           ⚠️ IMPLÉMENTÉ mais **BLOQUÉ AU MERGE** (D-029.6) : l'autorité de
+--           consommation `pg_trigger_depth() > 1` de G2 est contournable par un
+--           trigger temporaire ou permanent (prouvé). Le rebasage sur la stable
+--           durcie exige : G5 `SECURITY DEFINER` (propriétaire exécuteur), G2
+--           vérifiant l'identité effective, et les tests de contournement sous
+--           `digitrove_runtime` refusés.
 -- Ordre des merges OBLIGATOIRE : `000009` ne se crée qu'après merge de `000008`,
--- `000010` après `000009`, le hotfix `000011` après `000010`, puis `000012`
--- seulement après merge/clôture du hotfix.
+-- `000010` après `000009`, le hotfix `000011` après `000010`, puis **P4-B0
+-- `000012` (ACL) avant P4-B**, et enfin P4-B renuméroté `000013` seulement après
+-- merge du gate P4-B0.
 -- Responsabilités : A0 = référence de contenu historiquement stable ;
 -- A1 = composition de bundle achetée indépendante du pivot mutable courant ;
 -- A2/A2.1 = grant, quota structurel, expiration, révocation et intégrité G1-G4 ;
@@ -1102,13 +1132,9 @@ CREATE INDEX download_grants_active_expiry_index   ON download_grants (expires_a
 -- Validation post-merge : 27 migrations ; P4-A2.1 7/113 ; suite 158/2301 ;
 -- Pint 112 ; rollback isolé vert ; 4 fonctions / 5 triggers et G4 différé intacts.
 
--- P4-B — JOURNAL DE CONSOMMATION (D-029.5 ; migration `000012`).
--- STATUT : P4-B IMPLÉMENTÉ — EN ATTENTE DE MERGE (branche `p4-b-download-logs`).
--- Ce bloc est le contrat exact de la migration livrée ; les objets décrits sont
--- installés par `000012`. Précision physique : les timestamptz Laravel sont en
--- précision 0 (secondes entières) — G5 fait donc avancer `updated_at` du grant
--- d'au moins une seconde entière par consommation (strictement croissant même
--- pour plusieurs consommations dans la même seconde ou la même transaction).
+-- P4-B — JOURNAL DE CONSOMMATION (D-029.5 ; migration future `000012`).
+-- STATUT : P4-B PLANIFIÉ — NON IMPLÉMENTÉ. Ce bloc est le contrat exact de la
+-- prochaine migration, pas la description d'objets déjà présents.
 -- Décisions : 1A consommation à `started` ; 2A rétention NOT NULL explicite ;
 -- 3A HMAC IP versionné ; R1A une tentative authentifiée regroupe Range/retries ;
 -- R2A HEAD ne consomme rien et ne journalise rien ; R3A `completed` signifie
@@ -1781,9 +1807,8 @@ Ordre technique des migrations à respecter avant P1 :
 4. P4 en gates isolés, mergés dans l'ordre (D-029.2 + correctif P4-A2.1) : P4-A0 durcissement
    `product_files` (`000008`) → P4-A1 snapshot `order_item_bundle_components`
    (`000009`) → P4-A2 `download_grants` (`000010`) → P4-A2.1 hardening G2/G3
-   (`000011`, mergé PR #14) → P4-B `download_logs` (`000012`) — **implémenté
-   conformément à D-029.5 (1A/2A/3A + R1A/R2A/R3A) sur `p4-b-download-logs`,
-   EN ATTENTE DE MERGE**
+   (`000011`, mergé PR #14) → P4-B `download_logs` (`000012`) — **plan D-029.5
+   finalisé (1A/2A/3A + R1A/R2A/R3A), non migré et non implémenté**
 5. `events` partitionnée + rollups (analytique)
 6. `campaigns` + `customer_segments` (marketing)
 7. Affiliation dédiée (`affiliate_profiles`, `affiliate_links`, `referrals`,

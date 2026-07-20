@@ -7,10 +7,10 @@ use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Product;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Tests\Concerns\RefreshesDatabaseAsMigrator as RefreshDatabase;
 use Tests\Support\PhaseMigrationHarness;
 
 uses(RefreshDatabase::class);

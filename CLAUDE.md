@@ -53,31 +53,55 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   `download_grants` (`000010`, **D-029.4** : option A émission immédiate = snapshot
   applicatif, G1–G4, aucun DEFAULT commercial) MERGÉ (PR #13 → `77f3766`)** →
   **P4-A2.1 hardening `download_grants` (`000011`, bénéficiaire G3 null-safe et
-  `updated_at` G2 lié au cycle de vie) MERGÉ (PR #14 → `2c25e2a`)** → **P4-B
-  `download_logs` (`000012`, D-029.5) IMPLÉMENTÉ — EN ATTENTE DE MERGE sur
-  `p4-b-download-logs`** ; `licenses` exclu de P4. Une migration, une branche,
-  une frontière de rollback par gate ; migration N+1 jamais créée avant merge du
-  gate N. Détail dans le bloc P4 de `DigiTrove_Schema_BDD_v1.md`.
+  `updated_at` G2 lié au cycle de vie) MERGÉ (PR #14 → `2c25e2a`)** → **P4-B0
+  frontière de privilèges runtime (`000012` ACL, D-029.6) MERGÉ (PR #15 →
+  `6d23e546`)** → **P4-B `download_logs` (à renuméroter `000013`, implémenté
+  `8cf24a8` mais BLOQUÉ — à reprendre)** ;
+  `licenses` exclu de P4. Une migration, une branche, une frontière de rollback par
+  gate ; migration N+1 jamais créée avant merge du gate N. Détail dans le bloc P4 de
+  `DigiTrove_Schema_BDD_v1.md`.
 
 P4-A2.1 est **terminé et mergé** via
 [PR #14](https://github.com/mysterus44/DigiTrove/pull/14), merge `2c25e2a` : le
 hotfix remplace uniquement G2/G3, garde 4 fonctions / 5 triggers et préserve
 `000010` immuable. Validation post-merge : 27 migrations ; P4-A2.1 7/113 ; suite
 158/2301 ; Pint 112 ; rollback isolé `000011` restaurant exactement G2/G3 d'origine.
-**P4-B — Download Logs est IMPLÉMENTÉ — EN ATTENTE DE MERGE** (branche
-`p4-b-download-logs`, unique migration `000012`, frontière `000012`), conforme à
-D-029.5 : consommation à `started` atomique log+compteur (verrous Order PUIS
-Grant), rétention NOT NULL explicite, HMAC IP versionné, secret de tentative
-dédié (digest seulement, distinct du token du grant, expiration courte), une
-unité pour Range/retries de la même tentative, HEAD sans log/quota, `completed`
-= remise au mécanisme, jamais réception client. Livré : table 15 colonnes +
-10 CHECK, G5/G6 (2 fonctions / 2 triggers), G2 remplacée en place (l'exact `+1`
-n'est accepté que depuis G5, `pg_trigger_depth() > 1` ; tout UPDATE direct du
-compteur refusé), modèle `DownloadLog`/factory/relations, rollback `000012`
-fail-closed (23514 si lignes) et restauration OCTET POUR OCTET de G2 `000011`.
-Validation : 28 migrations ; P4-B 19/599 ; suite 177/2885 ; Pint 116 ; aucune
-base résiduelle ; aucun endpoint/streaming/P5. Prochaine étape : **review + merge
-de la PR P4-B par KingKouda** ; P5 non démarré.
+**P4-B a été implémenté** sur `p4-b-download-logs` (`8cf24a8`, poussée) selon
+D-029.5 — mais est **BLOQUÉ AU MERGE**. Un audit offensif a prouvé que l'autorité
+de consommation de G2, `pg_trigger_depth() > 1`, démontre seulement l'imbrication,
+jamais l'origine : un trigger temporaire ou permanent créé par le rôle applicatif
+incrémente `downloads_count` **sans** créer de `download_logs`. Le rôle unique
+`digitrove` est superuser, propriétaire, migrateur ET runtime — aggravant le risque.
+
+**Correctif décidé — D-029.6, gate préalable P4-B0** (option A renforcée) :
+séparation de rôles PostgreSQL (`digitrove` migrateur/propriétaire ·
+`digitrove_runtime` restreint sans TEMP/DDL/UPDATE compteur · `digitrove_download_
+executor` NOLOGIN propriétaire de G5), G5 `SECURITY DEFINER` avec `search_path`
+épinglé et objets qualifiés, G2 exigeant `current_user = digitrove_download_executor`
+comme preuve d'origine principale, fermeture explicite de TEMP/CREATE/EXECUTE à
+PUBLIC, double connexion Laravel (`pgsql` runtime + `pgsql_migration` migrateur),
+provisioning cluster par script idempotent
+(`docker/postgres/provision-runtime-roles.sql`) + migration ACL `000012`.
+
+**P4-B0 est TERMINÉ ET MERGÉ** (PR #15 → `6d23e546`, parents `a3eac5e` +
+`9b69f192`) : frontière de privilèges PostgreSQL runtime active sur la stable.
+Faisabilité prouvée avant tout code (la danse `SET LOCAL ROLE` donne la propriété
+de G5 à l'exécuteur sans CREATE permanent ; un trigger `SECURITY DEFINER` se
+déclenche même sans EXECUTE pour le rôle déclencheur, avec `session_user=runtime`
+/ `current_user=executor`). Validation post-merge : provisioning idempotent,
+identités migration/runtime prouvées, 26 fonctions trigger sans EXECUTE runtime,
+suite P4-B0 13/84, suite complète 171/2385, Pint 117, 28 migrations, zéro résidu.
+**Trois pièges
+retenus pour P4-B** : un `REVOKE EXECUTE` par fonction doit venir du propriétaire ;
+l'exécuteur exige `SELECT` en plus de `UPDATE` ; pour les default privileges des
+FONCTIONS, la forme GLOBALE `ALTER DEFAULT PRIVILEGES FOR ROLE r REVOKE EXECUTE ON
+FUNCTIONS FROM PUBLIC` fonctionne (la forme `IN SCHEMA public` non), elle est propre
+au rôle créateur (migrateur ET exécuteur via `SET ROLE`) — la migration `000012`
+les pose, donc G5 naîtra verrouillée mais devra recevoir `GRANT EXECUTE … TO
+digitrove` pour attacher son trigger. **P4-B sera renuméroté `000013`** après merge
+de P4-B0. Prochaine
+étape : merger P4-B0, puis rebaser/corriger P4-B. La branche `8cf24a8` reste
+inchangée ; sa PR ne s'ouvre pas avant P4-B0. P5 non démarré.
 
 ## 🔄 EN FIN DE TÂCHE
 

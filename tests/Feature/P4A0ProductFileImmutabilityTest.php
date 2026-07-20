@@ -3,10 +3,10 @@
 use App\Models\Product;
 use App\Models\ProductFile;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Tests\Concerns\RefreshesDatabaseAsMigrator as RefreshDatabase;
 use Tests\Support\PhaseMigrationHarness;
 
 uses(RefreshDatabase::class);
@@ -256,7 +256,7 @@ it('rolls back only the P4-A0 hardening while preserving product_files data and 
             ->and($harness->countTriggers(['product_files_enforce_content_immutability_trigger']))->toBe(1);
 
         // Seed one real product + file through PDO to prove the rollback keeps data.
-        $connection = config('database.connections.pgsql');
+        $connection = config('database.connections.pgsql_migration');
         $pdo = new PDO(
             sprintf('pgsql:host=%s;port=%s;dbname=%s', $connection['host'], $connection['port'] ?? 5432, $harness->databaseName()),
             $connection['username'],

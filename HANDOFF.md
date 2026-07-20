@@ -7,10 +7,20 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Claude Code
-- **Date** : 2026-07-19
-- **Branche git active** : `p4-b-download-logs` (créée depuis la stable
-  `p0-foundations-laravel13` à `ccf9c383c9d3df617200b19f625cbc1fcd69ed1b`,
-  merge-base exact vérifié)
+- **Date** : 2026-07-20
+- **Branche git active** : `p0-foundations-laravel13` (stable à `6d23e546`)
+- **P4-B0 TERMINÉ ET MERGÉ** via
+  [PR #15](https://github.com/mysterus44/DigiTrove/pull/15), merge `6d23e546`
+  (parents `a3eac5e` + `9b69f192`) : frontière de privilèges PostgreSQL runtime
+  active sur la stable. Branche locale supprimée, distante
+  `origin/p4-b0-postgresql-runtime-privileges` conservée à `9b69f192`.
+- **P4-B implémenté mais BLOQUÉ** : branche `p4-b-download-logs` (`8cf24a8`,
+  intacte) implémente `download_logs`/G5/G6, mais l'audit offensif a prouvé que
+  l'autorité `pg_trigger_depth() > 1` de G2 est **contournable** (trigger
+  temporaire ou permanent → `downloads_count +1` sans `download_logs`). **PR NON
+  ouverte** ; la frontière P4-B0 est désormais en place, il reste à reprendre P4-B
+  (rebase, renumérotation `000013`, G5 `SECURITY DEFINER`, identité effective dans
+  G2). Voir PROCHAINE TÂCHE.
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -53,11 +63,9 @@
   `2c25e2a Merge pull request #14 from mysterus44/p4-a2-1-grant-integrity-hardening`
   (SHA complet `2c25e2a412a24ac6ae2e5d51ed6929f3f0a397f7`, parents `0633eb0` +
   `ba834be` ; commit hotfix intégré `ba834befa63a7212c2f2065f51a3f2ae03f5453b`)
-- **P4-B Download Logs** : **IMPLÉMENTÉ — EN ATTENTE DE MERGE** conformément à
-  D-029.5 (1A/2A/3A + R1A/R2A/R3A) sur `p4-b-download-logs` ; unique migration
-  `2026_07_14_000012_create_download_logs_table.php` (table 15 colonnes, G5/G6,
-  G2 remplacée en place `pg_trigger_depth() > 1`, rollback fail-closed) ;
-  P4-B 19/599, suite 177/2885, Pint 116
+- **Plan P4-B Download Logs** : D-029.5 finalisée (1A/2A/3A + R1A/R2A/R3A),
+  **PLANIFIÉ — NON IMPLÉMENTÉ** ; branche `p4-b-download-logs` et migration
+  `2026_07_14_000012_create_download_logs_table.php` toujours absentes/réservées
 - **`origin/main`** : `11130f4` (intact après P4-A2.1 ; aucun push direct)
 - **Build/tests** :
   - `docker compose up -d` OK : PostgreSQL 16 + Redis 7 healthy
@@ -258,46 +266,76 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**P4-B IMPLÉMENTÉ — EN ATTENTE DE MERGE.** La branche `p4-b-download-logs`
-porte l'unique migration `2026_07_14_000012_create_download_logs_table.php`
-(frontière `000012`) et son commit unique
-`feat: implement P4-B download logs [par Claude]`, conformes à D-029.5.
+**P4-B0 est TERMINÉ ET MERGÉ** (PR #15, merge `6d23e546`). Prochaine tâche :
+**reprendre P4-B** — la frontière de privilèges est en place, la branche
+`p4-b-download-logs` (`8cf24a8`) reste bloquée et doit être reprise dans une
+nouvelle exécution.
 
-**Prochaine tâche : review + merge de la PR P4-B par KingKouda** (base
-`p0-foundations-laravel13`, compare `p4-b-download-logs`), puis clôture
-post-merge (vérifications post-merge, suppression de la branche locale,
-mise à jour documentaire — pattern des gates précédents).
+Reprise de P4-B (aucune de ces actions pendant la clôture) :
+1. rebaser `p4-b-download-logs` (`8cf24a8`, inchangée) sur la stable durcie ;
+2. renuméroter `000012_create_download_logs_table.php` → **`000013`** ;
+3. passer **G5 en `SECURITY DEFINER`** possédée par
+   `digitrove_download_executor`, créée via la danse prouvée (GRANT CREATE
+   temporaire → `SET LOCAL ROLE` → `CREATE FUNCTION` → `RESET ROLE` → `REVOKE
+   CREATE`), avec `search_path` épinglé `pg_catalog, public, pg_temp` et objets
+   qualifiés ;
+4. G5 naîtra déjà sans EXECUTE PUBLIC grâce aux défauts globaux de l'exécuteur
+   posés par P4-B0 (aucun REVOKE explicite requis) ; mais comme PUBLIC n'a plus
+   EXECUTE, **accorder `GRANT EXECUTE ON FUNCTION g5 TO digitrove`** avant
+   d'attacher le trigger (sinon `CREATE TRIGGER` échoue en `permission denied` pour
+   un migrateur non-superuser). Si un REVOKE explicite est ajouté, il doit venir du
+   **propriétaire** (un REVOKE par le migrateur non-propriétaire est un no-op) ;
+5. remplacer l'autorité de G2 : `current_user = 'digitrove_download_executor'`
+   comme preuve d'origine principale, `pg_trigger_depth()` en défense secondaire ;
+6. accorder à l'exécuteur **SELECT** (pas seulement UPDATE) sur les tables lues —
+   `SET downloads_count = downloads_count + 1` lit la colonne ;
+7. ajouter les tests de contournement sous `digitrove_runtime` (tous refusés) et
+   ajuster les compteurs de migrations (28 → 29).
 
-Livré et prouvé sur PostgreSQL réel :
-- table `download_logs` 15 colonnes exactes (aucun DEFAULT métier ; seul
-  `created_at CURRENT_TIMESTAMP` technique), FK grant `ON DELETE RESTRICT`,
-  10 CHECK nommés anti-UNKNOWN, unique `public_id`, unique partiel
-  `attempt_token_hash`, index grant/date + tentatives `started` + purge
-  terminale, aucun prédicat `now()` ;
-- G5 `enforce_download_logs_integrity` / `download_logs_enforce_integrity_trigger`
-  (BEFORE INSERT OR UPDATE) : consommation à `started` atomique log+compteur
-  sous verrous **Order PUIS Grant** avec revalidation complète, digest de
-  tentative ≠ token du grant, refus direct `denied` non consommant, `completed`
-  direct impossible, transitions terminales set-once, `bytes_sent` monotone,
-  rétention extensible seulement ;
-- G6 `enforce_download_logs_retention_delete` /
-  `download_logs_retention_delete_trigger` (BEFORE DELETE) : purge uniquement
-  terminale à rétention échue, DELETE multi-lignes atomique, aucun décrément ;
-- G2 remplacée EN PLACE : protections P4-A2.1 intactes, exact `+1` accepté
-  uniquement depuis G5 (`pg_trigger_depth() > 1`), tout UPDATE direct refusé ;
-  `updated_at` avance de `GREATEST(clock_timestamp(), updated_at + interval
-  '1 second')` (timestamptz précision 0 — strictement croissant garanti) ;
-- rollback `000012` : occupé → refus 23514 sans destruction ; vide → G2
-  restaurée octet pour octet depuis `000011`, tout P4-A préservé ;
-- validation : 28 migrations ; P4-B 19/599 ; suite complète 177/2885 ; Pint 116 ;
-  concurrence 2 connexions (55P03/23505/23514) ; aucune base résiduelle.
+Ancien contexte P4-B (toujours valable) : l'audit offensif a prouvé que l'autorité
+`pg_trigger_depth() > 1` de G2 est contournable. La branche `8cf24a8` reste
+inchangée ; **ne pas ouvrir sa PR avant le merge de P4-B0**.
 
-Rappels pour la suite (post-merge) : la couche applicative P4 (OrderService,
-listener OrderPaid, contrôleur de téléchargement, streaming, rate limiting,
-job de purge, e-mails) reste ENTIÈREMENT à venir dans des gates dédiés — le
-gate BDD n'a rien créé de tout cela. TTL tentative/rétention (365 j recommandé)
-= config applicative future, jamais un DEFAULT BDD. Un token inconnu n'entre
-JAMAIS dans `download_logs`. `licenses` reste exclu de P4 ; P5 non démarré.
+Périmètre P4-B0 (voir D-029.6 pour le détail complet), sur une **nouvelle branche
+dédiée** depuis la stable :
+- **Script cluster** `docker/postgres/provision-runtime-roles.sql` idempotent :
+  crée `digitrove_runtime` (LOGIN restreint) et `digitrove_download_executor`
+  (NOLOGIN), sans mot de passe en clair dans Git, avec re-provisioning explicite
+  pour les volumes existants (l'entrypoint init ne rejoue pas sur un volume déjà
+  initialisé).
+- **Migration ACL** `2026_07_14_000012_harden_database_runtime_privileges.php` :
+  `REVOKE TEMPORARY ON DATABASE current_database() FROM PUBLIC` (via `EXECUTE
+  format('… %I …', current_database())`), `REVOKE CREATE ON SCHEMA public FROM
+  PUBLIC`, `REVOKE ALL ON FUNCTION … FROM PUBLIC`/`FROM digitrove_runtime`,
+  `ALTER DEFAULT PRIVILEGES … REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`, GRANT
+  colonnes au runtime (jamais `downloads_count`, jamais UPDATE table-level),
+  GRANT minimal à l'exécuteur (UPDATE `downloads_count`/`updated_at` seulement).
+- **Double connexion** : `pgsql` = runtime (défaut app/workers/sondes),
+  `pgsql_migration` = migrateur (`digitrove`) ; `DB_MIGRATION_USERNAME`/
+  `DB_MIGRATION_PASSWORD` ; `php artisan migrate --database=pgsql_migration`.
+- **CI/harness** : provisionner les 3 rôles ; migrer sous migrateur ; exécuter les
+  sondes sous `digitrove_runtime` ; asserter runtime non-superuser + rejouer la
+  sonde du trigger temporaire et obtenir un **refus** ; `runtimePdo()` dans le
+  harness ; ne jamais valider une frontière de sécurité en superuser.
+- **Tests P4-B0** : identité des 3 rôles, TEMP/CREATE/EXECUTE refusés au runtime,
+  absence d'UPDATE table-level et colonne `downloads_count`, tous les vecteurs de
+  contournement rejoués sous runtime et refusés, chemin légitime intact.
+
+**Ensuite seulement**, rebaser/corriger P4-B sur la stable durcie : renuméroter
+`000012_create_download_logs_table.php` → **`000013`**, passer G5 en
+`SECURITY DEFINER` (propriétaire `digitrove_download_executor`, `search_path`
+épinglé `pg_catalog, public, pg_temp`, objets qualifiés), ajouter à G2 la
+vérification `current_user = 'digitrove_download_executor'` (profondeur en défense
+secondaire), et ajouter les tests de contournement sous runtime. Le gate BDD ne
+crée toujours aucune route, contrôleur, service, streaming, listener OrderPaid,
+e-mail ou P5.
+
+Preuve de la vulnérabilité (transactions réelles, ROLLBACK, rôle `digitrove`
+superuser) : UPDATE direct profondeur 1 refusé (23514) ; trigger TEMP BEFORE/AFTER
+et trigger permanent sur `products` à profondeur 2 → `downloads_count` 0→1 avec 0
+`download_logs` ; G5 légitime → +1 avec 1 log. ACL PG16 mesurées : PUBLIC a TEMP
+(datacl NULL) et EXECUTE par défaut ; CREATE sur `public` déjà refusé (PG15+) ;
+`REVOKE TEMPORARY … FROM PUBLIC` ferme le vecteur.
 
 **P4-A0 est mergé et clôturé** dans `p0-foundations-laravel13` via
 [PR #11](https://github.com/mysterus44/DigiTrove/pull/11), merge `a047571` (parents
@@ -493,54 +531,128 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
 
-### 2026-07-19 — Claude Code (P4-B Download Logs implémenté)
-- Garde-fous Git : stable locale = distante = `ccf9c383` (ahead/behind 0/0),
-  merge-base exact, ancêtres `0d30140`/`2c25e2a`/`ba834be`/`77f3766`/`cea5f2d`
-  confirmés, `origin/main` intact `11130f4` ; branche `p4-b-download-logs` créée.
-  (`git fetch` unique tenté : réseau indisponible ; refs locales conformes à
-  l'état de référence prouvé.)
-- Unique migration `2026_07_14_000012_create_download_logs_table.php` : table
-  `download_logs` 15 colonnes (aucun DEFAULT métier, seul `created_at
-  CURRENT_TIMESTAMP` technique), FK grant RESTRICT, 10 CHECK nommés stricts,
-  unique `public_id` + unique partiel du digest de tentative, index grant/date,
-  tentatives `started` et purge terminale (aucun `now()` en prédicat).
-- G5 `enforce_download_logs_integrity` (BEFORE INSERT OR UPDATE) : INSERT
-  `started` = verrou Order PUIS Grant, revalidation complète (livrable, non
-  révoqué, non expiré, quota, fichier actif, digest ≠ token du grant), puis
-  incrément exact `+1` atomique avec le log ; refus direct `denied` non
-  consommant ; `completed` direct impossible ; transitions terminales set-once ;
-  `bytes_sent` monotone ; rétention extensible seulement. G6
-  `enforce_download_logs_retention_delete` (BEFORE DELETE) : purge uniquement
-  terminale et à rétention échue, DELETE multi-lignes atomique.
-- G2 remplacée EN PLACE (aucun trigger grant ajouté) : protections P4-A2.1
-  intactes, l'exact `+1` n'est accepté que depuis l'UPDATE imbriqué de G5
-  (`pg_trigger_depth() > 1`) ; tout UPDATE direct du compteur (SQL brut, Query
-  Builder, Eloquent) est refusé. Précision signalée : timestamptz Laravel en
-  précision 0 → G5 avance `updated_at` de `GREATEST(clock_timestamp(),
-  updated_at + interval '1 second')` (strictement croissant même dans la même
-  seconde/transaction).
-- Modèle `DownloadLog` (created_at seul, digests `$hidden`, aucun helper de
-  secret/streaming), factory (started réel consommant via G5, state
-  `deniedDirectly()` non consommant, jamais de `completed` direct, aucun secret
-  brut persisté), relations `DownloadGrant::downloadLogs()` /
-  `DownloadLog::downloadGrant()`.
-- Rollback `000012` prouvé dans les deux sens : occupé → refus 23514 sans
-  toucher aucun objet/donnée ; vide → G5/G6 retirés et G2 restaurée OCTET POUR
-  OCTET depuis `000011` (égalité `pg_get_functiondef`), P0–P3C et tout P4-A
-  préservés.
-- Adaptations historiques : compteurs 27→28 (3 assertions), `download_logs`
-  retiré de 12 assertions globales de tables futures, consommations directes
-  P4-A2/P4-A2.1 converties en refus attendus (couverture quota/updated_at via
-  G5 dans la suite P4-B) ; toutes les frontières de rollback ≤ `000011`
-  conservent l'absence de `download_logs`.
-- Validation réelle : 28 migrations ; P4-B **19 tests / 599 assertions** ;
-  suite complète **177/2885** ; Pint **116** ; diff-check propre ; concurrence
-  2 connexions réelles (55P03/23505/23514, ordre Order→Grant, aucun deadlock) ;
-  introspection PostgreSQL conforme (6 fonctions / 7 triggers du domaine, G4
-  différé, G0/S1–S3 intacts) ; aucune base temporaire résiduelle.
-- Aucun endpoint, route, contrôleur, service, listener, job, e-mail, streaming,
-  rate limiter ni code P5. Migrations `000001`–`000011` intactes.
-  Laisse à : review + merge de la PR P4-B, puis clôture post-merge.
+### 2026-07-20 — Claude Code (clôture post-merge P4-B0)
+- **P4-B0 mergé** via [PR #15](https://github.com/mysterus44/DigiTrove/pull/15),
+  merge `6d23e546` (parents `a3eac5e` + `9b69f192`, sujet « Merge pull request #15
+  from mysterus44/p4-b0-postgresql-runtime-privileges »). `9b69f192` confirmé
+  ancêtre de la stable ; stable synchronisée en fast-forward à `6d23e546` (0/0).
+- Périmètre mergé audité (`a3eac5e..6d23e546`) : seule la migration `000012`
+  ajoutée côté migrations (`000001`–`000011` intactes) ; migration ACL,
+  provisioning, commande Artisan, double connexion, config test, CI, harness,
+  suite P4-B0, adaptations P2/P3/P4-A + 5 documents. Aucune table `download_logs`,
+  aucune migration `000013`, aucun G5/G6 réel (`SECURITY DEFINER` uniquement en
+  commentaires de `000012`, 0 `CREATE FUNCTION`/`CREATE TRIGGER`), aucun
+  endpoint/service/streaming/P5, aucun secret.
+- Provisioning `php artisan db:provision-runtime-roles` rejoué **deux fois** :
+  idempotent, aucun secret affiché. Identités prouvées : migrations
+  `session_user=current_user=digitrove` ; requêtes métier
+  `session_user=current_user=digitrove_runtime`. 28 migrations, `download_logs`
+  absent.
+- Introspection : `digitrove_runtime` non-superuser NOINHERIT (CONNECT+USAGE oui ;
+  TEMP/CREATE/CREATE FUNCTION/TRIGGER non ; UPDATE table-level et `downloads_count`
+  non ; `revoked_at`/`revoked_reason_code`/SELECT/INSERT oui ; DELETE non ; EXECUTE
+  refusé sur les **26** fonctions trigger de `public`) ; `digitrove_download_
+  executor` NOLOGIN, sans CREATE, SELECT orders/order_items/download_grants/
+  product_files + UPDATE `downloads_count`/`updated_at` seulement ; membership
+  unique `digitrove → executor` (SET oui, INHERIT/ADMIN non). `pg_default_acl` :
+  défauts FONCTIONS **globaux (ns=0)** pour migrateur ET exécuteur (sans PUBLIC),
+  défauts TABLES/SEQUENCES (ns=2200) pour le runtime.
+- Validation : suite P4-B0 **13/84** ; suite complète **171/2385** ; Pint **117** ;
+  zéro base/rôle de sonde résiduel ; 3 rôles cluster attendus présents. (Un premier
+  run complet avait affiché 1 échec transitoire sur un test de concurrence —
+  contention de verrou provoquée par mes requêtes d'introspection lancées en
+  parallèle ; le run isolé suivant est intégralement vert. Aucun code modifié.)
+- Clôture : branche locale `p4-b0-postgresql-runtime-privileges` supprimée
+  (`git branch -d`, était `9b69f19`) ; distante conservée à `9b69f192` ; P4-B
+  toujours à `8cf24a8` (local et distant) ; `origin/main` toujours `11130f4`.
+  Aucun nouveau merge, aucune correction de code.
+  Laisse à : reprise de P4-B (rebase, renumérotation `000013`, G5
+  `SECURITY DEFINER`, autorité `current_user` dans G2).
+
+
+### 2026-07-20 — Claude Code (P4-B0 frontière de privilèges implémentée)
+- Branche `p4-b0-postgresql-runtime-privileges` créée depuis la stable `a3eac5e`
+  (merge-base vérifié) ; `p4-b-download-logs` laissée intacte à `8cf24a8`.
+- **Gate de faisabilité passé AVANT tout code** (base temporaire nettoyée,
+  migrateur non-superuser propriétaire) : la danse `GRANT CREATE` temporaire →
+  `SET LOCAL ROLE executor` → `CREATE FUNCTION … SECURITY DEFINER` → `RESET ROLE`
+  → `REVOKE CREATE` donne la propriété de G5 à l'exécuteur sans lui laisser de
+  CREATE permanent ; et un trigger `SECURITY DEFINER` **se déclenche même sans
+  EXECUTE pour le rôle déclencheur**, avec `session_user=digitrove_runtime` et
+  `current_user=digitrove_download_executor` à l'intérieur.
+- Trois findings : (1) un `REVOKE EXECUTE … FROM PUBLIC` par fonction doit venir du
+  **propriétaire**, sinon no-op silencieux ; (2) l'exécuteur exige **SELECT** en
+  plus de UPDATE (`SET col = col + 1` lit la colonne) ; (3) default privileges des
+  FONCTIONS (PG 16.14) : la **forme GLOBALE** `ALTER DEFAULT PRIVILEGES FOR ROLE r
+  REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` FONCTIONNE (nouvelle fonction née sans
+  EXECUTE PUBLIC) ; la forme **`IN SCHEMA public`** ne retire PAS le privilège
+  intégré global (aucune entrée `pg_default_acl`). Les défauts suivent le **rôle
+  créateur** (pas d'héritage) → migrateur ET exécuteur (via `SET ROLE`) reçoivent
+  chacun le leur ; les fonctions EXISTANTES gardent le REVOKE explicite. Corolaire :
+  PUBLIC privé d'EXECUTE, attacher un trigger à G5 exige `GRANT EXECUTE … TO
+  digitrove` (sinon `CREATE TRIGGER` échoue pour un migrateur non-superuser).
+- Livré : `docker/postgres/provision-runtime-roles.sql` idempotent (mot de passe
+  par GUC de session paramétré, jamais en clair), `php artisan
+  db:provision-runtime-roles`, migration ACL `000012` fail-closed (rôles,
+  attributs, memberships, chemin SET du migrateur), fermeture TEMP/CREATE/EXECUTE,
+  DML runtime en verbes explicites, `download_grants` sans UPDATE table-level et
+  sans `downloads_count`, grants minimaux de l'exécuteur, **défauts globaux REVOKE
+  EXECUTE pour migrateur + exécuteur** (fonctions futures nées verrouillées),
+  `down()` qui ne réouvre jamais la frontière (défauts de fonctions conservés).
+- Double connexion `pgsql` (runtime) / `pgsql_migration` (propriétaire) ;
+  `RefreshesDatabaseAsMigrator` fait migrer sous le propriétaire tout en gardant
+  les requêtes sous le runtime ; `RefreshesDatabaseAsOwner` épingle P4-A2/P4-A2.1
+  au propriétaire (leurs sondes visent des colonnes que le runtime ne peut pas
+  atteindre — sinon 42501 masquerait 23514 et la couverture trigger serait
+  perdue) ; `PhaseMigrationHarness` administre/migre en propriétaire et expose
+  `runtimePdo()`.
+- Validation : suite P4-B0 **13/84** sous le vrai rôle runtime (tous les vecteurs
+  de contournement historiques refusés en 42501 sans incrément, chemin
+  `SECURITY DEFINER` prouvé en base isolée, défauts globaux prouvés — fonction
+  future née sans EXECUTE PUBLIC pour migrateur ET exécuteur —, rollback ACL sans
+  réouverture y compris sur les défauts de fonctions) ;
+  suite complète **171/2381** ; Pint **117** ; 28 migrations ; zéro base
+  temporaire résiduelle. CI : création de la base de test, provisioning des rôles,
+  puis étape d'assertion de frontière qui échoue à la moindre régression d'ACL.
+- Aucune table `download_logs`, aucune fonction G5/G6, aucune migration `000013`,
+  aucun endpoint/route/service/streaming/P5.
+  Laisse à : merge de la PR P4-B0, puis rebasage/correction de P4-B.
+
+### 2026-07-19 — Claude Code (audit offensif P4-B + plan P4-B0, D-029.6)
+- P4-B implémenté et poussé sur `p4-b-download-logs` (`8cf24a8`) plus tôt dans la
+  session (19/599, suite 177/2885, Pint 116). Avant PR, audit offensif de
+  l'autorité G2/G5 demandé.
+- **Vulnérabilité prouvée** (transactions réelles, ROLLBACK, rôle `digitrove`
+  superuser confirmé) : G2 autorisait l'incrément dès `pg_trigger_depth() > 1`, qui
+  démontre l'imbrication mais jamais l'origine. Sondes : UPDATE direct (profondeur
+  1) refusé 23514 ; trigger TEMP BEFORE, trigger TEMP AFTER et trigger PERMANENT
+  sur `products` (profondeur 2) → `downloads_count` 0→1 avec **0 `download_logs`** ;
+  G5 légitime → +1 avec 1 log. G5 est aujourd'hui la seule fonction qui met à jour
+  le compteur, mais c'est incident, non contraint.
+- ACL PG16.14 mesurées (rôle non privilégié frais) : TEMP accordé via PUBLIC
+  (datacl NULL) = le vecteur ; CREATE sur `public` refusé (défaut PG15+) ; EXECUTE
+  des fonctions accordé à PUBLIC ; `REVOKE TEMPORARY … FROM PUBLIC` ramène TEMP à
+  refusé. PR P4-B **non ouverte**.
+- Décision **D-029.6** (option A renforcée validée par KingKouda) : gate préalable
+  **P4-B0** — 3 rôles (`digitrove` migrateur/propriétaire, `digitrove_runtime`
+  restreint, `digitrove_download_executor` NOLOGIN), G5 `SECURITY DEFINER`
+  (propriétaire exécuteur, search_path épinglé, objets qualifiés), G2 vérifiant
+  `current_user = digitrove_download_executor` comme preuve d'origine principale
+  (profondeur = défense secondaire), fermeture TEMP/CREATE/EXECUTE + ALTER DEFAULT
+  PRIVILEGES, privilèges runtime au niveau colonne seulement (jamais
+  `downloads_count`, jamais UPDATE table-level), double connexion Laravel
+  (`pgsql` runtime + `pgsql_migration` migrateur), provisioning cluster par script
+  idempotent + migration ACL `000012`. P4-B renuméroté `000013` après P4-B0.
+- Infrastructure inspectée : `config/database.php`, `phpunit.xml`, `.env.example`,
+  `docker-compose.yml`, `.github/workflows/ci.yml` (CI tourne en superuser —
+  n'attrape pas la sonde aujourd'hui), `PhaseMigrationHarness`. Aucun script d'init
+  Postgres existant.
+- Mission strictement documentaire : aucun code/rôle/privilège/migration/script/
+  branche/test créé. Fichier parasite `public/fonts-manifest.dev.json` (cache Vite
+  dev) supprimé localement (non suivi, hors commit). Branche `p4-b-download-logs`
+  inchangée à `8cf24a8`. Documents mis à jour : DECISIONS_LOG (D-029.6), schéma v1
+  (bloc P4 + P4-B0), PROGRESS_TRACKER, HANDOFF, CLAUDE.md.
+  Laisse à : implémenter P4-B0 sur une branche dédiée, puis rebaser/corriger P4-B.
 
 ### 2026-07-19 — Codex (plan final P4-B + décision D-029.5)
 - Stable locale/distante confirmée à `0d3014016beb9f16137fcd993f8a3c8033e57c72`,

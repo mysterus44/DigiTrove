@@ -6,10 +6,10 @@ use App\Models\OrderItem;
 use App\Models\OrderItemBundleComponent;
 use App\Models\Product;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Tests\Concerns\RefreshesDatabaseAsMigrator as RefreshDatabase;
 use Tests\Support\PhaseMigrationHarness;
 
 uses(RefreshDatabase::class);
@@ -581,7 +581,7 @@ it('adds no side effects to P4-A0, the pivot, order items or future gates', func
 
 it('serialises a concurrent bundle change against the future checkout orchestration', function () {
     $harness = new PhaseMigrationHarness('digitrove_p4a1_concurrency_'.strtolower(Str::random(10)));
-    $connection = config('database.connections.pgsql');
+    $connection = config('database.connections.pgsql_migration');
     $dsn = sprintf('pgsql:host=%s;port=%s;dbname=%s', $connection['host'], $connection['port'] ?? 5432, $harness->databaseName());
 
     $checkout = null;
@@ -701,7 +701,7 @@ it('rolls back only the P4-A1 gate while preserving P4-A0 and every earlier phas
             ->and($harness->countFunctions(['enforce_product_file_content_immutability']))->toBe(1);
 
         // Seed a real snapshot so the rollback is proven against actual data.
-        $connection = config('database.connections.pgsql');
+        $connection = config('database.connections.pgsql_migration');
         $pdo = new PDO(
             sprintf('pgsql:host=%s;port=%s;dbname=%s', $connection['host'], $connection['port'] ?? 5432, $harness->databaseName()),
             $connection['username'],
