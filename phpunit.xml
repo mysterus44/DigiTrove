@@ -31,9 +31,13 @@
         <env name="DB_HOST" value="127.0.0.1"/>
         <env name="DB_PORT" value="5432"/>
         <env name="DB_DATABASE" value="digitrove_testing"/>
-        <env name="DB_USERNAME" value="digitrove"/>
-        <env name="DB_PASSWORD" value="digitrove_local"/>
+        <!-- Default connection = restricted runtime role (P4-B0, D-029.6). -->
+        <env name="DB_USERNAME" value="digitrove_runtime"/>
+        <env name="DB_PASSWORD" value="digitrove_runtime_local"/>
         <env name="DB_URL" value=""/>
+        <!-- Migration/owner connection: schema + RefreshDatabase migrate as this. -->
+        <env name="DB_MIGRATION_USERNAME" value="digitrove"/>
+        <env name="DB_MIGRATION_PASSWORD" value="digitrove_local"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

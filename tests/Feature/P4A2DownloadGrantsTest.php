@@ -11,10 +11,10 @@ use App\Models\ProductFile;
 use App\Models\Refund;
 use App\Models\User;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Tests\Concerns\RefreshesDatabaseAsOwner as RefreshDatabase;
 use Tests\Support\PhaseMigrationHarness;
 
 uses(RefreshDatabase::class);
@@ -122,7 +122,7 @@ function createP4A2BundlePurchase(bool $withSnapshot = true): array
 
 it('applies migration 000010 with the exact schema, four functions and five triggers', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000010_create_download_grants_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(27)
+        ->and(DB::table('migrations')->count())->toBe(28)
         ->and(Schema::hasTable('download_grants'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')
@@ -725,7 +725,7 @@ it('requires every active grant to belong to a deliverable order at commit', fun
 
 it('serialises issuance against a concurrent refund through the order lock', function () {
     $harness = new PhaseMigrationHarness('digitrove_p4a2_concurrency_'.strtolower(Str::random(10)));
-    $connection = config('database.connections.pgsql');
+    $connection = config('database.connections.pgsql_migration');
     $dsn = sprintf('pgsql:host=%s;port=%s;dbname=%s', $connection['host'], $connection['port'] ?? 5432, $harness->databaseName());
 
     $issuer = null;

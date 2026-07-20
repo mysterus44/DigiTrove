@@ -7,10 +7,10 @@ use App\Models\CustomerProfile;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
+use Tests\Concerns\RefreshesDatabaseAsMigrator as RefreshDatabase;
 
 uses(RefreshDatabase::class);
 

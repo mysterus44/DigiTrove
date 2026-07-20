@@ -20,13 +20,22 @@ final class PhaseMigrationHarness
     /** @var array<string, mixed> */
     private array $connection;
 
+    /** @var array<string, mixed> */
+    private array $runtimeConnection;
+
     private PDO $admin;
 
     private ?PDO $connectionPdo = null;
 
+    private ?PDO $runtimePdoInstance = null;
+
     public function __construct(private readonly string $databaseName)
     {
-        $this->connection = config('database.connections.pgsql');
+        // P4-B0 (D-029.6): the harness administers and migrates the throwaway
+        // database with the migrator/owner identity, and exposes a separate
+        // runtime PDO so boundary probes run under the real restricted role.
+        $this->connection = config('database.connections.pgsql_migration');
+        $this->runtimeConnection = config('database.connections.pgsql');
         $this->admin = $this->makePdo('postgres');
     }
 
@@ -45,6 +54,7 @@ final class PhaseMigrationHarness
     public function drop(): void
     {
         $this->connectionPdo = null;
+        $this->runtimePdoInstance = null;
         $quoted = '"'.$this->databaseName.'"';
         $this->admin->exec("DROP DATABASE IF EXISTS {$quoted} WITH (FORCE)");
     }
@@ -71,7 +81,7 @@ final class PhaseMigrationHarness
             $throughBoundary,
         );
 
-        $this->artisan(['migrate', '--env=testing', '--force', ...$paths]);
+        $this->artisan(['migrate', '--env=testing', '--force', '--database=pgsql_migration', ...$paths]);
 
         $applied = $this->ranMigrations();
         $boundaryName = $this->migrationName($boundaryFile);
@@ -107,7 +117,7 @@ final class PhaseMigrationHarness
             $gateFiles,
         );
 
-        $this->artisan(['migrate:rollback', '--env=testing', '--force', ...$paths]);
+        $this->artisan(['migrate:rollback', '--env=testing', '--force', '--database=pgsql_migration', ...$paths]);
 
         return array_values(array_diff($before, $this->ranMigrations()));
     }
@@ -198,6 +208,26 @@ final class PhaseMigrationHarness
         return $this->connectionPdo ??= $this->makePdo($this->databaseName);
     }
 
+    /**
+     * A connection to the throwaway database authenticated as the RESTRICTED
+     * runtime role (P4-B0, D-029.6). Boundary probes must use this — never the
+     * owner PDO — so an ACL regression cannot hide behind the migrator.
+     */
+    public function runtimePdo(): PDO
+    {
+        return $this->runtimePdoInstance ??= new PDO(
+            sprintf(
+                'pgsql:host=%s;port=%s;dbname=%s',
+                $this->runtimeConnection['host'],
+                $this->runtimeConnection['port'] ?? 5432,
+                $this->databaseName,
+            ),
+            $this->runtimeConnection['username'],
+            $this->runtimeConnection['password'],
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
+        );
+    }
+
     private function makePdo(string $database): PDO
     {
         $dsn = sprintf(
@@ -227,6 +257,13 @@ final class PhaseMigrationHarness
                 'APP_ENV' => 'testing',
                 'DB_CONNECTION' => 'pgsql',
                 'DB_DATABASE' => $this->databaseName,
+                // P4-B0: migrations run under the migrator/owner identity; the
+                // default runtime identity is passed through unchanged so the
+                // subprocess resolves both connections exactly like the suite.
+                'DB_USERNAME' => (string) $this->runtimeConnection['username'],
+                'DB_PASSWORD' => (string) $this->runtimeConnection['password'],
+                'DB_MIGRATION_USERNAME' => (string) $this->connection['username'],
+                'DB_MIGRATION_PASSWORD' => (string) $this->connection['password'],
             ],
         );
         $process->setTimeout(120);
