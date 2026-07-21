@@ -732,7 +732,11 @@ it('expires a pending order thirty minutes after it was placed by default', func
     $user = User::factory()->create();
     $cart = p3d2Cart([['product' => p3d2Product(1_000)]], user: $user);
 
-    expect(config('checkout.pending_ttl_minutes'))->toBe(30);
+    // The config fallback yields the PHP integer 30, while a value loaded from
+    // .env (as CI does with `cp .env.example .env`) yields the string '30'.
+    // D-032 accepts both representations on purpose, so the assertion must not
+    // pin the type — only the resulting expiry below is contractual.
+    expect(config('checkout.pending_ttl_minutes'))->toBeIn([30, '30']);
 
     $order = p3d2Service()->checkout($user, $cart->public_id, 'XOF', p3d2Key('A'));
 
