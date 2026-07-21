@@ -18,6 +18,8 @@ use App\Models\Visitor;
 use App\Services\Checkout\CheckoutException;
 use App\Services\Checkout\CheckoutRefusalReason;
 use App\Services\Checkout\OrderService;
+use App\Support\OrderNumberGenerator;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Concerns\RefreshesDatabaseAsMigrator as RefreshDatabase;
@@ -720,6 +722,177 @@ it('satisfies the deferred constraint triggers at commit', function () {
         DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
         expect(DB::table('orders')->where('id', $order->id)->exists())->toBeTrue();
     });
+});
+
+// ---------------------------------------------------------------------------
+// Pending expiry — configuration only (D-032)
+// ---------------------------------------------------------------------------
+
+it('expires a pending order thirty minutes after it was placed by default', function () {
+    $user = User::factory()->create();
+    $cart = p3d2Cart([['product' => p3d2Product(1_000)]], user: $user);
+
+    expect(config('checkout.pending_ttl_minutes'))->toBe(30);
+
+    $order = p3d2Service()->checkout($user, $cart->public_id, 'XOF', p3d2Key('A'));
+
+    expect($order->expires_at->diffInMinutes($order->placed_at, absolute: true))->toBe(30.0);
+});
+
+it('honours a configured expiry without any code change', function () {
+    config()->set('checkout.pending_ttl_minutes', 45);
+
+    $user = User::factory()->create();
+    $cart = p3d2Cart([['product' => p3d2Product(1_000)]], user: $user);
+
+    $order = p3d2Service()->checkout($user, $cart->public_id, 'XOF', p3d2Key('B'));
+
+    expect($order->expires_at->diffInMinutes($order->placed_at, absolute: true))->toBe(45.0);
+});
+
+it('accepts a numeric string expiry coming from the environment', function () {
+    config()->set('checkout.pending_ttl_minutes', '90');
+
+    $user = User::factory()->create();
+    $cart = p3d2Cart([['product' => p3d2Product(1_000)]], user: $user);
+
+    $order = p3d2Service()->checkout($user, $cart->public_id, 'XOF', p3d2Key('C'));
+
+    expect($order->expires_at->diffInMinutes($order->placed_at, absolute: true))->toBe(90.0);
+});
+
+it('refuses a misconfigured expiry before writing anything', function (mixed $configured) {
+    config()->set('checkout.pending_ttl_minutes', $configured);
+
+    $user = User::factory()->create();
+    $cart = p3d2Cart([['product' => p3d2Product(1_000)]], user: $user);
+
+    // A server misconfiguration, never the client's fault.
+    p3d2ExpectRefusal(
+        fn () => p3d2Service()->checkout($user, $cart->public_id, 'XOF', p3d2Key('D')),
+        CheckoutRefusalReason::IntegrityFailure,
+    );
+
+    expect(Order::count())->toBe(0)
+        ->and(DB::table('order_items')->count())->toBe(0)
+        ->and(DB::table('order_item_bundle_components')->count())->toBe(0)
+        ->and($cart->fresh()->status)->toBe(CartStatus::Active);
+
+    p3d2AssertNoDownstreamWrites();
+})->with([[0], [-1], ['1.5'], ['abc'], [''], [true], [false], [[]], [null], [30.5], ['0'], [' 30'], [525_601]]);
+
+it('keeps the original expiry on an idempotent replay', function () {
+    $user = User::factory()->create();
+    $cart = p3d2Cart([['product' => p3d2Product(1_000)]], user: $user);
+    $key = p3d2Key('E');
+
+    $first = p3d2Service()->checkout($user, $cart->public_id, 'XOF', $key);
+
+    config()->set('checkout.pending_ttl_minutes', 45);
+
+    $second = p3d2Service()->checkout($user, $cart->public_id, 'XOF', $key);
+
+    expect($second->id)->toBe($first->id)
+        ->and($second->expires_at->eq($first->expires_at))->toBeTrue()
+        ->and($second->expires_at->diffInMinutes($second->placed_at, absolute: true))->toBe(30.0);
+});
+
+// ---------------------------------------------------------------------------
+// order_number collision — the transaction must survive the 23505
+// ---------------------------------------------------------------------------
+
+it('recovers from an order number collision without aborting the transaction', function () {
+    $user = User::factory()->create();
+    [$bundle] = p3d2Bundle(20_000, 2);
+    $cart = p3d2Cart([['product' => $bundle]], user: $user);
+
+    // A generator whose FIRST number is already taken. Without a savepoint the
+    // retry could only ever get 25P02 (current transaction is aborted).
+    $taken = 'DGT-'.now()->format('Y').'-CJKMNPQRST';
+
+    app()->instance(OrderNumberGenerator::class, new class($taken) extends OrderNumberGenerator
+    {
+        public int $calls = 0;
+
+        public function __construct(private readonly string $taken) {}
+
+        public function generate(CarbonImmutable $at): string
+        {
+            $this->calls++;
+
+            return $this->calls === 1 ? $this->taken : 'DGT-'.$at->format('Y').'-VWXYZ23456';
+        }
+    });
+
+    // Seed the collision on a committed row.
+    DB::table('orders')->insert([
+        'public_id' => (string) Str::uuid(),
+        'order_number' => $taken,
+        'checkout_idempotency_hash' => str_repeat('c', 64),
+        'customer_email' => 'seed@digitrove.test',
+        'subtotal_minor' => 0, 'discount_minor' => 0, 'tax_minor' => 0, 'total_minor' => 0,
+        'currency' => 'XOF', 'status' => 'pending',
+        'placed_at' => now(), 'expires_at' => now()->addHour(),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+    // That seed row has no line, so the deferred trigger would refuse it at
+    // COMMIT; it only has to exist for the unique index during this test.
+    DB::table('order_items')->insert([
+        'order_id' => DB::table('orders')->where('order_number', $taken)->value('id'),
+        'product_id' => null,
+        'product_name_snapshot' => 'seed', 'product_slug_snapshot' => 'seed',
+        'product_type_snapshot' => 'ebook',
+        'unit_price_minor' => 0, 'quantity' => 1, 'line_subtotal_minor' => 0,
+        'line_discount_minor' => 0, 'line_total_minor' => 0, 'currency' => 'XOF',
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $order = p3d2Service()->checkout($user, $cart->public_id, 'XOF', p3d2Key('F'));
+
+    expect($order->order_number)->toBe('DGT-'.now()->format('Y').'-VWXYZ23456')
+        ->and(app(OrderNumberGenerator::class)->calls)->toBe(2)
+        ->and($order->items()->count())->toBe(1)
+        ->and(DB::table('order_item_bundle_components')->where('order_item_id', $order->items()->first()->id)->count())->toBe(2)
+        ->and($cart->fresh()->status)->toBe(CartStatus::Converted)
+        ->and(Order::where('cart_id', $cart->id)->count())->toBe(1);
+
+    p3d2AssertNoDownstreamWrites();
+});
+
+it('gives up cleanly after three order number collisions', function () {
+    $user = User::factory()->create();
+    $cart = p3d2Cart([['product' => p3d2Product(1_000)]], user: $user);
+
+    $taken = 'DGT-'.now()->format('Y').'-TAKEN23456';
+
+    app()->instance(OrderNumberGenerator::class, new class($taken) extends OrderNumberGenerator
+    {
+        public function __construct(private readonly string $taken) {}
+
+        public function generate(CarbonImmutable $at): string
+        {
+            return $this->taken;
+        }
+    });
+
+    DB::table('orders')->insert([
+        'public_id' => (string) Str::uuid(),
+        'order_number' => $taken,
+        'checkout_idempotency_hash' => str_repeat('d', 64),
+        'customer_email' => 'seed2@digitrove.test',
+        'subtotal_minor' => 0, 'discount_minor' => 0, 'tax_minor' => 0, 'total_minor' => 0,
+        'currency' => 'XOF', 'status' => 'pending',
+        'placed_at' => now(), 'expires_at' => now()->addHour(),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    p3d2ExpectRefusal(
+        fn () => p3d2Service()->checkout($user, $cart->public_id, 'XOF', p3d2Key('G')),
+        CheckoutRefusalReason::IntegrityFailure,
+    );
+
+    expect(Order::where('cart_id', $cart->id)->count())->toBe(0)
+        ->and($cart->fresh()->status)->toBe(CartStatus::Active);
 });
 
 // ---------------------------------------------------------------------------

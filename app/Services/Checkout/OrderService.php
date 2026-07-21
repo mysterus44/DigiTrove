@@ -19,6 +19,7 @@ use App\Services\Pricing\PricingException;
 use App\Services\Pricing\PricingRefusalReason;
 use App\Services\Pricing\PricingService;
 use App\Support\Money;
+use App\Support\OrderNumberGenerator;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -38,19 +39,16 @@ use Throwable;
  */
 final class OrderService
 {
-    /** Crockford base32 minus I, L, O and U — exactly orders_order_number_format_check. */
-    private const ORDER_NUMBER_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-
-    private const ORDER_NUMBER_LENGTH = 10;
-
     private const ORDER_NUMBER_ATTEMPTS = 3;
 
     private const IDEMPOTENCY_KEY_PATTERN = '/\A[A-Za-z0-9._-]{32,255}\z/';
 
-    private const CART_TTL_MINUTES = 30;
+    /** A year of minutes: far beyond any sane cart, still safe for Carbon. */
+    private const MAX_PENDING_TTL_MINUTES = 525_600;
 
     public function __construct(
         private readonly PricingService $pricing,
+        private readonly OrderNumberGenerator $orderNumbers,
     ) {}
 
     /**
@@ -83,8 +81,11 @@ final class OrderService
         $digest = hash('sha256', $idempotencyKey);
         $now = $at ?? CarbonImmutable::now();
         $email = $this->resolveEmail($actor, $guestEmail);
+        // Validated BEFORE the transaction: a misconfigured TTL must never
+        // reach a business write.
+        $ttlMinutes = $this->pendingTtlMinutes();
 
-        return DB::transaction(function () use ($actor, $cartPublicId, $currency, $digest, $email, $now): Order {
+        return DB::transaction(function () use ($actor, $cartPublicId, $currency, $digest, $email, $now, $ttlMinutes): Order {
             $cart = Cart::query()->where('public_id', $cartPublicId)->lockForUpdate()->first();
 
             if ($cart === null || ! $this->owns($actor, $cart)) {
@@ -118,7 +119,7 @@ final class OrderService
             $bundleComponentCounts = $this->validateBundles($cart);
 
             $quote = $this->quote($cart, $currency, $now);
-            $order = $this->createOrder($cart, $actor, $email, $quote, $digest, $now);
+            $order = $this->createOrder($cart, $actor, $email, $quote, $digest, $now, $ttlMinutes);
             $this->createItems($order, $quote, $bundleComponentCounts, $now);
 
             $cart->forceFill(['status' => CartStatus::Converted])->save();
@@ -273,6 +274,41 @@ final class OrderService
         }
     }
 
+    /**
+     * How long a pending order stays claimable (D-032). Configuration only —
+     * never a request input — and validated strictly: an invalid value is a
+     * server misconfiguration, not a client mistake.
+     */
+    private function pendingTtlMinutes(): int
+    {
+        $configured = config('checkout.pending_ttl_minutes');
+
+        // is_numeric() alone would accept "1.5", " 30" and 1.0; the TTL must be
+        // a whole number of minutes.
+        $valid = (is_int($configured) && ! is_bool($configured))
+            || (is_string($configured) && preg_match('/\A[1-9][0-9]*\z/', $configured) === 1);
+
+        if (! $valid) {
+            throw self::misconfiguredTtl();
+        }
+
+        $minutes = (int) $configured;
+
+        if ($minutes < 1 || $minutes > self::MAX_PENDING_TTL_MINUTES) {
+            throw self::misconfiguredTtl();
+        }
+
+        return $minutes;
+    }
+
+    private static function misconfiguredTtl(): CheckoutException
+    {
+        return CheckoutException::of(
+            CheckoutRefusalReason::IntegrityFailure,
+            'The checkout could not be completed.',
+        );
+    }
+
     private function createOrder(
         Cart $cart,
         User|Visitor $actor,
@@ -280,6 +316,7 @@ final class OrderService
         PricedQuote $quote,
         string $digest,
         CarbonImmutable $now,
+        int $ttlMinutes,
     ): Order {
         $snapshot = $quote->couponSnapshot;
 
@@ -304,12 +341,18 @@ final class OrderService
             // coupon belong to P3-D4 (D-027 point 5, D-028.2).
             'status' => OrderStatus::Pending,
             'placed_at' => $now,
-            'expires_at' => $now->addMinutes(self::CART_TTL_MINUTES),
+            'expires_at' => $now->addMinutes($ttlMinutes),
         ];
 
         for ($attempt = 1; $attempt <= self::ORDER_NUMBER_ATTEMPTS; $attempt++) {
             try {
-                return Order::query()->create($attributes + ['order_number' => $this->orderNumber($now)]);
+                // A 23505 puts the WHOLE PostgreSQL transaction in the aborted
+                // state: a bare retry would only ever get 25P02 and lose the
+                // cart lock. The nested transaction issues a real SAVEPOINT and
+                // rolls back to it, leaving the outer transaction usable.
+                return DB::transaction(
+                    fn (): Order => Order::query()->create($attributes + ['order_number' => $this->orderNumbers->generate($now)]),
+                );
             } catch (Throwable $exception) {
                 // Only an order_number collision is retryable; every other
                 // unique violation is a distinct, non-idempotent failure.
@@ -321,17 +364,6 @@ final class OrderService
         }
 
         throw CheckoutException::of(CheckoutRefusalReason::IntegrityFailure, 'Could not allocate an order number.');
-    }
-
-    private function orderNumber(CarbonImmutable $now): string
-    {
-        $suffix = '';
-
-        for ($i = 0; $i < self::ORDER_NUMBER_LENGTH; $i++) {
-            $suffix .= self::ORDER_NUMBER_ALPHABET[random_int(0, strlen(self::ORDER_NUMBER_ALPHABET) - 1)];
-        }
-
-        return sprintf('DGT-%s-%s', $now->format('Y'), $suffix);
     }
 
     /**
