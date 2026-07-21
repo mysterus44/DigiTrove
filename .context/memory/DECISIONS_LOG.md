@@ -2194,8 +2194,37 @@ Catalogue 12/111 ; suite complète **333 tests / 3272 assertions** (était
 inchangées**, aucune `000014` ; PostgreSQL et Redis healthy ; aucune base
 temporaire résiduelle.
 
-*Statut* : **P3-D1 MERGÉ — HARDENING POST-MERGE EN ATTENTE DE MERGE.** Aucun code
-P3-D2, P4-C ou P5 créé.
+*Statut* : **P3-D1 ET P3-D1.1 TERMINÉS ET MERGÉS.** P3-D1.1 mergé via
+[PR #18](https://github.com/mysterus44/DigiTrove/pull/18), merge
+`0e18d69d7216b87118bc024e697cc5629c561846` (parents
+`78f475e750b0e060fd38c44d6733844807683ff9` +
+`6349fc19b70858ef4bc0186e4adf2687742fd8c4`), CI run #19 `success`.
+
+*Clôture post-merge P3-D1.1* : périmètre mergé audité = **exactement 12 fichiers
+modifiés** (5 classes, 2 suites de tests, 5 documents), **aucun ajout ni
+suppression** ; aucune migration, route, contrôleur, Request, modèle, factory,
+config, `OrderService`, checkout, paiement, event, listener, job, P4-C ni P5.
+Relecture du code sur la stable : `Money::CURRENTY_PATTERN` vaut bien
+`'/\A[A-Z]{3}\z/'` et `Money::assertValidCurrency()` est réutilisée par
+`PricedQuote` (aucune normalisation silencieuse) ; l'allowlist
+`P4B_ALLOWED_SERVICE_FILES` liste les 7 fichiers `Pricing/*` et la comparaison
+est récursive sur chemins normalisés via `array_diff`, `app/Jobs` et
+`app/Listeners` restant prouvés absents ; les trois DTO lèvent sur chaque
+invariant, toute l'arithmétique passant par `IntegerMath`, `taxMinor !== 0`
+refusé, snapshot coupon ⟺ remise positive, `lines` immuable ; `DiscountAllocator`
+refuse `line_id` dupliqué, `line_id < 1` et `product_id < 1` avant toute
+allocation. Auto-audit rejoué sur la stable : `"XOF\n"`/`"XOF\r\n"`/`"\nXOF"`/
+`"xof"`/`"XOFF"` refusés, `'XOF'` accepté ; les 7 constructions incohérentes
+refusées ; duplication refusée ; Hamilton inchangé (999 lignes / D=998 →
+`sum=998, max=1, min=0`) ; ligne gratuite jamais remisée ; immutabilité profonde
+intacte. Validation post-merge : Unit **94/117**, Feature P3-D1 **48/167**, P4-B
+**20/616**, P3A **15/139**, P3B **18/357**, Catalogue **12/111**, suite complète
+**333/3272**, Pint **132**, `git diff --check` propre, **29 migrations
+inchangées**, aucune `000014`, PostgreSQL 16 et Redis 7 `healthy`, aucune base
+temporaire résiduelle, **aucune politique métier modifiée**. Branches locales
+`p3-d1-pricing-kernel` et `p3-d1-post-merge-hardening` supprimées, distantes
+conservées à `95ab5627` et `6349fc19`, `origin/main` intact `11130f4d`. Aucun
+code P3-D2, P4-C ou P5 créé.
 
 ---
 

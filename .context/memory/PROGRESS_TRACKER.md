@@ -12,7 +12,7 @@ SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
-P3-D APPLICATIF     : ██░░░░░░░░  P3-D1 MERGÉ (PR #17) + hardening P3-D1.1 en attente de merge ; P3-D2→P3-D5 non démarrés
+P3-D APPLICATIF     : ██░░░░░░░░  P3-D1 + P3-D1.1 TERMINÉS ET MERGÉS (PR #17 + #18) ; P3-D2→P3-D5 non démarrés
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ░░░░░░░░░░  0% — planifié D-030 (P4-C0→P4-C6), non démarré
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
@@ -80,9 +80,15 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > garde-fou P4-B laissant passer un service de livraison sous namespace neutre ·
 > A3 DTO de pricing sans invariants · A4 `line_id` dupliqué écrasé en silence).
 > Le calcul de prix lui-même était correct et aucune corruption monétaire n'était
-> possible. **`P3-D1.1` ferme ces quatre points et EST EN ATTENTE DE MERGE** :
-> Unit 94/117, P4-B 20/616, suite complète 333/3272, Pint 132, 29 migrations
-> inchangées, aucune politique métier modifiée.
+> possible. **`P3-D1.1` ferme ces quatre points et est MERGÉ** via
+> [PR #18](https://github.com/mysterus44/DigiTrove/pull/18) → merge `0e18d69d`
+> (parents `78f475e7` + `6349fc19`), CI run #19 verte, 12 fichiers exactement.
+> Validation post-merge : Unit 94/117, Feature P3-D1 48/167, P4-B 20/616,
+> P3A 15/139, P3B 18/357, Catalogue 12/111, suite complète 333/3272, Pint 132,
+> 29 migrations inchangées, aucune politique métier modifiée, aucune base
+> temporaire résiduelle. Branches locales supprimées, distantes conservées.
+> **`P3-D1` ET `P3-D1.1` SONT TERMINÉS ET MERGÉS** ; la prochaine étape est la
+> planification de `P3-D2 — Checkout Order Transaction`, non commencée.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -418,7 +424,7 @@ coupon, dans la même transaction que la transition vers `paid`.
 | Gate | Branche future | Objectif unique | Statut |
 |------|----------------|-----------------|--------|
 | **P3-D1** Pricing & Quote Kernel | `p3-d1-pricing-kernel` | Money value object + `PricedQuote` immuable : prix fixe par devise depuis `product_prices`, validation coupon, remise globale, **allocation Hamilton aux lignes**. Zéro écriture BDD, zéro migration. | ✅ **MERGÉ** — [PR #17](https://github.com/mysterus44/DigiTrove/pull/17) → `78f475e7`, CI #18 verte ; 9 classes, 17 fichiers, 29 migrations inchangées |
-| **P3-D1.1** Hardening post-merge | `p3-d1-post-merge-hardening` | Fermeture des 4 anomalies de contrat défensif trouvées par l'audit post-merge (A1 devise `\n` · A2 garde-fou P4-B · A3 invariants DTO · A4 `line_id` dupliqué). Aucune migration, aucune politique métier modifiée. | 🔶 **EN ATTENTE DE MERGE** ; Unit **94/117**, P4-B **20/616**, suite complète **333/3272**, Pint **132** |
+| **P3-D1.1** Hardening post-merge | `p3-d1-post-merge-hardening` | Fermeture des 4 anomalies de contrat défensif trouvées par l'audit post-merge (A1 devise `\n` · A2 garde-fou P4-B · A3 invariants DTO · A4 `line_id` dupliqué). Aucune migration, aucune politique métier modifiée. | ✅ **MERGÉ** — [PR #18](https://github.com/mysterus44/DigiTrove/pull/18) → `0e18d69d`, CI #19 verte ; 12 fichiers, Unit **94/117**, P4-B **20/616**, suite complète **333/3272**, Pint **132**, 29 migrations inchangées |
 | **P3-D2** Checkout Order Transaction | `p3-d2-checkout-order-transaction` | `Order` + `order_items` + snapshot bundle exhaustif (`INSERT … SELECT` unique après `products FOR UPDATE`) dans **une** transaction ; bundle vide refusé avant l'insertion de la ligne ; idempotence par `checkout_idempotency_hash`. | ⬜ TODO |
 | **P3-D3** Payment Initiation | `p3-d3-payment-initiation` | Port fournisseur + ligne `payments` `pending` ; `idempotency_key_hash` ; aucun webhook, aucune livraison. | ⬜ TODO |
 | **P3-D4** Server-side Payment Confirmation | `p3-d4-payment-confirmation` | Webhook signé + **contre-appel fournisseur** + montant/devise revérifiés en entiers ; `Payment succeeded` · `Order → paid` · `coupon_redemptions` ; branche gratuite `total_minor = 0` sans ligne `payments` ; rejeu idempotent. | ⬜ TODO |

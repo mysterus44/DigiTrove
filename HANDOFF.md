@@ -8,8 +8,7 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-21
-- **Branche git active** : `p3-d1-post-merge-hardening` (stable
-  `p0-foundations-laravel13` à `78f475e7`)
+- **Branche git active** : `p0-foundations-laravel13` (stable à `0e18d69d`)
 - **P3-D1 TERMINÉ ET MERGÉ** via
   [PR #17](https://github.com/mysterus44/DigiTrove/pull/17), merge
   `78f475e750b0e060fd38c44d6733844807683ff9` (parents `ba48cce1` + `95ab5627`),
@@ -18,16 +17,26 @@
   9 classes : `IntegerMath`, `Money`, `PricingService`, `DiscountAllocator`,
   `PricedQuote`, `PricedLine`, `CouponSnapshot`, `PricingException`,
   `PricingRefusalReason`. Branche distante conservée à `95ab5627`.
-- 🔶 **P3-D1.1 HARDENING POST-MERGE EN ATTENTE DE MERGE** (branche
-  `p3-d1-post-merge-hardening`, depuis `78f475e7`). Le merge de la PR #17 ayant
-  précédé la revue contradictoire, l'audit post-merge a démontré **quatre défauts
-  de contrat défensif** — A1 devise acceptant `"XOF\n"`, A2 garde-fou P4-B
-  laissant passer un service de livraison sous namespace neutre, A3 DTO de
-  pricing sans invariants, A4 `line_id` dupliqué écrasé en silence. **Le calcul
-  de prix lui-même était correct** ; aucune corruption monétaire n'était possible
-  via `PricingService::quote()`. Les quatre sont fermés. Unit **94/117**, P4-B
-  **20/616**, suite complète **333/3272**, Pint **132**, 29 migrations
-  inchangées, aucune politique métier modifiée.
+- **P3-D1.1 TERMINÉ ET MERGÉ** via
+  [PR #18](https://github.com/mysterus44/DigiTrove/pull/18), merge
+  `0e18d69d7216b87118bc024e697cc5629c561846` (parents `78f475e7` + `6349fc19`),
+  CI run #19 `success`. Périmètre : **exactement 12 fichiers modifiés**, aucun
+  ajout ni suppression, aucune migration. Le merge de la PR #17 ayant précédé la
+  revue contradictoire, l'audit post-merge avait démontré **quatre défauts de
+  contrat défensif** — A1 devise acceptant `"XOF\n"`, A2 garde-fou P4-B laissant
+  passer un service de livraison sous namespace neutre, A3 DTO de pricing sans
+  invariants, A4 `line_id` dupliqué écrasé en silence. **Le calcul de prix
+  lui-même était correct** ; aucune corruption monétaire n'était possible via
+  `PricingService::quote()`. **Les quatre sont fermés et vérifiés sur la
+  stable.** Unit **94/117**, Feature P3-D1 **48/167**, P4-B **20/616**, suite
+  complète **333/3272**, Pint **132**, 29 migrations inchangées, aucune politique
+  métier modifiée. Branches locales `p3-d1-pricing-kernel` et
+  `p3-d1-post-merge-hardening` supprimées ; distantes conservées à `95ab5627` et
+  `6349fc19`.
+- ⚠️ **`P4B_ALLOWED_SERVICE_FILES` (dans `tests/Feature/P4BDownloadLogsTest.php`)
+  est une frontière historique fail-closed** : tout gate futur ajoutant un
+  fichier sous `app/Services` doit **élargir explicitement** cette allowlist,
+  sinon le garde-fou P4-B échoue. C'est le comportement voulu.
 - **D-030 FINALISÉE ET VALIDÉE** : roadmap de la couche applicative Commerce →
   Livraison. KingKouda tranche **Q1 = A renforcée** (token CSPRNG jamais
   reconstructible ; reprise = révoquer puis réémettre ; at-least-once assumé),
@@ -298,15 +307,34 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 Revue et merge de `P3-D1.1 — Hardening post-merge`
+## 🎯 Planifier `P3-D2 — Checkout Order Transaction`
 
-**P3-D1 est mergé (PR #17)**, mais le merge a précédé la revue contradictoire.
-L'audit post-merge a démontré quatre défauts de contrat défensif, corrigés sur
-`p3-d1-post-merge-hardening`. La prochaine tâche est la **revue puis le merge de
-ce hotfix**, puis la clôture. **Ne pas commencer P3-D2 avant ce merge.**
+**`P3-D1` ET `P3-D1.1` SONT TERMINÉS ET MERGÉS** (PR #17 → `78f475e7`, CI #18
+verte ; PR #18 → `0e18d69d`, CI #19 verte). Le noyau de tarification est en
+place, durci et validé sur la stable. La prochaine tâche est la **planification**
+de `P3-D2 — Checkout Order Transaction` (branche future
+`p3-d2-checkout-order-transaction`) — **non commencée**.
 
-Ce que ferme P3-D1.1 (chaque défaut a été reproduit par sonde exécutée avant
-correction, puis rejoué après) :
+Rappels utiles pour ce gate, issus de D-030 et du schéma :
+- transaction **unique** créant `Order` + `order_items` + le snapshot exhaustif
+  `order_item_bundle_components` (un seul `INSERT … SELECT` après
+  `SELECT … FROM products WHERE id = <bundle> FOR UPDATE`) ;
+- **bundle vide refusé AVANT** la création de l'order_item (garantie applicative,
+  jamais un invariant PostgreSQL — D-029.3 point 7) ;
+- idempotence par `orders.checkout_idempotency_hash` (unique, 64 hex) ;
+- `validate_order_items_consistency` est **différé** : les tests devront forcer
+  `SET CONSTRAINTS ALL IMMEDIATE` ;
+- **aucune** ligne `coupon_redemptions`, **aucun** incrément de
+  `coupons.redemptions_count` — cela reste P3-D4 (D-027 point 5) ;
+- le `PricedQuote` de P3-D1 fournit déjà tous les montants et snapshots : P3-D2
+  **ne recalcule rien** ;
+- ⚠️ tout nouveau fichier sous `app/Services` impose d'élargir explicitement
+  `P4B_ALLOWED_SERVICE_FILES`, sinon le garde-fou P4-B échoue.
+
+### Historique : ce qu'a fermé P3-D1.1
+
+Chaque défaut a été reproduit par sonde exécutée avant correction, puis rejoué
+après merge :
 - **A1** — `Money::of(100, "XOF\n")` était accepté : en PCRE, `$` matche aussi
   juste avant un saut de ligne final. Corrigé par les ancres absolues
   `/\A[A-Z]{3}\z/`, et `Money::assertValidCurrency()` devient la **source unique**
@@ -454,6 +482,45 @@ aucun push direct sur `main`.
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-21 — Claude Code (clôture post-merge P3-D1.1)
+- **Merge P3-D1.1 prouvé** : [PR #18](https://github.com/mysterus44/DigiTrove/pull/18),
+  merge `0e18d69d7216b87118bc024e697cc5629c561846`, parents
+  `78f475e750b0e060fd38c44d6733844807683ff9` (base) +
+  `6349fc19b70858ef4bc0186e4adf2687742fd8c4` (head), head confirmé ancêtre de la
+  stable, CI run #19 `success`. Stable synchronisée en fast-forward, 0/0.
+- **Périmètre mergé audité** : **exactement 12 fichiers, tous modifiés**, aucun
+  ajout ni suppression — 5 classes (`Money`, `PricedLine`, `PricedQuote`,
+  `CouponSnapshot`, `DiscountAllocator`), 2 suites de tests, 5 documents. Aucune
+  migration, route, contrôleur, Request, modèle, factory, config, `OrderService`,
+  checkout, paiement, event, listener, job, P4-C ni P5.
+- **A1→A4 revérifiés par relecture du code sur la stable** : `CURRENCY_PATTERN`
+  vaut `'/\A[A-Z]{3}\z/'` et `Money::assertValidCurrency()` est réutilisée par
+  `PricedQuote` ; `P4B_ALLOWED_SERVICE_FILES` liste les 7 fichiers `Pricing/*`
+  avec comparaison récursive sur chemins normalisés (`array_diff`), `app/Jobs` et
+  `app/Listeners` prouvés absents, test synthétique couvrant `GrantIssuer`,
+  `DeliveryManager`, `StreamManager`, `RateLimiter`, `DownloadService` et
+  `Pricing/UnexpectedService.php` ; les trois DTO lèvent sur chaque invariant via
+  `IntegerMath`, `taxMinor !== 0` refusé, snapshot coupon ⟺ remise positive ;
+  `DiscountAllocator` refuse `line_id` dupliqué et ids non positifs.
+- **Auto-audit rejoué sur la stable** : `"XOF\n"`, `"XOF\r\n"`, `"\nXOF"`,
+  `"xof"`, `"XOFF"` refusés et `'XOF'` accepté ; les 7 constructions incohérentes
+  refusées ; duplication de `line_id` refusée ; Hamilton inchangé (999 lignes /
+  D=998 → `sum=998, max=1, min=0`) ; ligne gratuite jamais remisée ; immutabilité
+  profonde intacte (4 tentatives de mutation, dont imbriquée, échouent). Aucun
+  fichier de sonde laissé.
+- **Validation post-merge** : Unit **94/117**, Feature P3-D1 **48/167**, P4-B
+  **20/616**, P3A **15/139**, P3B **18/357**, Catalogue **12/111** ; suite
+  complète **333/3272** ; Pint **132** ; `git diff --check` propre ;
+  **29 migrations inchangées**, aucune `000014` ; PostgreSQL 16 et Redis 7
+  `healthy` ; bases = `digitrove` + `digitrove_testing` seulement ; `app/Services`
+  ne contient que les 7 fichiers `Pricing/*`.
+- **Nettoyage** : branches locales `p3-d1-post-merge-hardening` (était `6349fc1`)
+  et `p3-d1-pricing-kernel` (était `95ab562`) supprimées après preuve du merge ;
+  distantes conservées à `6349fc19` et `95ab5627` ; `origin/main` toujours
+  `11130f4d`. Aucun nouveau merge, aucune correction de code.
+- Aucune décision nouvelle. Aucun code P3-D2, P4-C ni P5 créé.
+  Laisse à : **planifier `P3-D2 — Checkout Order Transaction`** (non commencé).
 
 ### 2026-07-21 — Claude Code (audit post-merge P3-D1 + hardening P3-D1.1)
 - **Merge P3-D1 prouvé** : [PR #17](https://github.com/mysterus44/DigiTrove/pull/17),

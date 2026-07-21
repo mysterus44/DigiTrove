@@ -179,11 +179,12 @@ ne déclare que la page d'accueil, `OrderService` / `OrderPaid` /
   et `redemptions_count` restent P3-D4. Unit **36/55**, Feature **48/167** sous
   `digitrove_runtime`, suite complète **274/3206**, Pint **132**.
 
-- 🔶 **`P3-D1.1 — Hardening post-merge` EN ATTENTE DE MERGE** (branche
-  `p3-d1-post-merge-hardening`, depuis `78f475e7`). Le merge de la PR #17 ayant
-  précédé la revue contradictoire, l'audit post-merge a démontré **quatre défauts
-  de contrat défensif**, tous fermés — **le calcul de prix était correct et
-  aucune corruption monétaire n'était possible** :
+- **`P3-D1.1 — Hardening post-merge` ✅ TERMINÉ ET MERGÉ** via
+  [PR #18](https://github.com/mysterus44/DigiTrove/pull/18), merge `0e18d69d`
+  (parents `78f475e7` + `6349fc19`), CI #19 verte, **12 fichiers exactement**.
+  Le merge de la PR #17 ayant précédé la revue contradictoire, l'audit post-merge
+  a démontré **quatre défauts de contrat défensif**, tous fermés — **le calcul de
+  prix était correct et aucune corruption monétaire n'était possible** :
   **A1** `Money::of(100, "XOF\n")` accepté (le `$` de PCRE matche avant un saut
   de ligne final) → ancres `/\A[A-Z]{3}\z/` + `Money::assertValidCurrency()`
   source unique ; **A2** garde-fou P4-B laissant passer
@@ -195,11 +196,23 @@ ne déclare que la page d'accueil, `OrderService` / `OrderPaid` /
   **333/3272**, Pint **132**, 29 migrations inchangées, aucune politique métier
   modifiée.
 
-**PROCHAINE TÂCHE : revue et merge de la PR `P3-D1.1`** vers
-`p0-foundations-laravel13`, puis clôture. **Ne pas commencer P3-D2** avant ce
-merge. Deux jugements conservateurs à confirmer en revue : seul
-`products.status = 'published'` est vendable ; `min_order_minor` est un plancher
-mesuré sur le panier entier. P5 non démarré.
+  ⚠️ **`P4B_ALLOWED_SERVICE_FILES` est une frontière historique fail-closed** :
+  tout gate ajoutant un fichier sous `app/Services` doit l'**élargir
+  explicitement**, sinon le garde-fou P4-B échoue — c'est voulu.
+
+**`P3-D1` ET `P3-D1.1` SONT TERMINÉS ET MERGÉS.** Validation post-merge : Unit
+94/117, Feature P3-D1 48/167, P4-B 20/616, P3A 15/139, P3B 18/357, Catalogue
+12/111, suite complète **333/3272**, Pint **132**, 29 migrations inchangées,
+aucune politique métier modifiée, branches locales supprimées et distantes
+conservées, `origin/main` intact.
+
+**PROCHAINE TÂCHE : planifier `P3-D2 — Checkout Order Transaction`** (branche
+future `p3-d2-checkout-order-transaction`) — transaction unique Order +
+`order_items` + snapshot bundle exhaustif, bundle vide refusé avant l'insertion,
+idempotence par `checkout_idempotency_hash`, **aucune** consommation de coupon
+(P3-D4). Deux jugements conservateurs hérités de P3-D1, à confirmer à ce gate :
+seul `products.status = 'published'` est vendable ; `min_order_minor` est un
+plancher mesuré sur le panier entier. P5 non démarré.
 
 ## 🔄 EN FIN DE TÂCHE
 
