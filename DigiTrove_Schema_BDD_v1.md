@@ -1884,7 +1884,7 @@ Grant Revocation        ↓
 |---|---|:--:|---|
 | **P3-D1** Pricing & Quote Kernel ✅ *mergé (PR #17 → `78f475e7`)* | `p3-d1-pricing-kernel` | non | *aucune écriture* — prépare `orders_total_formula_check`, `order_items_line_*_formula_check`, `validate_order_items_consistency` |
 | **P3-D1.1** Hardening post-merge ✅ *mergé (PR #18 → `0e18d69d`)* | `p3-d1-post-merge-hardening` | non | invariants DTO en miroir des CHECK `orders`/`order_items` ; allowlist fail-closed du garde-fou P4-B |
-| **P3-D2** Checkout Order Transaction | `p3-d2-checkout-order-transaction` | non | `orders_checkout_idempotency_hash_unique`, `orders_coupon_snapshot_consistency_check`, `validate_order_items_consistency` (différé), `order_items_order_id_product_id_unique`, S1/S2/S3 |
+| **P3-D2** Checkout Order Transaction ✅ *implémenté, en attente de merge (D-031)* | `p3-d2-checkout-order-transaction` | non | `orders_checkout_idempotency_hash_unique`, **`orders_cart_id_unique`**, `orders_coupon_snapshot_consistency_check`, `validate_order_items_consistency` (différé), `order_items_order_id_product_id_unique`, S1/S2/S3 |
 | **P3-D3** Payment Initiation | `p3-d3-payment-initiation` | non | `payments_idempotency_key_hash_unique`, `payments_order_id_attempt_number_unique`, transitions T (D-028.5) |
 | **P3-D4** Server-side Payment Confirmation | `p3-d4-payment-confirmation` | non | uniques de rejeu `payment_webhook_events`, `UNIQUE(order_id) WHERE status='succeeded'`, `coupon_redemptions_order_id_unique`, constraint triggers P3C différés |
 | **P3-D5** OrderPaid Domain Event | `p3-d5-order-paid-event` | non | — (dispatch `afterCommit` uniquement) |
@@ -1979,6 +1979,30 @@ PricingRefusalReason}`. Points de contrat retenus, tous couverts par test :
 * **Zéro écriture, zéro verrou** : `coupon_redemptions` et
   `coupons.redemptions_count` restent P3-D4 (D-027, point 5) ; les verrous
   `FOR UPDATE` restent P3-D2/P3-D4.
+
+### Contrat transactionnel P3-D2 (D-031, implémenté)
+
+**Ordre de verrouillage** : `carts` (`public_id`, `FOR UPDATE`) → `products` du
+panier par `id` croissant (`withTrashed`) → par bundle croissant :
+`product_bundles` puis **produits enfants par `id` croissant**. `product_prices`
+n'est pas verrouillé (lecture unique de `PricingService` dans la transaction).
+Le verrou des **enfants** rend Q1=C applicable : un soft-delete concurrent est
+bloqué (`55P03`, prouvé sur deux connexions PDO réelles).
+
+**Q1 = C** — un composant de bundle soft-deleted fait **échouer** le checkout
+(`BundleComponentUnavailable`) : S3 ne lit pas `deleted_at` et un snapshot
+partiel est structurellement indétectable (D-029.3/5). **Q2 = B** — le Cart
+passe à `converted` dans la même transaction, jamais sur rejeu.
+
+**Idempotence** : digest SHA-256 seul en base ; rejeu résolu après le verrou du
+Cart mais **avant** toute règle d'état ; égalité prouvée par comparaison de
+`cart_id`, acteur, `currency`, `coupon_id`, `customer_email` (le schéma ne
+stocke aucun fingerprint). `orders_cart_id_unique` est le **backstop** derrière
+`CartAlreadyCheckedOut` ; chaque `23505` est traduit par contrainte, jamais
+globalement en « rejeu ».
+
+**Order gratuite** : reste `pending`, aucune ligne `payments`. **Coupon** :
+snapshot copié, **aucune** consommation (P3-D4).
 
 ### Points de vigilance figés par D-030
 

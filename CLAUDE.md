@@ -206,13 +206,26 @@ ne déclare que la page d'accueil, `OrderService` / `OrderPaid` /
 aucune politique métier modifiée, branches locales supprimées et distantes
 conservées, `origin/main` intact.
 
-**PROCHAINE TÂCHE : planifier `P3-D2 — Checkout Order Transaction`** (branche
-future `p3-d2-checkout-order-transaction`) — transaction unique Order +
-`order_items` + snapshot bundle exhaustif, bundle vide refusé avant l'insertion,
-idempotence par `checkout_idempotency_hash`, **aucune** consommation de coupon
-(P3-D4). Deux jugements conservateurs hérités de P3-D1, à confirmer à ce gate :
-seul `products.status = 'published'` est vendable ; `min_order_minor` est un
-plancher mesuré sur le panier entier. P5 non démarré.
+- **`P3-D2 — Checkout Order Transaction` ✅ IMPLÉMENTÉ — EN ATTENTE DE MERGE**
+  (branche `p3-d2-checkout-order-transaction`, **D-031**, aucune migration) :
+  3 classes `App\Services\Checkout\{OrderService, CheckoutException,
+  CheckoutRefusalReason}`. Transaction unique Order `pending` + `order_items` +
+  snapshot bundle exhaustif + Cart → `converted`.
+  **Q1 = C** : composant de bundle soft-deleted (ou bundle imbriqué) ⇒ checkout
+  **refusé**, jamais de filtrage silencieux ni de snapshot partiel.
+  **Q2 = B** : Cart converti dans la même transaction, jamais sur rejeu.
+  Verrouillage `carts` → `products` du panier → `product_bundles` → **produits
+  enfants** (ce dernier verrou rend Q1=C applicable, `55P03` prouvé).
+  Idempotence : digest SHA-256 seul, rejeu avant toute règle d'état, égalité par
+  comparaison de colonnes, `orders_cart_id_unique` en backstop, chaque `23505`
+  traduit par contrainte. Order gratuite `pending`, **aucune** consommation de
+  coupon (P3-D4), aucun Payment. P3-D2 **47/171**, P4-B **20/619**, suite
+  complète **380/3446**, Pint **136**.
+
+**PROCHAINE TÂCHE : revue et merge de la PR `P3-D2`**, puis clôture post-merge.
+**Ne pas commencer P3-D3** avant ce merge. Deux jugements conservateurs hérités
+de P3-D1 restent en vigueur : seul `products.status = 'published'` est vendable ;
+`min_order_minor` est un plancher mesuré sur le panier entier. P5 non démarré.
 
 ## 🔄 EN FIN DE TÂCHE
 

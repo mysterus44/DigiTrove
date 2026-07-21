@@ -2228,5 +2228,93 @@ code P3-D2, P4-C ou P5 créé.
 
 ---
 
+### D-031 — Contrat transactionnel P3-D2 (Checkout Order Transaction) ✅
+**Date** : 2026-07-21. **Statut** : **P3-D2 IMPLÉMENTÉ — EN ATTENTE DE MERGE**
+(branche `p3-d2-checkout-order-transaction`, depuis `5d07abad`). **Aucune
+migration** (29 inchangées). Décisions humaines : **Q1 = C**, **Q2 = B**.
+
+1. **Q1 = C — composant de bundle soft-deleted ⇒ checkout REFUSÉ.** Aucun
+   filtrage silencieux, aucun snapshot partiel. Motif : S3 ne lit pas
+   `products.deleted_at` (vérifié par `pg_get_functiondef`) et P4-A1 ne stocke ni
+   en-tête ni compteur — un snapshot partiel est **structurellement
+   indétectable** (D-029.3/5). Un incident catalogue doit échouer bruyamment au
+   checkout plutôt que produire une sous-livraison définitive et invisible.
+   Refus : `BundleComponentUnavailable`. Bundle sans composant :
+   `BundleEmpty`, refusé **avant** toute écriture.
+2. **Q2 = B — le Cart passe à `converted` dans la MÊME transaction** que
+   l'Order, après que toutes les écritures de commande sont valides. Aucun
+   vidage, aucune suppression, aucun nouveau panier. Sur rollback le Cart reste
+   `active` ; sur rejeu idempotent il n'est **pas reconverti**.
+3. **Idempotence.** Clé brute opaque, `/\A[A-Za-z0-9._-]{32,255}\z/`, **jamais
+   persistée ni loguée** ; seul `hash('sha256', clé)` entre dans
+   `checkout_idempotency_hash`. Le rejeu est résolu **après** le verrou du Cart
+   mais **avant** toute règle d'état (un panier converti est l'état normal après
+   un premier appel réussi). Rejeu identique ⇒ Order existante retournée, sans
+   rien réécrire — l'**Order**, pas le panier éventuellement muté, est la vérité
+   autoritative. Le schéma ne stockant aucun fingerprint, l'égalité est prouvée
+   par **comparaison des colonnes** `cart_id`, acteur, `currency`, `coupon_id`,
+   `customer_email` : divergence ⇒ `IdempotencyConflict`. Même Cart + autre clé
+   ⇒ `CartAlreadyCheckedOut`, jamais un faux rejeu. Backstop PostgreSQL :
+   `orders_cart_id_unique` (23505), distinct de
+   `orders_checkout_idempotency_hash_unique` et de
+   `orders_order_number_unique` — **aucun 23505 n'est classé « idempotence » par
+   défaut**, chaque contrainte est traduite séparément.
+4. **Order gratuite (`total_minor = 0`) reste `pending`.** Prouvé accepté par le
+   schéma (sonde : `SET CONSTRAINTS ALL IMMEDIATE` vert). Le passage à `paid`
+   appartient à P3-D4. **Aucune ligne `payments` dans ce gate.**
+5. **Aucune consommation de coupon.** P3-D2 valide via `PricingService` et copie
+   le `CouponSnapshot` dans `orders` ; ni `coupon_redemptions`, ni incrément de
+   `redemptions_count`, ni réservation de quota (D-027 point 5). Une Order
+   `pending` **ne réserve rien** : P3-D4 revalide sous verrou et peut refuser.
+6. **Aucun Payment, event, listener, job, route, contrôleur, Request, grant ni
+   log.** Le coupon est résolu depuis `carts.coupon_id` (D-024/6), jamais fourni
+   par l'appelant.
+
+**Ordre de verrouillage** (déterministe, anti-deadlock) : `carts` par
+`public_id` `FOR UPDATE` → `products` du panier par `id` croissant
+(`withTrashed`) → par bundle croissant : `product_bundles` par
+`child_product_id` puis **produits enfants par `id` croissant**. Le verrou des
+**enfants** est ce qui rend Q1=C réellement applicable : un soft-delete
+concurrent doit attendre la fin de la transaction (**prouvé : `55P03`**).
+`product_prices` n'est pas verrouillé — la quote et les `order_items`
+proviennent d'une **lecture unique** de `PricingService` dans la transaction.
+
+**Propriété du panier** : compte ⇒ `cart.user_id === acteur->id` ; invité ⇒
+`cart.visitor_id === acteur->id` **et** `cart.user_id IS NULL`. Panier
+inexistant et panier d'autrui produisent le **même** refus `CartUnavailable`
+(anti-énumération de `carts.public_id`). E-mail : autoritatif depuis le compte,
+exigé et validé pour un invité.
+
+**Snapshot bundle** : après création de l'`order_item` parent, **un seul
+`INSERT … SELECT`** par bundle depuis `product_bundles` (un statement = un
+instantané, exhaustif par construction, D-029.3/3), **sans filtre** — un
+composant soft-deleted a déjà provoqué le refus. Le nombre de lignes inséré est
+comparé au compte mesuré sous verrou ; toute divergence lève
+`BundleSnapshotMismatch` et rollback total.
+
+**Fichiers livrés (3)** : `App\Services\Checkout\{OrderService,
+CheckoutException, CheckoutRefusalReason}`. Aucun repository, interface, DTO
+générique, bus, event, listener, job, contrôleur ni route.
+`P4B_ALLOWED_SERVICE_FILES` élargie de **exactement** ces trois chemins, sans
+wildcard ; un test prouve que `Checkout/UnexpectedService.php` reste refusé.
+
+**Validation** : P3-D2 **47 tests / 171 assertions** ; P4-B **20/619** ; P3-D1
+Unit 94/117, Feature 48/167 ; P3B 18/357 ; P3A 15/139 ; Catalogue 12/111 ;
+suite complète **380 / 3446** (base 333/3272) ; Pint **136** ;
+`git diff --check` propre ; 29 migrations inchangées. Concurrence prouvée sur
+**bases jetables + deux connexions PDO réelles** (pattern P4-A1) : soft-delete
+concurrent d'un composant bloqué (`55P03`), deux checkouts du même panier
+sérialisés (`55P03`), seconde commande pour le même panier refusée par
+`orders_cart_id_unique` (`23505`).
+
+**ALTERNATIVES REJETÉES** : filtrer silencieusement un composant soft-deleted
+(Q1=A) ; l'inclure au snapshot (Q1=B) ; laisser le panier `active` (Q2=A) ou
+déléguer la conversion à P3-D4 (Q2=C) ; accepter un `PricedQuote` ou un montant
+du client ; recopier la tarification dans `OrderService` ; verrouiller
+`product_prices` ou le catalogue entier ; traiter tout `23505` comme un rejeu ;
+un seam de test dans le service pour les tests de concurrence.
+
+---
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]
