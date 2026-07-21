@@ -136,7 +136,7 @@ function runP4A21Migration(string $database, string $command, string $migration)
 }
 
 it('applies additive migration 000011 without changing the P4-A2 object topology', function () {
-    expect(DB::table('migrations')->count())->toBe(28)
+    expect(DB::table('migrations')->count())->toBe(29)
         ->and(DB::table('migrations')->where('migration', '2026_07_14_000011_harden_download_grants_integrity')->exists())->toBeTrue()
         ->and(Schema::hasTable('download_grants'))->toBeTrue()
         ->and(Schema::hasTable('licenses'))->toBeFalse();
@@ -270,7 +270,7 @@ it('allows updated_at to advance only with consumption or revocation and keeps v
             'downloads_count' => 1,
             'updated_at' => now()->addMinute(),
         ]),
-        'download_grants consumption must originate from the download log trigger',
+        'download_grants consumption must originate from the download log executor',
     );
     expect(DB::table('download_grants')->where('id', $consumption->id)->first())->toEqual($consumptionBefore);
 
@@ -353,7 +353,7 @@ it('preserves the original G2 quota, expiry and irreversible revocation rules', 
     );
     expectP4A21TriggerViolation(
         fn () => DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 1]),
-        'download_grants consumption must originate from the download log trigger',
+        'download_grants consumption must originate from the download log executor',
     );
     expect((int) DB::table('download_grants')->where('id', $grant->id)->value('downloads_count'))->toBe(0);
 

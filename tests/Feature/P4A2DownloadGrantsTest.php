@@ -122,7 +122,7 @@ function createP4A2BundlePurchase(bool $withSnapshot = true): array
 
 it('applies migration 000010 with the exact schema, four functions and five triggers', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000010_create_download_grants_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(28)
+        ->and(DB::table('migrations')->count())->toBe(29)
         ->and(Schema::hasTable('download_grants'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')
@@ -518,7 +518,7 @@ it('bounds the consumption counter structurally and refuses every direct write s
     // refused; the P4-B suite proves the nested path and quota exhaustion.
     expectP4A2TriggerViolation(
         fn () => DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 1]),
-        'download_grants consumption must originate from the download log trigger',
+        'download_grants consumption must originate from the download log executor',
     );
     expect((int) DB::table('download_grants')->where('id', $grant->id)->value('downloads_count'))->toBe(0);
 

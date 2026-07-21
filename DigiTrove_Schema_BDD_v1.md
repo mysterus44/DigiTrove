@@ -914,17 +914,29 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --           exécuteur (via SET ROLE) reçoivent chacun le leur ; les fonctions
 --           existantes gardent un REVOKE explicite. 13 tests / 84 assertions ;
 --           suite 171/2385 ; Pint 117.
---   P4-B  — Download Logs
---           branche `p4-b-download-logs` (commit `8cf24a8`)
---           migration ACTUELLE `2026_07_14_000012_create_download_logs_table.php`,
---           à RENUMÉROTER en `000013_create_download_logs_table.php` après le
---           gate P4-B0 (frontière harness `000013`).
---           ⚠️ IMPLÉMENTÉ mais **BLOQUÉ AU MERGE** (D-029.6) : l'autorité de
---           consommation `pg_trigger_depth() > 1` de G2 est contournable par un
---           trigger temporaire ou permanent (prouvé). Le rebasage sur la stable
---           durcie exige : G5 `SECURITY DEFINER` (propriétaire exécuteur), G2
---           vérifiant l'identité effective, et les tests de contournement sous
---           `digitrove_runtime` refusés.
+--   P4-B  — Download Logs ✅ ADAPTÉ APRÈS P4-B0 — EN ATTENTE DE MERGE
+--           branche `p4-b-download-logs` ; stable intégrée par MERGE `fca10d9`
+--           (jamais rebase), migration renumérotée
+--           `2026_07_14_000013_create_download_logs_table.php`
+--           (frontière harness `000013`). 29 migrations au total.
+--           Contrat D-029.5 intact : table à 15 colonnes, 10 CHECK, FK RESTRICT,
+--           uniques et index inchangés, 1A/2A/3A + R1A/R2A/R3A préservées.
+--           Durcissement D-029.6 : préconditions fail-closed (rôles, ACL,
+--           défauts globaux) AVANT toute création ; **G5 `SECURITY DEFINER`
+--           possédée par `digitrove_download_executor`** (search_path épinglé
+--           `pg_catalog, public, pg_temp`, objets qualifiés, EXECUTE retiré à
+--           PUBLIC et au runtime) ; **G2 exige `current_user =
+--           digitrove_download_executor` ET `pg_trigger_depth() > 1`** —
+--           l'identité effective est l'autorité, la profondeur une défense
+--           secondaire. Un trigger forgé même par le PROPRIÉTAIRE superuser est
+--           refusé (23514) ; le runtime est arrêté plus tôt (42501).
+--           ACL `download_logs` : PUBLIC révoqué, runtime DML + séquence sans
+--           TRIGGER/TRUNCATE/REFERENCES, exécuteur sans droit sur la table.
+--           G5 reçoit `UPDATE (updated_at) ON orders` — privilège minimal requis
+--           par `FOR UPDATE OF orders` (SELECT seul refusé, mesuré PG 16.14).
+--           Rollback : non vide refusé fail-closed ; vide → G5 supprimée sous
+--           l'exécuteur et G2 restaurée OCTET POUR OCTET à son état post-`000012`,
+--           P4-B0 intact. 19 tests / 603 assertions ; suite 190/2975 ; Pint 121.
 -- Ordre des merges OBLIGATOIRE : `000009` ne se crée qu'après merge de `000008`,
 -- `000010` après `000009`, le hotfix `000011` après `000010`, puis **P4-B0
 -- `000012` (ACL) avant P4-B**, et enfin P4-B renuméroté `000013` seulement après

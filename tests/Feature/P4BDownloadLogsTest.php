@@ -10,13 +10,14 @@ use App\Models\Product;
 use App\Models\ProductFile;
 use App\Models\Refund;
 use App\Models\User;
+use Illuminate\Database\Connection;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Concerns\RefreshesDatabaseAsMigrator as RefreshDatabase;
 use Tests\Support\PhaseMigrationHarness;
 
 uses(RefreshDatabase::class);
@@ -50,6 +51,132 @@ function expectP4BQueryException(Closure $callback, string $sqlState, string $me
 function expectP4BTriggerViolation(Closure $callback, string $messageFragment): void
 {
     expectP4BQueryException($callback, '23514', $messageFragment);
+}
+
+/**
+ * The migrator/owner connection. Used only for the internal G2 probes that must
+ * REACH the trigger layer, since the restricted runtime is stopped earlier at the
+ * ACL layer (42501). Neither layer is validated by the superuser alone: the ACL
+ * refusals below run under the real runtime role.
+ */
+function p4bOwner(): Connection
+{
+    return DB::connection('pgsql_migration');
+}
+
+/**
+ * Runs a runtime statement expected to be refused at the ACL layer (42501). The
+ * probe is wrapped in a savepoint so its failure does not abort the surrounding
+ * RefreshDatabase transaction. A permission-denied answer is returned before any
+ * row is examined, so the target row need not be visible to this connection.
+ */
+function expectP4BRuntimeDenied(string $sql, array $bindings = []): void
+{
+    $state = null;
+
+    try {
+        DB::transaction(function () use ($sql, $bindings): void {
+            DB::statement($sql, $bindings);
+        });
+    } catch (QueryException $e) {
+        $state = (string) $e->getCode();
+    }
+
+    expect($state)->toBe('42501');
+}
+
+/**
+ * Runs an owner statement expected to be refused by G2 (23514, given message),
+ * inside a savepoint so the failure does not poison the enclosing owner probe
+ * transaction.
+ */
+function expectP4BOwnerTriggerViolation(string $sql, array $bindings, string $messageFragment): void
+{
+    $exception = null;
+
+    try {
+        p4bOwner()->transaction(function () use ($sql, $bindings): void {
+            p4bOwner()->statement($sql, $bindings);
+        });
+    } catch (QueryException $e) {
+        $exception = $e;
+    }
+
+    expect($exception)->not->toBeNull()
+        ->and((string) $exception->getCode())->toBe('23514')
+        ->and($exception->getMessage())->toContain($messageFragment);
+}
+
+/**
+ * Seeds a deliverable purchase + grant INSIDE an owner-connection transaction and
+ * runs $probe($owner, $grantId) against it, then rolls the whole thing back. This
+ * is how the G2 trigger layer is exercised: the restricted runtime is stopped at
+ * the ACL layer (42501) and a separate owner connection cannot see rows created in
+ * the runtime test transaction, so the probe seeds its own visible data here.
+ */
+function p4bProbeG2AsOwner(Closure $probe): void
+{
+    $owner = p4bOwner();
+    $token = str_repeat('e', 64);
+    $orderNo = 'DGT-2026-'.strtoupper(bin2hex(random_bytes(5)));
+    $slug = 'p4bg2-'.strtolower(bin2hex(random_bytes(4)));
+
+    $owner->beginTransaction();
+    try {
+        $owner->statement('SET CONSTRAINTS ALL DEFERRED');
+        $owner->statement("INSERT INTO products (slug, name, type, status, created_at, updated_at) VALUES (?, 'P4B G2', 'ebook', 'published', now(), now())", [$slug]);
+        $owner->statement("INSERT INTO product_files (product_id, storage_disk, storage_path, original_name, size_bytes, checksum_sha256, version, is_active) SELECT id, 'private', 'products/'||slug||'/f.zip', 'f.zip', 10, repeat('a', 64), '1.0', true FROM products WHERE slug = ?", [$slug]);
+        $owner->statement("INSERT INTO orders (public_id, order_number, checkout_idempotency_hash, customer_email, subtotal_minor, discount_minor, tax_minor, total_minor, currency, status, placed_at, expires_at, paid_at, created_at, updated_at) VALUES (gen_random_uuid(), ?, repeat('b', 64), 'g2@example.test', 1000, 0, 0, 1000, 'XOF', 'paid', now(), now() + interval '30 minutes', now(), now(), now())", [$orderNo]);
+        $owner->statement("INSERT INTO order_items (order_id, product_id, product_name_snapshot, product_slug_snapshot, product_type_snapshot, unit_price_minor, quantity, line_subtotal_minor, line_discount_minor, line_total_minor, currency, created_at, updated_at) SELECT o.id, p.id, 'P4B G2', p.slug, 'ebook', 1000, 1, 1000, 0, 1000, 'XOF', now(), now() FROM orders o, products p WHERE o.order_number = ? AND p.slug = ?", [$orderNo, $slug]);
+        $owner->statement("INSERT INTO payments (public_id, order_id, provider, idempotency_key_hash, attempt_number, amount_minor, currency, status, succeeded_at, created_at, updated_at) SELECT gen_random_uuid(), o.id, 'provider_test', repeat('c', 64), 1, 1000, 'XOF', 'succeeded', now(), now(), now() FROM orders o WHERE o.order_number = ?", [$orderNo]);
+        $owner->statement("INSERT INTO download_grants (public_id, order_item_id, product_file_id, token_hash, expires_at, max_downloads, created_at, updated_at) SELECT gen_random_uuid(), oi.id, pf.id, ?, now() + interval '1 day', 2, now(), now() FROM order_items oi JOIN product_files pf ON pf.product_id = oi.product_id WHERE oi.product_slug_snapshot = ?", [$token, $slug]);
+        $owner->statement('SET CONSTRAINTS ALL IMMEDIATE');
+
+        $grantId = (int) $owner->table('download_grants')->where('token_hash', $token)->value('id');
+
+        $probe($owner, $grantId);
+    } finally {
+        $owner->rollBack();
+    }
+}
+
+/**
+ * The proven bypass, replayed by the OWNER (superuser): a temporary trigger runs
+ * the counter UPDATE nested at depth 2. G2 must still refuse it, because
+ * current_user is the owner, not the executor — the increment must be rolled back
+ * and the counter left untouched.
+ */
+function expectP4BOwnerForgedIncrementRefused(Connection $owner, int $grantId, string $messageFragment): void
+{
+    $before = (int) $owner->table('download_grants')->where('id', $grantId)->value('downloads_count');
+
+    $exception = null;
+    try {
+        // A savepoint isolates the forged attempt so its refusal leaves the outer
+        // probe transaction usable and drops the temporary objects.
+        $owner->transaction(function () use ($owner, $grantId): void {
+            $owner->unprepared(<<<SQL
+                CREATE TEMP TABLE p4b_forge (id serial primary key);
+                CREATE FUNCTION pg_temp.p4b_forge_fn() RETURNS trigger LANGUAGE plpgsql AS \$fn\$
+                BEGIN
+                    UPDATE public.download_grants
+                    SET downloads_count = downloads_count + 1,
+                        updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 second')
+                    WHERE id = {$grantId};
+                    RETURN NEW;
+                END; \$fn\$;
+                CREATE TRIGGER p4b_forge_trg BEFORE INSERT ON p4b_forge FOR EACH ROW EXECUTE FUNCTION pg_temp.p4b_forge_fn();
+                INSERT INTO p4b_forge DEFAULT VALUES;
+                SQL);
+        });
+    } catch (QueryException $e) {
+        $exception = $e;
+    }
+
+    expect($exception)->not->toBeNull()
+        ->and((string) $exception->getCode())->toBe('23514')
+        ->and($exception->getMessage())->toContain($messageFragment)
+        ->and((int) $owner->table('download_grants')->where('id', $grantId)->value('downloads_count'))->toBe($before);
 }
 
 function p4bDigest(): string
@@ -167,12 +294,14 @@ function runP4BMigration(string $database, string $command, string $migration): 
             $command,
             '--env=testing',
             '--force',
+            // P4-B0: gate migrations always run under the migrator/owner identity.
+            '--database=pgsql_migration',
             '--path=database/migrations/'.$migration,
         ],
         base_path(),
         [
             'APP_ENV' => 'testing',
-            'DB_CONNECTION' => 'pgsql',
+            'DB_CONNECTION' => 'pgsql_migration',
             'DB_DATABASE' => $database,
         ],
     );
@@ -199,9 +328,9 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 // ── 21.1 — Physical schema ───────────────────────────────────────────────────
 
-it('applies migration 000012 with exactly fifteen columns, native types and no business default', function () {
-    expect(DB::table('migrations')->where('migration', '2026_07_14_000012_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(28)
+it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
+    expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
+        ->and(DB::table('migrations')->count())->toBe(29)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')
@@ -351,8 +480,13 @@ it('installs exactly the two P4-B functions and triggers and replaces G2 in plac
         "SELECT pg_get_functiondef(oid) AS definition FROM pg_proc WHERE proname = 'enforce_download_grants_immutability'",
     )->definition;
 
-    expect($g2)->toContain('download_grants consumption must originate from the download log trigger')
-        ->and($g2)->toContain('pg_trigger_depth() <= 1')
+    // Post-P4-B0 authority: the increment is accepted only when the nested UPDATE
+    // runs AS the download executor (non-forgeable identity), with trigger depth
+    // kept as a secondary defence. The old depth-only origin check is gone.
+    expect($g2)->toContain('download_grants consumption must originate from the download log executor')
+        ->and($g2)->toContain("current_user = 'digitrove_download_executor'")
+        ->and($g2)->toContain('pg_trigger_depth() > 1')
+        ->and($g2)->not->toContain('pg_trigger_depth() <= 1')
         ->and($g2)->toContain('updated_at may only change with a valid lifecycle transition')
         ->and($g2)->toContain('updated_at must move strictly forward')
         ->and($g2)->toContain('user_fk_nullification')
@@ -518,63 +652,70 @@ it('pairs the started log and the exact counter increment atomically in both dir
 
 it('refuses every direct counter write path and accepts only the nested G5 increment', function () {
     $grant = createP4BGrant(['max_downloads' => 2]);
-    $message = 'download_grants consumption must originate from the download log trigger';
+    $originMessage = 'download_grants consumption must originate from the download log executor';
 
-    // Raw SQL, Query Builder and Eloquent all run at trigger depth 1.
-    expectP4BTriggerViolation(
-        fn () => DB::statement('UPDATE download_grants SET downloads_count = downloads_count + 1 WHERE id = ?', [$grant->id]),
-        $message,
-    );
-    expectP4BTriggerViolation(
-        fn () => DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 1]),
-        $message,
-    );
-    expectP4BTriggerViolation(
-        fn () => $grant->fresh()->update(['downloads_count' => 1, 'updated_at' => now()->addMinute()]),
-        $message,
-    );
-    expectP4BTriggerViolation(
-        fn () => DownloadGrant::query()->whereKey($grant->id)->increment('downloads_count'),
-        $message,
-    );
+    // LAYER 1 — the restricted runtime cannot even reach the counter: raw SQL,
+    // Query Builder and Eloquent are all refused at the ACL layer (42501),
+    // BEFORE G2 is consulted. This is the P4-B0 boundary in force.
+    expectP4BRuntimeDenied('UPDATE download_grants SET downloads_count = downloads_count + 1 WHERE id = ?', [$grant->id]);
+    expectP4BRuntimeDenied('UPDATE download_grants SET downloads_count = 1 WHERE id = ?', [$grant->id]);
 
-    // Wrong deltas keep their precise diagnostics.
-    expectP4BTriggerViolation(
-        fn () => DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 2]),
-        'download_grants downloads_count may only increase by exactly one',
-    );
-    expectP4BTriggerViolation(
-        fn () => DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => -1]),
-        'download_grants downloads_count may only increase by exactly one',
-    );
+    // LAYER 2 — G2 itself. The runtime never reaches it, so these probes seed
+    // their own grant inside an owner transaction (a separate connection cannot
+    // see rows created in the runtime test transaction) and roll it back.
+    p4bProbeG2AsOwner(function (Connection $owner, int $grantId) use ($originMessage): void {
+        // A direct +1 at trigger depth 1 is not the executor, so the
+        // non-forgeable origin check refuses it; wrong deltas keep their own
+        // diagnostics because G2 validates the delta before the origin.
+        expectP4BOwnerTriggerViolation('UPDATE download_grants SET downloads_count = downloads_count + 1 WHERE id = ?', [$grantId], $originMessage);
+        expectP4BOwnerTriggerViolation('UPDATE download_grants SET downloads_count = 2 WHERE id = ?', [$grantId], 'download_grants downloads_count may only increase by exactly one');
+        expectP4BOwnerTriggerViolation('UPDATE download_grants SET downloads_count = -1 WHERE id = ?', [$grantId], 'download_grants downloads_count may only increase by exactly one');
 
+        // Identity, not depth — a nested trigger forged by the OWNER (a superuser)
+        // reaches G2 at depth 2, but current_user is not the executor, so the
+        // increment is still refused. Security no longer rests on trigger depth,
+        // nor on the runtime ACLs alone.
+        expectP4BOwnerForgedIncrementRefused($owner, $grantId, $originMessage);
+        expect((int) $owner->table('download_grants')->where('id', $grantId)->value('downloads_count'))->toBe(0);
+
+        // Two legitimate `started` inserts drive G5 (SECURITY DEFINER) which does
+        // reach G2 as the executor, so the counter moves to the quota ceiling.
+        for ($i = 0; $i < 2; $i++) {
+            $owner->statement(
+                "INSERT INTO download_logs (public_id, download_grant_id, status, quota_consumed, attempt_token_hash, attempt_expires_at, retention_until) VALUES (gen_random_uuid(), ?, 'started', true, ?, now() + interval '30 minutes', now() + interval '30 days')",
+                [$grantId, hash('sha256', 'g2-probe-'.$i.'-'.$grantId)],
+            );
+        }
+        expect((int) $owner->table('download_grants')->where('id', $grantId)->value('downloads_count'))->toBe(2);
+
+        // Once exhausted, the owner's direct +1 is reported precisely: the quota
+        // check precedes the origin check.
+        expectP4BOwnerTriggerViolation('UPDATE download_grants SET downloads_count = 3 WHERE id = ?', [$grantId], 'download_grants quota is exhausted');
+    });
+
+    // Back on the runtime: the nested G5 increment is the only accepted path.
     expect(p4bGrantCount($grant))->toBe(0);
-
-    // The nested G5 increment is accepted, and a direct +1 on the exhausted
-    // grant is still reported precisely (quota check precedes the depth check).
     startP4BLog($grant);
     startP4BLog($grant);
     expect(p4bGrantCount($grant))->toBe(2);
-    expectP4BTriggerViolation(
-        fn () => DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 3]),
-        'download_grants quota is exhausted',
-    );
 
-    // Revocation stays reachable at depth 1, untouched by the hardening.
+    // Revocation stays reachable by the runtime on its allowed columns.
     $revocable = createP4BGrant();
     expect(DB::table('download_grants')->where('id', $revocable->id)->update([
         'revoked_at' => now(),
         'revoked_reason_code' => 'support',
     ]))->toBe(1);
 
-    // The real FK SET NULL action still nulls the buyer reference.
+    // The real FK SET NULL action still nulls the buyer reference (FK actions
+    // bypass the runtime column ACL).
     $buyer = User::factory()->create();
     $fkGrant = createP4BGrant([], OrderStatus::Paid, $buyer);
     expect($fkGrant->user_id)->toBe($buyer->id);
     DB::table('users')->where('id', $buyer->id)->delete();
     expect(DB::table('download_grants')->where('id', $fkGrant->id)->value('user_id'))->toBeNull();
 
-    // Isolated updated_at falsification stays refused.
+    // Isolated updated_at falsification stays refused (runtime holds updated_at,
+    // so it reaches G2, which rejects a change without a valid transition).
     expectP4BTriggerViolation(
         fn () => DB::table('download_grants')->where('id', $fkGrant->id)->update(['updated_at' => now()->addDay()]),
         'download_grants updated_at may only change with a valid lifecycle transition',
@@ -1085,11 +1226,14 @@ it('keeps the grant lineage undeletable while logs remain the only purgeable tab
     $grant = createP4BGrant(['max_downloads' => 5]);
     startP4BLog($grant);
 
-    // G1 still refuses grant deletion first — the log FK RESTRICT stands behind it.
-    expectP4BTriggerViolation(
-        fn () => DB::table('download_grants')->where('id', $grant->id)->delete(),
-        'download_grants are revoked, never deleted',
-    );
+    // The runtime cannot delete a grant at all (no DELETE privilege → 42501), and
+    // behind that ACL G1 still refuses grant deletion for the owner too (23514) —
+    // the log FK RESTRICT stands behind both. The owner probe seeds its own
+    // visible grant, since the runtime test transaction is invisible to it.
+    expectP4BRuntimeDenied('DELETE FROM download_grants WHERE id = ?', [$grant->id]);
+    p4bProbeG2AsOwner(function (Connection $owner, int $grantId): void {
+        expectP4BOwnerTriggerViolation('DELETE FROM download_grants WHERE id = ?', [$grantId], 'download_grants are revoked, never deleted');
+    });
 
     // The delivered file stays protected through the grant chain.
     expectP4BQueryException(
@@ -1115,7 +1259,7 @@ it('serialises concurrent consumption on the last unit and leaves distinct order
 
     try {
         $harness->create();
-        $harness->applyMigrationsThrough('2026_07_14_000012_create_download_logs_table.php');
+        $harness->applyMigrationsThrough('2026_07_14_000013_create_download_logs_table.php');
 
         $seed = new PDO($dsn, $connection['username'], $connection['password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
         // Grant A: a single unit (the contended resource). Grants C and D: room.
@@ -1256,9 +1400,9 @@ it('serialises concurrent consumption on the last unit and leaves distinct order
 
 // ── 22.1 — Isolated rollback with an empty table ─────────────────────────────
 
-it('rolls back an empty 000012 alone and restores the exact 000011 G2 definition', function () {
+it('rolls back an empty 000013 alone, restores the exact post-000012 G2 and keeps P4-B0 in force', function () {
     $harness = new PhaseMigrationHarness('digitrove_p4b_rollback_'.strtolower(Str::random(10)));
-    $gate = '2026_07_14_000012_create_download_logs_table.php';
+    $gate = '2026_07_14_000013_create_download_logs_table.php';
     $grantFunctions = [
         'prevent_download_grants_delete',
         'enforce_download_grants_immutability',
@@ -1278,8 +1422,11 @@ it('rolls back an empty 000012 alone and restores the exact 000011 G2 definition
 
     try {
         $harness->create();
-        $applied = $harness->applyMigrationsThrough('2026_07_14_000011_harden_download_grants_integrity.php');
-        expect(end($applied))->toBe('2026_07_14_000011_harden_download_grants_integrity');
+        // The boundary must be in force BEFORE 000013: it stops at 000012 (P4-B0),
+        // which is exactly the state 000013's fail-closed preconditions require and
+        // the state its down() must restore.
+        $applied = $harness->applyMigrationsThrough('2026_07_14_000012_harden_database_runtime_privileges.php');
+        expect(end($applied))->toBe('2026_07_14_000012_harden_database_runtime_privileges');
 
         $connection = config('database.connections.pgsql');
         $pdo = new PDO(
@@ -1299,16 +1446,16 @@ it('rolls back an empty 000012 alone and restores the exact 000011 G2 definition
             ->and($harness->countFunctions($logFunctions))->toBe(2)
             ->and($harness->countTriggers($logTriggers))->toBe(2)
             ->and($p4bG2)->not->toBe($hardenedG2)
-            ->and($p4bG2)->toContain('download_grants consumption must originate from the download log trigger');
+            ->and($p4bG2)->toContain('download_grants consumption must originate from the download log executor');
 
         // No log row is ever created: this is the EMPTY-table rollback path.
         $downed = $harness->rollbackExactMigrations([$gate]);
 
-        expect($downed)->toBe(['2026_07_14_000012_create_download_logs_table'])
+        expect($downed)->toBe(['2026_07_14_000013_create_download_logs_table'])
             ->and($harness->hasTable('download_logs'))->toBeFalse()
             ->and($harness->countFunctions($logFunctions))->toBe(0)
             ->and($harness->countTriggers($logTriggers))->toBe(0)
-            // G2 comes back BYTE-EXACT from 000011; G3 was never touched.
+            // G2 comes back BYTE-EXACT to its post-000012 state; G3 untouched.
             ->and(p4bFunctionDefinition($pdo, 'enforce_download_grants_immutability'))->toBe($hardenedG2)
             ->and(p4bFunctionDefinition($pdo, 'validate_download_grant_delivery'))->toBe($g3Definition)
             ->and($harness->countFunctions($grantFunctions))->toBe(4)
@@ -1319,9 +1466,11 @@ it('rolls back an empty 000012 alone and restores the exact 000011 G2 definition
             ->and($harness->countFunctions(['prevent_order_item_bundle_components_delete', 'enforce_order_item_bundle_component_immutability', 'validate_order_item_bundle_component']))->toBe(3)
             ->and($harness->hasTable('events'))->toBeFalse();
 
+        // P4-B0 survives the P4-B rollback: 000012 stays applied.
         $remaining = $harness->ranMigrations();
-        expect(end($remaining))->toBe('2026_07_14_000011_harden_download_grants_integrity')
-            ->and($remaining)->not->toContain('2026_07_14_000012_create_download_logs_table');
+        expect(end($remaining))->toBe('2026_07_14_000012_harden_database_runtime_privileges')
+            ->and($remaining)->toContain('2026_07_14_000012_harden_database_runtime_privileges')
+            ->and($remaining)->not->toContain('2026_07_14_000013_create_download_logs_table');
 
         $pdo = null;
     } finally {
@@ -1334,15 +1483,15 @@ it('rolls back an empty 000012 alone and restores the exact 000011 G2 definition
 
 // ── 22.2 — Fail-closed rollback with audit rows present ──────────────────────
 
-it('refuses to roll back 000012 while audit rows exist and destroys nothing', function () {
+it('refuses to roll back 000013 while audit rows exist and destroys nothing', function () {
     $harness = new PhaseMigrationHarness('digitrove_p4b_occupied_'.strtolower(Str::random(10)));
-    $gate = '2026_07_14_000012_create_download_logs_table.php';
+    $gate = '2026_07_14_000013_create_download_logs_table.php';
     $pdo = null;
 
     try {
         $harness->create();
         $applied = $harness->applyMigrationsThrough($gate);
-        expect(end($applied))->toBe('2026_07_14_000012_create_download_logs_table');
+        expect(end($applied))->toBe('2026_07_14_000013_create_download_logs_table');
 
         $connection = config('database.connections.pgsql');
         $pdo = new PDO(
@@ -1373,9 +1522,9 @@ it('refuses to roll back 000012 while audit rows exist and destroys nothing', fu
             ->and((int) $pdo->query('SELECT COUNT(*) FROM download_logs')->fetchColumn())->toBe(1)
             ->and($harness->countFunctions(['enforce_download_logs_integrity', 'enforce_download_logs_retention_delete']))->toBe(2)
             ->and($harness->countTriggers(['download_logs_enforce_integrity_trigger', 'download_logs_retention_delete_trigger']))->toBe(2)
-            ->and(p4bFunctionDefinition($pdo, 'enforce_download_grants_immutability'))->toContain('download_grants consumption must originate from the download log trigger')
+            ->and(p4bFunctionDefinition($pdo, 'enforce_download_grants_immutability'))->toContain('download_grants consumption must originate from the download log executor')
             ->and((int) $pdo->query('SELECT downloads_count FROM download_grants')->fetchColumn())->toBe(1)
-            ->and($harness->ranMigrations())->toContain('2026_07_14_000012_create_download_logs_table');
+            ->and($harness->ranMigrations())->toContain('2026_07_14_000013_create_download_logs_table');
 
         $pdo = null;
     } finally {
