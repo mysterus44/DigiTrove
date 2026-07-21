@@ -55,8 +55,8 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   **P4-A2.1 hardening `download_grants` (`000011`, bénéficiaire G3 null-safe et
   `updated_at` G2 lié au cycle de vie) MERGÉ (PR #14 → `2c25e2a`)** → **P4-B0
   frontière de privilèges runtime (`000012` ACL, D-029.6) MERGÉ (PR #15 →
-  `6d23e546`)** → **P4-B `download_logs` (`000013`) ADAPTÉ APRÈS P4-B0 — EN
-  ATTENTE DE MERGE** ;
+  `6d23e546`)** → **P4-B `download_logs` (`000013`) MERGÉ (PR #16 →
+  `98441014`)** — **SCHÉMA P4 COMPLET** ;
   `licenses` exclu de P4. Une migration, une branche, une frontière de rollback par
   gate ; migration N+1 jamais créée avant merge du gate N. Détail dans le bloc P4 de
   `DigiTrove_Schema_BDD_v1.md`.
@@ -100,22 +100,28 @@ au rôle créateur (migrateur ET exécuteur via `SET ROLE`) — la migration `00
 les pose, donc G5 naît verrouillée mais reçoit `GRANT EXECUTE … TO digitrove` le
 temps d'attacher son trigger.
 
-**P4-B est ADAPTÉ APRÈS P4-B0 — EN ATTENTE DE MERGE.** La stable `d7c53cf` a été
-intégrée dans `p4-b-download-logs` par **merge** `fca10d9` (jamais rebase, aucun
-force-push), la migration renumérotée **`000013`** (ordre `000011` → `000012`
-P4-B0 → `000013` P4-B ; 29 migrations). Le contrat D-029.5 est intact (15
-colonnes, CHECK, tentative, Range/retries, HEAD hors gate, `completed` = remise au
-mécanisme, rétention, HMAC IP versionné). Durcissement : préconditions
-fail-closed, **G5 `SECURITY DEFINER` possédée par `digitrove_download_executor`**
-(search_path épinglé, objets qualifiés, sans EXECUTE PUBLIC/runtime), **autorité
-de G2 par `current_user = digitrove_download_executor`** (profondeur en défense
-secondaire), ACL `download_logs` normalisées, et `UPDATE (updated_at) ON orders`
-accordé à l'exécuteur — privilège minimal exigé par `FOR UPDATE OF orders`
-(SELECT seul refusé, mesuré). **La vulnérabilité est fermée** : un trigger forgé
-même par le PROPRIÉTAIRE superuser est refusé en 23514 ; le runtime est arrêté en
-42501. Validation : P4-B 19/603, suite complète 190/2975, Pint 121, rollback vide
-restaurant G2 post-`000012` à l'octet près et rollback non vide refusé. Prochaine
-étape : **review + merge de la PR P4-B**. P5 non démarré.
+**P4-B est TERMINÉ ET MERGÉ** via
+[PR #16](https://github.com/mysterus44/DigiTrove/pull/16), merge `98441014`
+(parents `d7c53cf` + `49692e25`) : migration **`000013`**, `download_logs` à 15
+colonnes. Le contrat D-029.5 est intact (CHECK, tentative dédiée, Range/retries
+sur une seule ligne, HEAD hors gate, `completed` = remise au mécanisme, rétention,
+HMAC IP versionné). Durcissement D-029.6 : préconditions fail-closed, **G5
+`SECURITY DEFINER` possédée par `digitrove_download_executor`** (search_path
+épinglé, objets qualifiés, sans EXECUTE PUBLIC/runtime), **autorité de G2 par
+`current_user = digitrove_download_executor`** (profondeur en défense secondaire),
+ACL `download_logs` normalisées, et `UPDATE (updated_at) ON orders` accordé à
+l'exécuteur — privilège minimal exigé par `FOR UPDATE OF orders` (SELECT seul
+refusé, mesuré). **La vulnérabilité est fermée** : un trigger forgé même par le
+PROPRIÉTAIRE superuser est refusé en 23514 ; le runtime est arrêté en 42501.
+Validation post-merge : 29 migrations, P4-B 19/603, suite complète 190/2975,
+Pint 121, provisioning idempotent, identités migration/runtime prouvées,
+6 fonctions / 7 triggers P4, G4 différé, zéro résidu.
+
+**Le schéma P4 Livraison est COMPLET.** La couche applicative P4 (listener
+`OrderPaid`, service de consommation, contrôleur, streaming, rate limiting, job de
+purge, e-mails) n'a jamais été entamée. **La prochaine étape se lit dans le
+roadmap** (`DigiTrove_Schema_BDD_v1.md`) et les décisions existantes — elle n'est
+pas commencée. P5 non démarré.
 
 ## 🔄 EN FIN DE TÂCHE
 

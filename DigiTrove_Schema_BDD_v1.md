@@ -914,11 +914,11 @@ CREATE INDEX refunds_status_requested_index  ON refunds (status, requested_at DE
 --           exécuteur (via SET ROLE) reçoivent chacun le leur ; les fonctions
 --           existantes gardent un REVOKE explicite. 13 tests / 84 assertions ;
 --           suite 171/2385 ; Pint 117.
---   P4-B  — Download Logs ✅ ADAPTÉ APRÈS P4-B0 — EN ATTENTE DE MERGE
---           branche `p4-b-download-logs` ; stable intégrée par MERGE `fca10d9`
---           (jamais rebase), migration renumérotée
---           `2026_07_14_000013_create_download_logs_table.php`
+--   P4-B  — Download Logs ✅ MERGÉ PR #16 → `98441014`
+--           (parents `d7c53cf` + `49692e25`) ; branche distante conservée.
+--           migration `2026_07_14_000013_create_download_logs_table.php`
 --           (frontière harness `000013`). 29 migrations au total.
+--           ➜ SCHÉMA P4 COMPLET (A0 → A1 → A2 → A2.1 → B0 → B).
 --           Contrat D-029.5 intact : table à 15 colonnes, 10 CHECK, FK RESTRICT,
 --           uniques et index inchangés, 1A/2A/3A + R1A/R2A/R3A préservées.
 --           Durcissement D-029.6 : préconditions fail-closed (rôles, ACL,
@@ -1816,11 +1816,12 @@ Ordre technique des migrations à respecter avant P1 :
 1. `users` + `customer_profiles` + `visitors` (fondation identité) ✅
 2. `categories` + `products` + `product_prices` + `product_files` + pivots catalogue ✅
 3. Commerce P3 (bloc ci-dessus) — schéma complet mergé jusqu'à P3C-C (PR #10) ✅
-4. P4 en gates isolés, mergés dans l'ordre (D-029.2 + correctif P4-A2.1) : P4-A0 durcissement
-   `product_files` (`000008`) → P4-A1 snapshot `order_item_bundle_components`
-   (`000009`) → P4-A2 `download_grants` (`000010`) → P4-A2.1 hardening G2/G3
-   (`000011`, mergé PR #14) → P4-B `download_logs` (`000012`) — **plan D-029.5
-   finalisé (1A/2A/3A + R1A/R2A/R3A), non migré et non implémenté**
+4. P4 en gates isolés, tous mergés dans l'ordre (D-029.2 + P4-A2.1 + D-029.6) :
+   P4-A0 durcissement `product_files` (`000008`, PR #11) → P4-A1 snapshot
+   `order_item_bundle_components` (`000009`, PR #12) → P4-A2 `download_grants`
+   (`000010`, PR #13) → P4-A2.1 hardening G2/G3 (`000011`, PR #14) → P4-B0
+   frontière de privilèges runtime (`000012`, PR #15) → P4-B `download_logs`
+   (`000013`, PR #16 → `98441014`) ✅ **SCHÉMA P4 COMPLET**
 5. `events` partitionnée + rollups (analytique)
 6. `campaigns` + `customer_segments` (marketing)
 7. Affiliation dédiée (`affiliate_profiles`, `affiliate_links`, `referrals`,

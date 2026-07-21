@@ -1673,5 +1673,50 @@ suite **P4-B 19 tests / 603 assertions** ; **suite complète 190 / 2975** ;
 objet P5. Aucun endpoint, route, contrôleur, service, streaming, listener, job ni
 e-mail créé.
 
+**Clôture P4-B (2026-07-21) — `P4-B TERMINÉ ET MERGÉ`.** Mergé via
+[PR #16](https://github.com/mysterus44/DigiTrove/pull/16), merge
+`98441014b60e26dc81de5abaf4c207fefc0e52c5` (deux parents : stable
+`d7c53cf798e75c17ea705e821dee4c18310cdff0` + P4-B
+`49692e25e5b27e851f2d3b565c68731d079b7a77`, sujet « Merge pull request #16 from
+mysterus44/p4-b-download-logs »). **Le schéma P4 Livraison est complet** :
+P4-A0 → P4-A1 → P4-A2 → P4-A2.1 → P4-B0 → P4-B, 29 migrations.
+
+Périmètre mergé audité (`d7c53cf..98441014`) : **seule la migration `000013`**
+côté migrations (`000001`–`000012` inchangées, P4-B0 intégralement préservé),
+plus le modèle `DownloadLog`, sa factory, la relation `DownloadGrant`, les suites
+de tests adaptées et les 5 documents. Aucun endpoint, contrôleur, service,
+streaming, secret ni objet P5.
+
+Validation post-merge sur PostgreSQL réel : provisioning
+`db:provision-runtime-roles` idempotent (rejoué 2×, aucun secret affiché) ;
+identités prouvées (migrations sous `digitrove`, métier sous
+`digitrove_runtime`) ; `download_logs` à **15 colonnes** sans `updated_at`, 1 FK
+RESTRICT, 10 CHECK, 1 unique, 6 index ; **G5 possédée par
+`digitrove_download_executor`, `SECURITY DEFINER`, `search_path=pg_catalog,
+public, pg_temp`**, ACL `{executor=X/executor}`, objets tous qualifiés et
+exécuteur sans CREATE permanent ; **G6** possédée par le migrateur, SECURITY
+INVOKER, sans EXECUTE PUBLIC/runtime, trigger actif ; **G2 unique** avec autorité
+principale `current_user = 'digitrove_download_executor'` et profondeur en défense
+secondaire, protections P4-A2/P4-A2.1 conservées ; **6 fonctions / 7 triggers P4**
+et G4 toujours `DEFERRABLE INITIALLY DEFERRED`. ACL runtime : DML complet sur
+`download_logs` mais **sans** TRIGGER/TRUNCATE/ownership, **sans**
+`downloads_count`, **sans** TEMP ni CREATE, **sans** EXECUTE G5/G6 ni `SET ROLE`
+sensible. Compteurs : **P4-B 19 tests / 603 assertions**, **suite complète
+190 / 2975**, **Pint 121**, `git diff --check` propre, zéro base ou rôle
+temporaire résiduel.
+
+**La vulnérabilité historique est fermée et prouvée fermée** : sous le vrai rôle
+runtime tous les vecteurs (UPDATE direct, Query Builder, Eloquent, CREATE
+TEMP/TABLE/FUNCTION/TRIGGER, rattachement de G5, `SET ROLE`) échouent en `42501` ;
+et un trigger arbitraire forgé par le **propriétaire superuser** à profondeur > 1
+est refusé par G2 en `23514` faute d'être l'exécuteur — la sécurité ne repose donc
+plus sur la profondeur de trigger ni sur les seules ACL runtime.
+
+Clôture : branche locale `p4-b-download-logs` supprimée (était `49692e2`),
+distante conservée à `49692e25`, `origin/main` toujours `11130f4`. Aucune décision
+nouvelle. **Prochaine étape à lire dans le roadmap** (couche applicative P4 —
+listener, service, contrôleur, streaming, rate limiting, purge, e-mails — ou P5
+analytique) ; elle n'est pas commencée.
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

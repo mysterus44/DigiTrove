@@ -7,23 +7,24 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Claude Code
-- **Date** : 2026-07-20
-- **Branche git active** : `p4-b-download-logs` (stable `d7c53cf` intégrée par
-  merge `fca10d9`)
+- **Date** : 2026-07-21
+- **Branche git active** : `p0-foundations-laravel13` (stable à `98441014`)
 - **P4-B0 TERMINÉ ET MERGÉ** via
   [PR #15](https://github.com/mysterus44/DigiTrove/pull/15), merge `6d23e546`
   (parents `a3eac5e` + `9b69f192`) : frontière de privilèges PostgreSQL runtime
   active sur la stable. Branche locale supprimée, distante
   `origin/p4-b0-postgresql-runtime-privileges` conservée à `9b69f192`.
-- **P4-B ADAPTÉ APRÈS P4-B0 — EN ATTENTE DE MERGE** : la stable a été intégrée
-  dans `p4-b-download-logs` par **merge** (jamais rebase), la migration a été
-  renumérotée `000013`, **G5 est devenue `SECURITY DEFINER` possédée par
+- **P4-B TERMINÉ ET MERGÉ** via
+  [PR #16](https://github.com/mysterus44/DigiTrove/pull/16), merge `98441014`
+  (parents `d7c53cf` + `49692e25`) : `download_logs` (migration `000013`, 15
+  colonnes) avec **G5 `SECURITY DEFINER` possédée par
   `digitrove_download_executor`** (search_path épinglé, objets qualifiés) et
-  **l'autorité de G2 repose désormais sur `current_user = digitrove_download_
-  executor`**, la profondeur de trigger n'étant plus qu'une défense secondaire.
-  La vulnérabilité historique est fermée : un trigger forgé même par le
-  **propriétaire superuser** à profondeur 2 est refusé (23514). Suite P4-B 19/603,
-  suite complète 190/2975, Pint 121, 29 migrations.
+  **autorité de G2 par `current_user = digitrove_download_executor`**, la
+  profondeur de trigger n'étant plus qu'une défense secondaire. La vulnérabilité
+  historique est **fermée** : un trigger forgé même par le propriétaire superuser
+  est refusé (23514), le runtime est arrêté plus tôt (42501). Branche locale
+  supprimée, distante `origin/p4-b-download-logs` conservée à `49692e25`.
+  **Schéma P4 complet** ; la couche applicative P4 reste entièrement à venir.
 - **Commit fondations local** : `4f48fc8 feat: bootstrap Laravel foundations [par Codex]`
 - **Merge SITE-00** : `83b6b0c Merge pull request #1 from mysterus44/site-00-static-preview`
 - **Merge P1 Identité** : `3f9d132 Merge pull request #2 from mysterus44/p1-identity`
@@ -269,212 +270,29 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**P4-B ADAPTÉ APRÈS P4-B0 — EN ATTENTE DE MERGE.** La branche
-`p4-b-download-logs` porte le merge de reprise `fca10d9` (stable `d7c53cf`
-intégrée sans rebase) puis le commit fonctionnel de durcissement. Prochaine
-tâche : **review + merge de la PR P4-B** (base `p0-foundations-laravel13`),
-puis clôture post-merge.
+**P4-B TERMINÉ ET MERGÉ** (PR #16, merge `98441014`, parents `d7c53cf` +
+`49692e25`). Le **schéma P4 Livraison est désormais complet** : P4-A0 → P4-A1 →
+P4-A2 → P4-A2.1 → P4-B0 → P4-B, tous mergés, 29 migrations.
 
-Ce que la reprise a livré :
-- **Migration renumérotée `000013`** (`git mv`), l'ordre étant désormais
-  `000011` P4-A2.1 → `000012` P4-B0 (ACL) → `000013` P4-B (download_logs).
-  29 migrations au total ; `000001`–`000012` intactes.
-- **Préconditions fail-closed** dans `000013` : rôles présents et correctement
-  attribués, membership SET du migrateur vers l'exécuteur, runtime sans TEMP,
-  sans CREATE et sans UPDATE sur `downloads_count`, défauts globaux de fonctions
-  présents. Rien n'est créé si la frontière P4-B0 n'est pas en force.
-- **G5 `SECURITY DEFINER` possédée par `digitrove_download_executor`** via la
-  danse prouvée (GRANT CREATE temporaire → `SET ROLE` → `CREATE FUNCTION` →
-  EXECUTE temporaire au migrateur pour attacher le trigger → `RESET ROLE` →
-  REVOKE CREATE → CREATE TRIGGER → REVOKE EXECUTE sous l'identité propriétaire).
-  `search_path` épinglé `pg_catalog, public, pg_temp`, objets qualifiés
-  `public.*`. ACL finale : `{digitrove_download_executor=X/…}` seulement.
-- **Autorité G2 non forgeable** : l'exact `+1` n'est accepté que si
-  `current_user = 'digitrove_download_executor'` ET `pg_trigger_depth() > 1`.
-  Toutes les protections P4-A2/P4-A2.1 sont conservées.
-- **Grant minimal découvert et nécessaire** : `FOR UPDATE OF orders` exige un
-  privilège de verrou, donc l'exécuteur reçoit `UPDATE (updated_at) ON orders`
-  (mesuré : SELECT seul → refus ; un UPDATE de colonne suffit). G5 n'écrit
-  jamais `orders`.
-- **ACL `download_logs`** : PUBLIC révoqué ; runtime SELECT/INSERT/UPDATE/DELETE
-  + séquence, sans TRIGGER/TRUNCATE/REFERENCES ; l'exécuteur n'a rien sur la
-  table (G5 ne lit/écrit que grants/orders/files).
-- **Couverture à deux couches** : le runtime est refusé en `42501` (ACL) avant
-  d'atteindre G2 ; les sondes internes qui doivent atteindre G2/G1 seedent leur
-  propre grant dans une transaction propriétaire (une connexion séparée ne voit
-  pas la transaction de test runtime) et obtiennent `23514`.
-- **Rollbacks** : table non vide → refus fail-closed (rien détruit) ; table vide
-  → G5 supprimée sous l'identité exécuteur, G6 et triggers supprimés, G2
-  restaurée OCTET POUR OCTET à son état post-`000012`, `000012` toujours
-  appliquée et frontière P4-B0 intacte.
+**La prochaine étape doit être lue dans le roadmap et les décisions existantes,
+elle n'est pas commencée ici.** Rappels utiles pour la choisir :
+- Le bloc « ordre de création » du schéma v1 place après P4 : `events`
+  partitionnée + rollups (analytique, P5), puis `campaigns` +
+  `customer_segments`, puis l'affiliation dédiée.
+- La **couche applicative P4** reste entièrement à faire et n'a jamais été
+  entamée : listener `OrderPaid` / `IssueDownloadGrants`, service de
+  consommation, contrôleur de téléchargement, streaming (X-Accel/X-Sendfile),
+  URL temporaires, rate limiting, job de purge, e-mails. Aucune de ces briques
+  n'existe : le gate BDD s'est arrêté au relationnel.
+- Décisions ouvertes à trancher avant les phases concernées : le champ `usb` du
+  legacy (livraison physique éventuelle), `licenses` (exclu de P4 par D-029), la
+  conversion multi-devises automatique, et les paramètres de CONFIG APPLICATIVE
+  jamais mis en DEFAULT BDD (TTL grant 72 h, quota 5, rétention logs 365 j,
+  durée de tentative, rate limiting).
 
-Rappel : le gate BDD ne crée toujours aucune route, contrôleur, service,
-streaming, listener OrderPaid, e-mail ou P5. La couche applicative P4 reste
-entièrement à venir dans des gates dédiés.
-
-Preuve de la vulnérabilité (transactions réelles, ROLLBACK, rôle `digitrove`
-superuser) : UPDATE direct profondeur 1 refusé (23514) ; trigger TEMP BEFORE/AFTER
-et trigger permanent sur `products` à profondeur 2 → `downloads_count` 0→1 avec 0
-`download_logs` ; G5 légitime → +1 avec 1 log. ACL PG16 mesurées : PUBLIC a TEMP
-(datacl NULL) et EXECUTE par défaut ; CREATE sur `public` déjà refusé (PG15+) ;
-`REVOKE TEMPORARY … FROM PUBLIC` ferme le vecteur.
-
-**P4-A0 est mergé et clôturé** dans `p0-foundations-laravel13` via
-[PR #11](https://github.com/mysterus44/DigiTrove/pull/11), merge `a047571` (parents
-`abaea6e` + `8b822c1`). La migration `000008`, la fonction G0
-`enforce_product_file_content_immutability` et le trigger BEFORE UPDATE
-`product_files_enforce_content_immutability_trigger` sont confirmés dans PostgreSQL
-(1 fonction, 1 trigger non interne actif, aucune table/objet P4 supplémentaire).
-
-Validation post-merge réelle : 24 migrations ; suite complète 116 tests /
-1666 assertions ; Pint 102 fichiers ; `git diff --check` propre ; aucune base
-temporaire résiduelle. Colonnes figées confirmées par `pg_get_functiondef`
-(`IS DISTINCT FROM`) : `id`, `product_id`, `storage_disk`, `storage_path`,
-`checksum_sha256`, `size_bytes`, `mime_type`, `version`, `created_at` ; mutables :
-`original_name` (seul usage code = `$fillable`, libellé d'affichage), `position`,
-`is_active`. Rollback isolé frontière `000008` vert. Branche locale supprimée,
-distante conservée à `8b822c1`. `origin/main` intact à `11130f4`.
-
-**P4-A1 est mergé et clôturé** dans `p0-foundations-laravel13` via
-[PR #12](https://github.com/mysterus44/DigiTrove/pull/12), merge `93d1f17` (parents
-`a1e2e7f` + `94b018c`). La migration `000009`, la table
-`order_item_bundle_components`, le modèle/factory/relations et les trois fonctions /
-trois triggers S1/S2/S3 sont confirmés dans PostgreSQL (triggers non internes,
-actifs, **non deferrable** ; aucun S4 ; aucune contrainte de cardinalité ; aucune
-fonction de copie).
-
-Validation post-merge réelle : 25 migrations ; suite complète **133 tests /
-1882 assertions** ; Pint **106 fichiers** ; `git diff --check` propre ; aucune base
-temporaire résiduelle. Schéma confirmé par introspection : `order_item_id` bigint
-NOT NULL **RESTRICT**, `child_product_id` bigint NULL **SET NULL**, snapshots
-name/slug text NOT NULL, `created_at` timestamptz NOT NULL ; aucune colonne
-quantity/position/updated_at/jsonb/metadata ; CHECK not-blank en
-`btrim(col, E' \t\n\r\f\v')` ; unique partiel `oibc_order_item_child_unique ...
-WHERE (child_product_id IS NOT NULL)` ; index `oibc_order_item_id_index` et
-`oibc_child_product_id_index`. S2 utilise `IS DISTINCT FROM` + `pg_trigger_depth()
-> 1` ; **S3 ne mute rien** (vérifié sur `pg_get_functiondef`). Bundles imbriqués
-refusés ; **bundle vide techniquement autorisé en BDD** (refus = future garantie
-applicative de l'OrderService, P4-A2 fail-closed) ; exhaustivité applicative
-uniquement ; risque d'insertion tardive par rôle SQL privilégié documenté et non
-éliminé. Rollback isolé `000009` vert (P4-A0/G0 et P0–P3C préservés). Branche
-locale supprimée, distante conservée à `94b018c`. `origin/main` intact `11130f4`.
-**P4-A2 est mergé et clôturé** dans `p0-foundations-laravel13` via
-[PR #13](https://github.com/mysterus44/DigiTrove/pull/13), merge `77f3766` (parents
-`1b6e401` + `cea5f2d`). Périmètre livré, conforme à D-029.4 (option A) :
-- migration UNIQUE `2026_07_14_000010_create_download_grants_table.php` : table
-  `download_grants` + **4 fonctions / 5 triggers** — G1 `prevent_download_grants_delete`
-  (BEFORE DELETE), G2 `enforce_download_grants_immutability` (BEFORE UPDATE : ROW
-  figée, `user_id` nullable via `pg_trigger_depth() > 1`, compteur +1 borné,
-  révocation set-once irréversible), G3 `validate_download_grant_delivery` (BEFORE
-  INSERT sous `orders FOR UPDATE`), **G4 `validate_download_grant_order_consistency`
-  monté sur les DEUX domaines** (`download_grants` + `orders`, `DEFERRABLE INITIALLY
-  DEFERRED`) ;
-- modèle `DownloadGrant` (`token_hash` en `$hidden`), factory (ne persiste jamais de
-  token brut, refuse une commande non livrable ; **aucun state `revoked()`** — G3
-  exige un grant né actif), relations `OrderItem::downloadGrants()` /
-  `ProductFile::downloadGrants()` ;
-- **findings d'implémentation signalés** : les CHECK de quota sont shadowés par
-  G2/G3 (défense en profondeur, assertés structurellement) ; `max_downloads = -1`
-  viole deux CHECK à la fois (PostgreSQL rapporte le quota) ;
-- adaptations historiques : `download_grants` retiré de 12 assertions globales, les
-  4 assertions des rollbacks isolés (frontières `000005`/`000007`/`000008`/`000009`)
-  et `StorefrontPreviewTest` conservés ; compteur de migrations P4-A1 porté à 26.
-Validation POST-MERGE réelle : 26 migrations ; suite complète **151 tests /
-2188 assertions** ; Pint **110 fichiers** ; `git diff --check` propre ; rollback
-isolé `000010` vert (P4-A1/S1-S3 et P4-A0/G0 préservés) ; aucune base temporaire
-résiduelle ; migrations `000001`–`000009` intactes. Introspection : 13 colonnes
-exactes (aucun token brut, `token_prefix`, IP, user-agent, JSONB, metadata,
-`last_downloaded_at`, statut texte ni soft-delete) ; FK `r`/`r`/`n` ; 5 CHECK
-nommés ; `public_id`/`token_hash` uniques ; index partiel actif
-`WHERE (revoked_at IS NULL)` ; **4 fonctions / 5 triggers physiques**, les deux
-triggers G4 `DEFERRABLE INITIALLY DEFERRED` sur `download_grants` ET `orders` ;
-**G3/G4 ne mutent rien**, **G3 ne lit jamais `payments`** et verrouille
-`orders FOR UPDATE` ; G2 utilise `pg_trigger_depth() > 1` ; **aucun trigger
-`download%` sur `refunds`** ; **aucun index avec `now()`**.
-
-**Delta d'assertions expliqué** (jamais une addition directe) : 1882 (baseline)
-**− 9** (adaptations historiques) **+ 315** (P4-A2) = **2188**. Les −9 sont
-exactement 9 itérations `expect(Schema::hasTable('download_grants'))->toBeFalse()`
-devenues factuellement fausses : 5 entrées `'download_grants',` retirées de listes
-multi-lignes (Catalog, Identity, P3A, P3B, P3C-A) et 4 éléments retirés de `foreach`
-inline (P3C-B, P3C-C, P4-A0, P4-A1). Les 3 assertions chaînées
-`Schema::hasTable('download_grants')` ont été **remplacées** par `download_logs`
-(0 net) et le compteur de migrations P4-A1 est passé de `toBe(25)` à `toBe(26)`
-(0 net). Les 4 assertions des rollbacks isolés antérieurs sont conservées.
-
-Contrat de référence (D-029 → D-029.4) : unité `order_item × product_file` ; `token_hash
-VARCHAR(64)` SHA-256 unique, **token brut jamais persisté** ; `public_id UUID` ;
-FK `order_item_id`/`product_file_id` RESTRICT + `user_id` SET NULL
-(**dénormalisation d'audit**, pas la source d'autorité — celle-ci est
-`grant → order_item → order`, avec `orders.customer_email` comme snapshot
-d'identité) ; un seul grant ACTIF par couple (index partiel `WHERE revoked_at IS
-NULL`) ; **`max_downloads` et `expires_at` NOT NULL EXPLICITES, aucun DEFAULT
-commercial, ni quota illimité ni absence d'expiration** ; `downloads_count` créé
-mais **non consommé avant P4-B** ; révocation set-once appariée au motif et
-**irréversible** ; **éligibilité financière = `orders.status IN
-('paid','partially_refunded')` uniquement — G3/G4 ne relisent pas `payments`** (les
-triggers différés P3C garantissent déjà l'équivalence) ; lignée bundle prouvée
-**uniquement** contre `order_item_bundle_components`, **aucun repli sur
-`product_bundles`**.
-Points D-029.4 à respecter à la lettre :
-- **option A** : les grants émis à `OrderPaid` SONT le snapshot applicatif des
-  fichiers livrés. **PostgreSQL ne garantit pas** qu'un ProductFile existait à
-  l'achat — « absence d'upgrade implicite = garantie APPLICATIVE » ;
-- fichier ajouté après l'achat : aucun grant automatique, jamais sélectionné par
-  une rotation ni une réémission ; l'y rattacher = `upgrade entitlement`, hors MVP ;
-- **rotation/réémission conservent le même `order_item_id + product_file_id`** ;
-  tout changement de `product_file_id` est une nouvelle attribution commerciale ;
-- **snapshot bundle** : absent = détectable et refusé ; **partiel = INDÉTECTABLE**
-  (sous-livraison possible, jamais de sur-livraison) — ne jamais écrire l'inverse ;
-- un grant **expiré non révoqué** bloque la réémission → révocation
-  `expired_reissue` obligatoire d'abord ; **aucun index partiel avec `now()`** ;
-- AUCUNE route, contrôleur, streaming, consommation réelle, DownloadLog, IP,
-  user-agent, analyse ; aucun code P4-B/P5 ; PR jamais mergée par l'agent.
-Branche locale `p4-a2-download-grants` supprimée, distante conservée à `cea5f2d`.
-`origin/main` intact `11130f4`.
-
-Le **plan technique P4-B — Download Logs est finalisé par D-029.5**, avant toute
-migration. La prochaine exécution implémente seulement la branche réservée
-`p4-b-download-logs` et la migration
-`2026_07_14_000012_create_download_logs_table.php` (frontière `000012`). G5 apparie
-atomiquement l'INSERT `started` et le compteur, regroupe Range/retries par secret
-de tentative dédié ; G6 contrôle la purge. HEAD n'écrit rien et `completed` ne
-prouve que la remise au mécanisme. Rappels D-029/D-029.4/D-029.5 : `download_logs`
-est la SEULE table P4 purgeable ; `ip_hash` = HMAC-SHA-256 (clé hors BDD), jamais
-d'IP brute ; `user_agent` tronqué (500) ; rétention 365 j = recommandation de
-config, aucun DEFAULT commercial ; **un token inconnu n'entre JAMAIS dans la table**
-(`download_grant_id` NOT NULL — anti-empoisonnement P3C-B.1), ces tentatives
-relèvent du rate-limiting et des logs de sécurité applicatifs ; le client reçoit
-toujours un 404 générique.
-
-Gate : aucun contrôleur/route, checkout, webhook HTTP, fournisseur de paiement concret,
-SDK, Filament, job de purge, téléchargement réel, token réel ou déploiement Azure.
-Aucune consommation applicative réelle avant P4-B. P5 reste non démarré.
-Ne jamais pousser sur `main`. Plan avant code, une feature à la fois, BDD avant logique.
-
-Note régression P3C-A (transparence) : ajouter `payments` a rendu obsolètes des
-assertions « table interdite » dans `IdentitySchemaTest`, `CatalogSchemaTest`,
-`P3ACouponsCartsSchemaTest` et `P3BOrdersSchemaTest` — `payments` retiré de ces listes
-(webhooks/refunds restent interdits). La cohérence bidirectionnelle paiement↔commande
-est **imposée par D-028.2** (pas un nouveau choix) ; l'utilisateur a seulement retenu,
-via question interactive, l'**option d'adaptation des fixtures** (plutôt qu'affaiblir la
-règle) : les fixtures P3B `paid`/`payment_review` reçoivent désormais un paiement cohérent.
-Aucun trigger/fonction P3B modifié. Isolation des tests de rollback : le correctif
-`0d04f77` (step dynamique) corrigeait le symptôme mais **pas l'isolation** (base
-temporaire migrée entièrement puis rollback « gate → fin », rollbackant les gates
-ultérieurs). Corrigé via `tests/Support/PhaseMigrationHarness` : chaque test de rollback
-applique **uniquement** les migrations jusqu'à la frontière du gate (`migrate --path=…`,
-aucune migration postérieure exécutée) puis rollbacke **uniquement** les migrations du
-gate (`migrate:rollback --path=…`), en vérifiant les objets antérieurs préservés.
-Plus aucun `--step`, `migrate:fresh` ni `count - gateIndex` dans ces tests.
-
-Points reportés sans bloquer la structure : durée métier `pending` (30 min recommandé),
-anonymisation invité, rotation des secrets HMAC, valeur de rétention webhook
-(90 j recommandé), gestion du paiement tardif `requires_review`.
-
-Toujours respecter : BDD avant logique, plan avant code, une seule feature à la fois.
-
----
+Garde-fous inchangés : une feature à la fois, la BDD avant la logique, arrêt
+obligatoire pour validation humaine avant toute migration d'une nouvelle phase,
+aucun push direct sur `main`.
 
 ## ⚠️ POINTS D'ATTENTION
 
@@ -512,6 +330,40 @@ Toujours respecter : BDD avant logique, plan avant code, une seule feature à la
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-21 — Claude Code (clôture post-merge P4-B)
+- **P4-B mergé** via [PR #16](https://github.com/mysterus44/DigiTrove/pull/16),
+  merge `98441014` (parents `d7c53cf` + `49692e25`, sujet « Merge pull request #16
+  from mysterus44/p4-b-download-logs »). `49692e25` confirmé ancêtre de la stable ;
+  stable synchronisée en fast-forward à `98441014` (0/0).
+- Périmètre mergé audité (`d7c53cf..98441014`) : **seule la migration `000013`**
+  côté migrations (`000001`–`000012` inchangées, P4-B0 intact), plus modèle,
+  factory, relation, suites de tests et 5 documents. Aucun endpoint, contrôleur,
+  service, streaming, secret ni objet P5.
+- Provisioning `php artisan db:provision-runtime-roles` rejoué **deux fois** :
+  idempotent, aucun secret affiché. Identités prouvées : migrations
+  `session_user=current_user=digitrove` ; métier
+  `session_user=current_user=digitrove_runtime`. 29 migrations, `000012` avant
+  `000013`, aucune `000014`.
+- Introspection post-merge : `download_logs` **15 colonnes** (aucun `updated_at`),
+  1 FK, 10 CHECK, 1 unique, 6 index ; **G5 possédée par
+  `digitrove_download_executor`**, `SECURITY DEFINER`, `search_path=pg_catalog,
+  public, pg_temp`, ACL `{executor=X/executor}` et objets tous qualifiés
+  (`public.download_grants`/`orders`/`order_items`/`product_files`) ; **G6**
+  possédée par le migrateur, SECURITY INVOKER, sans EXECUTE PUBLIC/runtime ;
+  **G2 unique** avec autorité `current_user = 'digitrove_download_executor'` +
+  profondeur secondaire, protections P4-A2/P4-A2.1 préservées ; **6 fonctions /
+  7 triggers P4**, G4 toujours différé.
+- ACL : runtime SELECT/INSERT/UPDATE/DELETE sur `download_logs` mais **sans**
+  TRIGGER/TRUNCATE, **sans** `downloads_count`, **sans** TEMP ni CREATE ;
+  exécuteur sans CREATE permanent, limité à `downloads_count`/`updated_at` du
+  grant plus le verrou `orders`, et sans droit sur `download_logs`.
+- Validation : **P4-B 19/603**, **suite complète 190/2975**, **Pint 121**,
+  `git diff --check` propre, zéro base ou rôle temporaire résiduel.
+- Clôture : branche locale `p4-b-download-logs` supprimée (était `49692e2`),
+  distante conservée à `49692e25` ; `origin/main` toujours `11130f4` ; aucun
+  nouveau merge, aucune correction de code.
+  Laisse à : choisir la prochaine étape dans le roadmap (non commencée).
 
 ### 2026-07-20 — Claude Code (reprise P4-B après P4-B0)
 - Garde-fous : stable `d7c53cf` (locale = distante, 0/0), P4-B `8cf24a8` (locale =
