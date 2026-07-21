@@ -8,15 +8,26 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-21
-- **Branche git active** : `p3-d1-pricing-kernel` (stable `p0-foundations-laravel13`
-  à `ba48cce1`, inchangée)
-- **P3-D1 IMPLÉMENTÉ — EN ATTENTE DE MERGE** : premier gate applicatif de D-030,
-  branche `p3-d1-pricing-kernel` créée depuis `ba48cce1`. **Aucune migration**
-  (29 inchangées), aucune route, aucun contrôleur, aucune écriture BDD.
+- **Branche git active** : `p3-d1-post-merge-hardening` (stable
+  `p0-foundations-laravel13` à `78f475e7`)
+- **P3-D1 TERMINÉ ET MERGÉ** via
+  [PR #17](https://github.com/mysterus44/DigiTrove/pull/17), merge
+  `78f475e750b0e060fd38c44d6733844807683ff9` (parents `ba48cce1` + `95ab5627`),
+  CI run #18 `success`. Périmètre audité : exactement **17 fichiers**, aucune
+  migration (29 inchangées), aucune route, aucun contrôleur, aucune écriture BDD.
   9 classes : `IntegerMath`, `Money`, `PricingService`, `DiscountAllocator`,
   `PricedQuote`, `PricedLine`, `CouponSnapshot`, `PricingException`,
-  `PricingRefusalReason`. Unit **36/55**, Feature **48/167** sous
-  `digitrove_runtime`, suite complète **274/3206**, Pint **132**.
+  `PricingRefusalReason`. Branche distante conservée à `95ab5627`.
+- 🔶 **P3-D1.1 HARDENING POST-MERGE EN ATTENTE DE MERGE** (branche
+  `p3-d1-post-merge-hardening`, depuis `78f475e7`). Le merge de la PR #17 ayant
+  précédé la revue contradictoire, l'audit post-merge a démontré **quatre défauts
+  de contrat défensif** — A1 devise acceptant `"XOF\n"`, A2 garde-fou P4-B
+  laissant passer un service de livraison sous namespace neutre, A3 DTO de
+  pricing sans invariants, A4 `line_id` dupliqué écrasé en silence. **Le calcul
+  de prix lui-même était correct** ; aucune corruption monétaire n'était possible
+  via `PricingService::quote()`. Les quatre sont fermés. Unit **94/117**, P4-B
+  **20/616**, suite complète **333/3272**, Pint **132**, 29 migrations
+  inchangées, aucune politique métier modifiée.
 - **D-030 FINALISÉE ET VALIDÉE** : roadmap de la couche applicative Commerce →
   Livraison. KingKouda tranche **Q1 = A renforcée** (token CSPRNG jamais
   reconstructible ; reprise = révoquer puis réémettre ; at-least-once assumé),
@@ -287,24 +298,40 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 Revue et merge de `P3-D1 — Pricing & Quote Kernel`
+## 🎯 Revue et merge de `P3-D1.1 — Hardening post-merge`
 
-**P3-D1 est IMPLÉMENTÉ et poussé sur `p3-d1-pricing-kernel`** ; la PR est ouverte
-vers `p0-foundations-laravel13` et **n'a pas été mergée par l'agent**. La
-prochaine tâche est la **revue puis le merge**, suivi de la clôture post-merge.
-**Ne pas commencer P3-D2** avant ce merge.
+**P3-D1 est mergé (PR #17)**, mais le merge a précédé la revue contradictoire.
+L'audit post-merge a démontré quatre défauts de contrat défensif, corrigés sur
+`p3-d1-post-merge-hardening`. La prochaine tâche est la **revue puis le merge de
+ce hotfix**, puis la clôture. **Ne pas commencer P3-D2 avant ce merge.**
 
-Points à vérifier en revue :
-- deux jugements conservateurs pris faute de règle explicite dans D-030, à
-  confirmer ou corriger : (1) seul `products.status = 'published'` est vendable
-  (`draft`/`archived`/soft-deleted refusés) ; (2) `min_order_minor` est mesuré
-  sur le sous-total du **panier entier**, la remise portant sur le sous-total
+Ce que ferme P3-D1.1 (chaque défaut a été reproduit par sonde exécutée avant
+correction, puis rejoué après) :
+- **A1** — `Money::of(100, "XOF\n")` était accepté : en PCRE, `$` matche aussi
+  juste avant un saut de ligne final. Corrigé par les ancres absolues
+  `/\A[A-Z]{3}\z/`, et `Money::assertValidCurrency()` devient la **source unique**
+  du contrat, réutilisée par `PricedQuote`.
+- **A2** — le garde-fou P4-B, rétréci pendant P3-D1 pour laisser passer
+  `app/Services/Pricing`, laissait passer `Services/Fulfilment/GrantIssuer.php`
+  et `DeliveryManager.php` (sonde avec fichiers réels : test **passant**).
+  Remplacé par une **allowlist fail-closed** des 7 fichiers autorisés, chemins
+  normalisés, récursive, indépendante de l'OS, nommant les intrus. **Chaque gate
+  futur devra élargir cette liste explicitement.**
+- **A3** — `PricedLine`, `PricedQuote` et `CouponSnapshot` acceptaient des états
+  incohérents (remise > sous-total, `lines` vide, snapshot coupon avec remise
+  nulle, devise `'zzz'`…). Invariants ajoutés aux constructeurs, en miroir exact
+  des CHECK `orders`/`order_items`, toute l'arithmétique via `IntegerMath`.
+- **A4** — deux parts partageant un `line_id` s'écrasaient : `allocate(10, …)`
+  retournait une somme de 5 **sans exception**. Refus explicite des `line_id`
+  dupliqués, `line_id < 1` et `product_id < 1`.
+
+Points à confirmer en revue (inchangés depuis P3-D1) :
+- deux jugements conservateurs pris faute de règle explicite dans D-030 :
+  (1) seul `products.status = 'published'` est vendable ; (2) `min_order_minor`
+  est mesuré sur le **panier entier**, la remise portant sur le sous-total
   **éligible** ;
-- `declare(strict_types=1)` introduit sur les fichiers du gate (nouveauté dans le
-  dépôt) — nécessaire pour que `Money::of(1.5, …)` lève au lieu de tronquer ;
-- adaptation historique du garde-fou de périmètre de `P4BDownloadLogsTest`
-  (assertion **restreinte**, pas supprimée : `Listeners`/`Jobs` toujours prouvés
-  absents, aucun namespace de service `download|delivery|grant`).
+- `declare(strict_types=1)` sur les fichiers du noyau — nécessaire pour que
+  `Money::of(1.5, …)` lève au lieu de tronquer.
 
 Rappel du contexte : le schéma P1→P4 est complet (29 migrations) et **D-030 est
 finalisée et validée** — la couche applicative est planifiée en 12 gates, **aucun
@@ -427,6 +454,56 @@ aucun push direct sur `main`.
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-21 — Claude Code (audit post-merge P3-D1 + hardening P3-D1.1)
+- **Merge P3-D1 prouvé** : [PR #17](https://github.com/mysterus44/DigiTrove/pull/17),
+  merge `78f475e750b0e060fd38c44d6733844807683ff9`, parents `ba48cce1` (base) +
+  `95ab5627` (head), head confirmé ancêtre de la stable, distante conservée à
+  `95ab5627`, `origin/main` intact `11130f4d`. Stable synchronisée en fast-forward,
+  0/0. Périmètre : **exactement 17 fichiers**, aucune migration, route,
+  contrôleur, Request, config, modèle, factory, secret, P4-C ni P5.
+- **Audit contradictoire post-merge** (le merge ayant précédé la revue) conduit
+  par **sondes exécutées, jamais par raisonnement** — méthode qui a payé : trois
+  de mes propres affirmations de la mission précédente étaient partiellement
+  fausses.
+- **Quatre anomalies démontrées puis fermées** sur `p3-d1-post-merge-hardening`
+  (créée depuis `78f475e7`, merge-base exact) :
+  **A1** `Money::of(100, "XOF\n")` accepté — le `$` de PCRE matche avant un saut
+  de ligne final ; corrigé par `/\A[A-Z]{3}\z/` + `Money::assertValidCurrency()`
+  source unique. **A2** garde-fou P4-B affaibli par mon propre rétrécissement :
+  sonde avec fichiers réels `Services/Fulfilment/{GrantIssuer,DeliveryManager}.php`
+  → test **passant** ; remplacé par une **allowlist fail-closed** des 7 fichiers
+  autorisés + test synthétique sans créer de fichier. **A3** DTO de pricing sans
+  aucun invariant (remise > sous-total, `lines` vide, snapshot coupon avec remise
+  nulle, devise `'zzz'` acceptés) ; invariants ajoutés aux constructeurs en
+  miroir des CHECK `orders`/`order_items`. **A4** `line_id` dupliqué écrasé en
+  silence — `allocate(10, …)` retournait une somme de 5 sans exception ; refus
+  explicite ajouté.
+- **Portée honnête des anomalies** : toutes de **défense en profondeur**. Le
+  calcul de prix était correct et **aucune corruption monétaire n'était possible**
+  via `PricingService::quote()` ; A1 était fail-closed en aval et A4 inatteignable
+  (`cart_items.id` est une PK). A2 était la plus sérieuse, et de ma responsabilité
+  directe.
+- **Vérifié inchangé** : `IntegerMath` (17 cas limites, `PHP_INT_MIN × -1` et
+  `-1 × PHP_INT_MIN` refusés, aucun montant valide refusé à tort) ; immutabilité
+  profonde de `PricedQuote` (4 tentatives de mutation, dont imbriquée, échouent ;
+  copie de tableau sans aliasing) ; Hamilton (999 lignes / D=998 → `sum=998,
+  max=1, min=0`, prouvant ≤ +1 par ligne et O(n)) ; ligne gratuite jamais
+  remisée ; **aucune politique métier modifiée**.
+- **Auto-audit post-correctif** : A1 → 7 variantes refusées ; A2 → sonde réelle
+  désormais refusée, l'allowlist nommant les deux intrus ; A3 → aucune
+  incohérence constructible ; A4 → duplication refusée avant allocation. Aucun
+  faux positif sur les 7 classes autorisées. Sondes supprimées, worktree propre,
+  aucun résidu.
+- Validation : Unit **94/117** (était 36/55), Feature P3-D1 **48/167** inchangée,
+  P4-B **20/616** (était 19/612), P3A 15/139, P3B 18/357, Catalogue 12/111 ;
+  suite complète **333/3272** (était 274/3206) ; Pint **132** ; `git diff --check`
+  propre ; **29 migrations inchangées**, aucune `000014` ; PostgreSQL et Redis
+  healthy ; aucune base temporaire résiduelle.
+- Aucun code P3-D2, P4-C ni P5 créé. `main` et la stable non modifiés ; branche
+  locale et distante `p3-d1-pricing-kernel` conservées.
+  Laisse à : **revue et merge de la PR P3-D1.1**, puis clôture. Ne pas commencer
+  P3-D2 avant ce merge.
 
 ### 2026-07-21 — Claude Code (P3-D1 Pricing & Quote Kernel implémenté)
 - Garde-fous : stable locale = distante `ba48cce1` (0/0), worktree propre,

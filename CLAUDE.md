@@ -162,9 +162,11 @@ ne déclare que la page d'accueil, `OrderService` / `OrderPaid` /
   runtime). **Ne plus l'utiliser comme modèle de code ; le réécrire avant le gate
   `P4-C4`.**
 
-- **`P3-D1 — Pricing & Quote Kernel` ✅ IMPLÉMENTÉ — EN ATTENTE DE MERGE**
-  (branche `p3-d1-pricing-kernel`, depuis `ba48cce1`) : **9 classes, AUCUNE
-  migration, AUCUNE écriture BDD** — `App\Support\{IntegerMath, Money}` et
+- **`P3-D1 — Pricing & Quote Kernel` ✅ TERMINÉ ET MERGÉ** via
+  [PR #17](https://github.com/mysterus44/DigiTrove/pull/17), merge `78f475e7`
+  (parents `ba48cce1` + `95ab5627`), CI #18 verte, 17 fichiers exactement :
+  **9 classes, AUCUNE migration, AUCUNE écriture BDD** —
+  `App\Support\{IntegerMath, Money}` et
   `App\Services\Pricing\{PricingService, DiscountAllocator, PricedQuote,
   PricedLine, CouponSnapshot, PricingException, PricingRefusalReason}`.
   Prix lus exclusivement dans `product_prices` sur `(product_id, currency)` +
@@ -177,9 +179,25 @@ ne déclare que la page d'accueil, `OrderService` / `OrderPaid` /
   et `redemptions_count` restent P3-D4. Unit **36/55**, Feature **48/167** sous
   `digitrove_runtime`, suite complète **274/3206**, Pint **132**.
 
-**PROCHAINE TÂCHE : revue et merge de la PR `P3-D1`** vers
-`p0-foundations-laravel13`, puis clôture post-merge. **Ne pas commencer P3-D2**
-avant ce merge. Deux jugements conservateurs à confirmer en revue : seul
+- 🔶 **`P3-D1.1 — Hardening post-merge` EN ATTENTE DE MERGE** (branche
+  `p3-d1-post-merge-hardening`, depuis `78f475e7`). Le merge de la PR #17 ayant
+  précédé la revue contradictoire, l'audit post-merge a démontré **quatre défauts
+  de contrat défensif**, tous fermés — **le calcul de prix était correct et
+  aucune corruption monétaire n'était possible** :
+  **A1** `Money::of(100, "XOF\n")` accepté (le `$` de PCRE matche avant un saut
+  de ligne final) → ancres `/\A[A-Z]{3}\z/` + `Money::assertValidCurrency()`
+  source unique ; **A2** garde-fou P4-B laissant passer
+  `Services/Fulfilment/GrantIssuer.php` → **allowlist fail-closed** des 7 fichiers
+  autorisés sous `app/Services` (**chaque gate futur doit l'élargir
+  explicitement**) ; **A3** DTO de pricing sans invariants → constructeurs en
+  miroir des CHECK `orders`/`order_items` ; **A4** `line_id` dupliqué écrasé en
+  silence → refus explicite. Unit **94/117**, P4-B **20/616**, suite complète
+  **333/3272**, Pint **132**, 29 migrations inchangées, aucune politique métier
+  modifiée.
+
+**PROCHAINE TÂCHE : revue et merge de la PR `P3-D1.1`** vers
+`p0-foundations-laravel13`, puis clôture. **Ne pas commencer P3-D2** avant ce
+merge. Deux jugements conservateurs à confirmer en revue : seul
 `products.status = 'published'` est vendable ; `min_order_minor` est un plancher
 mesuré sur le panier entier. P5 non démarré.
 

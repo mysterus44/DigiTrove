@@ -1882,7 +1882,8 @@ Grant Revocation        ↓
 
 | Gate | Branche future | Migration | Invariants BDD mobilisés |
 |---|---|:--:|---|
-| **P3-D1** Pricing & Quote Kernel ✅ *implémenté, en attente de merge* | `p3-d1-pricing-kernel` | non | *aucune écriture* — prépare `orders_total_formula_check`, `order_items_line_*_formula_check`, `validate_order_items_consistency` |
+| **P3-D1** Pricing & Quote Kernel ✅ *mergé (PR #17 → `78f475e7`)* | `p3-d1-pricing-kernel` | non | *aucune écriture* — prépare `orders_total_formula_check`, `order_items_line_*_formula_check`, `validate_order_items_consistency` |
+| **P3-D1.1** Hardening post-merge 🔶 *en attente de merge* | `p3-d1-post-merge-hardening` | non | invariants DTO en miroir des CHECK `orders`/`order_items` ; allowlist fail-closed du garde-fou P4-B |
 | **P3-D2** Checkout Order Transaction | `p3-d2-checkout-order-transaction` | non | `orders_checkout_idempotency_hash_unique`, `orders_coupon_snapshot_consistency_check`, `validate_order_items_consistency` (différé), `order_items_order_id_product_id_unique`, S1/S2/S3 |
 | **P3-D3** Payment Initiation | `p3-d3-payment-initiation` | non | `payments_idempotency_key_hash_unique`, `payments_order_id_attempt_number_unique`, transitions T (D-028.5) |
 | **P3-D4** Server-side Payment Confirmation | `p3-d4-payment-confirmation` | non | uniques de rejeu `payment_webhook_events`, `UNIQUE(order_id) WHERE status='succeeded'`, `coupon_redemptions_order_id_unique`, constraint triggers P3C différés |
@@ -1927,7 +1928,21 @@ le COMMIT échoue en `23514`. L'allocation retenue est **Hamilton (plus grand
 reste)**, départage `résidu décroissant → product_id croissant → identifiant de
 ligne croissant`, sans aucun `float`, division flottante ni `round()`.
 
-### Contrat d'implémentation P3-D1 (livré, en attente de merge)
+### Contrat d'implémentation P3-D1 (mergé, durci par P3-D1.1)
+
+> **P3-D1 est mergé** (PR #17 → `78f475e7`, CI #18 verte). Le merge ayant précédé
+> la revue contradictoire, un audit post-merge a démontré quatre défauts de
+> **contrat défensif** — le calcul de prix, lui, était correct :
+> **A1** `Money` acceptait `"XOF\n"` (le `$` de PCRE matche avant un saut de ligne
+> final) ; **A2** le garde-fou P4-B laissait passer un service de livraison sous
+> un namespace neutre (`Services/Fulfilment/GrantIssuer.php`) ; **A3** les DTO de
+> pricing n'appliquaient aucun de leurs invariants ; **A4** un `line_id` dupliqué
+> écrasait silencieusement une allocation. **`P3-D1.1` ferme les quatre** et reste
+> **en attente de merge** : ancres `\A…\z` + `Money::assertValidCurrency()` comme
+> source unique, invariants en miroir des CHECK dans les constructeurs, allowlist
+> **fail-closed** des 7 fichiers autorisés sous `app/Services`, refus des
+> identifiants de ligne dupliqués. Aucune migration, aucune politique métier
+> modifiée.
 
 Neuf classes, **aucune migration** : `App\Support\IntegerMath` (multiply / add /
 subtract avec `OverflowException` au dépassement — PHP promeut silencieusement un

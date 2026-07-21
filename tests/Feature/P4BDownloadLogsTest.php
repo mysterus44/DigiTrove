@@ -22,6 +22,62 @@ use Tests\Support\PhaseMigrationHarness;
 
 uses(RefreshDatabase::class);
 
+/**
+ * Historical boundary of the P4-B gate: the ONLY files allowed to live under
+ * `app/Services` at this point of the roadmap. They all belong to P3-D1
+ * (D-030), a read-only commerce pricing kernel with no delivery capability.
+ *
+ * Every later gate must widen this list EXPLICITLY. Anything else appearing
+ * under `app/Services` fails the guard, whatever its name or namespace.
+ */
+const P4B_ALLOWED_SERVICE_FILES = [
+    'Pricing/CouponSnapshot.php',
+    'Pricing/DiscountAllocator.php',
+    'Pricing/PricedLine.php',
+    'Pricing/PricedQuote.php',
+    'Pricing/PricingException.php',
+    'Pricing/PricingRefusalReason.php',
+    'Pricing/PricingService.php',
+];
+
+/**
+ * Relative paths actually present under `app/Services`, normalised to forward
+ * slashes so the guard behaves identically on Windows and Linux.
+ *
+ * @return list<string>
+ */
+function p4bActualServiceFiles(): array
+{
+    if (! File::isDirectory(app_path('Services'))) {
+        return [];
+    }
+
+    $files = array_map(
+        static fn ($file): string => str_replace('\\', '/', $file->getRelativePathname()),
+        File::allFiles(app_path('Services')),
+    );
+
+    sort($files);
+
+    return array_values($files);
+}
+
+/**
+ * Fail-closed diff: anything not on the allowlist is reported by name.
+ *
+ * @param  list<string>  $relativePaths
+ * @return list<string>
+ */
+function p4bUnexpectedServiceFiles(array $relativePaths): array
+{
+    $normalised = array_map(
+        static fn (string $path): string => str_replace('\\', '/', $path),
+        $relativePaths,
+    );
+
+    return array_values(array_diff($normalised, P4B_ALLOWED_SERVICE_FILES));
+}
+
 function forceP4BConstraints(): void
 {
     DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
@@ -929,20 +985,41 @@ it('keeps the gate purely relational: no HTTP surface, no HEAD artefact, no P5 o
     foreach ($appFiles as $file) {
         expect((string) $file)->not->toMatch('/DownloadController|DownloadService|IssueDownloadGrants|Stream|RateLimit/i');
     }
-    // P3-D1 (D-030) legitimately introduces app/Services/Pricing, a read-only
-    // COMMERCE kernel. What this gate guards is the absence of the DELIVERY
-    // application layer, so the assertion is narrowed instead of dropped: no
-    // listener, no job, and no service namespace related to downloads.
     expect(File::isDirectory(app_path('Listeners')))->toBeFalse()
         ->and(File::isDirectory(app_path('Jobs')))->toBeFalse();
 
-    $serviceNamespaces = File::isDirectory(app_path('Services'))
-        ? collect(File::directories(app_path('Services')))->map(fn ($path) => basename($path))
-        : collect();
+    // P3-D1 (D-030) legitimately introduces app/Services/Pricing, a read-only
+    // COMMERCE kernel. Guarding by keyword or by the first directory name was
+    // proven insufficient (P3-D1.1 / A2): a neutral namespace such as
+    // `Services/Fulfilment/GrantIssuer.php` slipped through both.
+    //
+    // The guard is therefore FAIL-CLOSED: app/Services must contain EXACTLY the
+    // allowlisted P3-D1 files and nothing else. Every later gate has to widen
+    // this list explicitly, which is the whole point of a historical boundary.
+    expect(p4bUnexpectedServiceFiles(p4bActualServiceFiles()))->toBe([]);
+});
 
-    foreach ($serviceNamespaces as $namespace) {
-        expect($namespace)->not->toMatch('/download|delivery|grant/i');
-    }
+it('fails closed on any delivery service smuggled under a neutral namespace', function () {
+    // Synthetic paths only: these files are deliberately NOT created in the
+    // repository. What is under test is the guard itself, not the filesystem.
+    $smuggled = [
+        'Fulfilment/GrantIssuer.php',
+        'Fulfilment/DeliveryManager.php',
+        'Ops/StreamManager.php',
+        'Ops/RateLimiter.php',
+        'Pricing/UnexpectedService.php',
+        'Delivery/DownloadService.php',
+    ];
+
+    expect(p4bUnexpectedServiceFiles($smuggled))->toBe($smuggled);
+
+    // Mixing them with the legitimate allowlist still reports exactly the
+    // intruders, so a real regression names the offending file.
+    expect(p4bUnexpectedServiceFiles([...P4B_ALLOWED_SERVICE_FILES, ...$smuggled]))->toBe($smuggled);
+
+    // The current tree is clean, and the allowlist itself is accepted.
+    expect(p4bUnexpectedServiceFiles(P4B_ALLOWED_SERVICE_FILES))->toBe([])
+        ->and(p4bActualServiceFiles())->toBe(P4B_ALLOWED_SERVICE_FILES);
 });
 
 // ── 21.9 — Transitions ───────────────────────────────────────────────────────

@@ -2109,8 +2109,93 @@ Suite P4-B : 19 tests / **612** assertions (était 603).
 Pint **132 fichiers** ; `git diff --check` propre ; 29 migrations inchangées ;
 P3A 15/139, P3B 18/357, Catalogue 12/111 verts. **Exclusions confirmées** :
 aucune Order, aucun `CouponRedemption`, aucun Payment, aucun DownloadGrant,
-aucun DownloadLog, aucune config queue/mail, aucun P4-C, aucun P5. PR ouverte
-vers `p0-foundations-laravel13`, **jamais mergée par l'agent**.
+aucun DownloadLog, aucune config queue/mail, aucun P4-C, aucun P5.
+
+*Statut* : **mergé** via [PR #17](https://github.com/mysterus44/DigiTrove/pull/17),
+merge `78f475e750b0e060fd38c44d6733844807683ff9` (parents
+`ba48cce18833535f5cc226ecdd822ece3bf2e409` + `95ab5627337ceaa18bc4eb47c19b359e2542e843`),
+CI run #18 `success`. **Le merge a précédé la revue contradictoire prévue** ; un
+audit post-merge a donc été conduit et a démontré quatre défauts de contrat
+défensif — voir la note P3-D1.1 ci-dessous. Périmètre mergé audité : exactement
+**17 fichiers**, aucune migration, route, contrôleur, Request, config, modèle,
+factory, secret, P4-C ni P5.
+
+**Note d'exécution P3-D1.1 — Hardening post-merge** (aucune décision nouvelle,
+périmètre A1–A4 validé par KingKouda) : branche `p3-d1-post-merge-hardening`
+créée depuis `78f475e7`. **Aucune migration, aucune politique métier modifiée.**
+
+*Audit post-merge contradictoire* — quatre anomalies démontrées par sondes
+exécutées (jamais par raisonnement seul), toutes de **défense en profondeur** :
+le calcul de prix lui-même était correct et aucune corruption monétaire n'était
+possible via `PricingService::quote()`.
+
+* **A1 — devise acceptant un saut de ligne final.** `Money::of(100, "XOF\n")`
+  était **accepté** : en PCRE, `$` matche aussi juste avant un saut de ligne
+  final, donc `/^[A-Z]{3}$/` ne tenait pas son contrat annoncé. Impact réel nul
+  (fail-closed en aval : aucune ligne `product_prices` trouvée, et
+  `orders.currency VARCHAR(3)` aurait rejeté), mais erreur BDD obscure au lieu
+  d'un refus propre en P3-D2. **Correctif** : ancres absolues `/\A[A-Z]{3}\z/`
+  + `Money::assertValidCurrency()` devenue **source unique** du contrat, réutilisée
+  par `PricedQuote`.
+* **A2 — garde-fou P4-B affaibli.** Le rétrécissement effectué pendant P3-D1
+  (pour laisser passer `app/Services/Pricing`) laissait passer un service de
+  livraison sous un namespace neutre : sonde avec fichiers réels
+  `app/Services/Fulfilment/{GrantIssuer,DeliveryManager}.php` → **test PASSANT**.
+  La regex de mots-clés ne les couvrait pas et la garde de namespace ne testait
+  que le basename du sous-dossier. **Correctif** : garde **fail-closed** par
+  **allowlist exacte** des 7 fichiers P3-D1 sous `app/Services`, chemins relatifs
+  normalisés (`\` → `/`), récursive, indépendante de l'OS, nommant les intrus ;
+  plus un test synthétique (sans créer de fichier) couvrant `GrantIssuer`,
+  `DeliveryManager`, `StreamManager`, `RateLimiter`, `DownloadService` et un
+  `Pricing/UnexpectedService.php` inattendu. Chaque gate futur devra **élargir
+  explicitement** cette allowlist — c'est l'intérêt d'une frontière historique.
+* **A3 — DTO de pricing sans aucun invariant.** `PricedLine`, `PricedQuote` et
+  `CouponSnapshot` acceptaient des états incohérents (remise > sous-total,
+  quantité négative, snapshots vides, total incohérent, `lines` vide, snapshot
+  coupon avec remise nulle, devise `'zzz'`). Impact nul aujourd'hui — le seul
+  producteur, `PricingService::assemble()`, validait déjà — mais **P3-D2 est le
+  consommateur** et pouvait les construire. **Correctif** : invariants dans les
+  constructeurs, miroir exact des CHECK `order_items`/`orders`
+  (`line_subtotal = unit × qty`, `line_total = subtotal − discount`,
+  `Σ lignes = commande`, `total = subtotal − discount + tax`, `taxMinor === 0`,
+  snapshot coupon ⟺ remise > 0, types via `ProductType`/`CouponDiscountType`),
+  toute l'arithmétique passant par `IntegerMath`.
+* **A4 — identifiants de ligne dupliqués écrasés en silence.** Deux parts
+  partageant un `line_id` s'écrasaient sur la même clé : `allocate(10, …)`
+  retournait `{"7":5}`, **somme 5 ≠ 10**, sans exception — une mauvaise réponse
+  silencieuse sur le chemin monétaire. Inatteignable via `PricingService`
+  (`cart_items.id` est une PK), mais la classe est publique et son contrat
+  promettait une somme exacte. **Correctif** : refus explicite des `line_id`
+  dupliqués, `line_id < 1` et `product_id < 1`.
+
+*Vérifié inchangé* : `IntegerMath` (17 cas limites, dont `PHP_INT_MIN × -1`,
+`-1 × PHP_INT_MIN`, `MAX+1`, `MIN-1` — tous refusés, aucun montant valide refusé
+à tort) ; l'immutabilité profonde de `PricedQuote` (les quatre tentatives de
+mutation, y compris imbriquée, échouent ; copie de tableau sans aliasing) ;
+Hamilton (999 lignes / D=998 → `sum=998, max=1, min=0`, prouvant ≤ +1 par ligne
+et une boucle en O(n)) ; ligne gratuite jamais remisée ; toutes les politiques
+métier validées (union produit ∪ catégorie, `min_order_minor` sur panier total,
+remise sur sous-total éligible, `published` seul, aucun repli de devise, aucune
+consommation de coupon).
+
+*Auto-audit post-correctif* : A1 → `"XOF\n"`, `"XOF\r\n"`, `"XOF "`, `" XOF"`,
+`"XOF\t"`, `"XOF\0"`, `"xof"` tous refusés ; A2 → sonde avec fichiers réels
+`Fulfilment/{GrantIssuer,DeliveryManager}.php` désormais **refusée**, l'allowlist
+nommant précisément les deux intrus ; A3 → aucune incohérence constructible ;
+A4 → duplication refusée avant toute allocation. Aucun faux positif sur les
+7 classes autorisées, `PricingService` produit toujours une quote valide, aucun
+scénario légitime ne lève d'exception supplémentaire. Sondes supprimées, worktree
+propre, aucun résidu.
+
+*Validation* : Unit **94 tests / 117 assertions** (était 36/55), Feature P3-D1
+**48/167** inchangée, P4-B **20/616** (était 19/612), P3A 15/139, P3B 18/357,
+Catalogue 12/111 ; suite complète **333 tests / 3272 assertions** (était
+274/3206) ; Pint **132** ; `git diff --check` propre ; **29 migrations
+inchangées**, aucune `000014` ; PostgreSQL et Redis healthy ; aucune base
+temporaire résiduelle.
+
+*Statut* : **P3-D1 MERGÉ — HARDENING POST-MERGE EN ATTENTE DE MERGE.** Aucun code
+P3-D2, P4-C ou P5 créé.
 
 ---
 
