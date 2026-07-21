@@ -12,7 +12,7 @@ SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
-P3-D APPLICATIF     : ░░░░░░░░░░  0% — planifié D-030 (P3-D1→P3-D5), non démarré
+P3-D APPLICATIF     : ██░░░░░░░░  P3-D1 implémenté (en attente de merge) ; P3-D2→P3-D5 non démarrés
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ░░░░░░░░░░  0% — planifié D-030 (P4-C0→P4-C6), non démarré
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
@@ -67,7 +67,14 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > tarification, le checkout et le paiement relèvent de **P3-D** ; la livraison
 > commence à **P4-C**. Douze gates, **aucune migration** : `P3-D1` → `P3-D5`
 > puis `P4-C0` → `P4-C6`. **Premier gate : `P3-D1 — Pricing & Quote Kernel`**
-> (branche future `p3-d1-pricing-kernel`). P5 non démarré.
+> (branche `p3-d1-pricing-kernel`). P5 non démarré.
+> **P3-D1 est IMPLÉMENTÉ et en attente de merge** : 9 classes
+> (`IntegerMath`, `Money`, `PricingService`, `DiscountAllocator`, `PricedQuote`,
+> `PricedLine`, `CouponSnapshot`, `PricingException`, `PricingRefusalReason`),
+> **aucune migration**, aucune écriture BDD, `taxMinor` explicitement nul,
+> allocation Hamilton déterministe, coupon scopé sans ligne éligible refusé.
+> Unit 36/55, Feature 48/167 sous `digitrove_runtime`, suite complète 274/3206,
+> Pint 132, 29 migrations inchangées.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -402,7 +409,7 @@ coupon, dans la même transaction que la transition vers `paid`.
 
 | Gate | Branche future | Objectif unique | Statut |
 |------|----------------|-----------------|--------|
-| **P3-D1** Pricing & Quote Kernel | `p3-d1-pricing-kernel` | Money value object + `PricedQuote` immuable : prix fixe par devise depuis `product_prices`, validation coupon, remise globale, **allocation Hamilton aux lignes**. Zéro écriture BDD, zéro migration. | 🎯 **PROCHAINE TÂCHE** |
+| **P3-D1** Pricing & Quote Kernel | `p3-d1-pricing-kernel` | Money value object + `PricedQuote` immuable : prix fixe par devise depuis `product_prices`, validation coupon, remise globale, **allocation Hamilton aux lignes**. Zéro écriture BDD, zéro migration. | ✅ **IMPLÉMENTÉ — EN ATTENTE DE MERGE** ; 9 classes, Unit **36/55**, Feature **48/167**, suite complète **274/3206**, Pint **132**, 29 migrations inchangées |
 | **P3-D2** Checkout Order Transaction | `p3-d2-checkout-order-transaction` | `Order` + `order_items` + snapshot bundle exhaustif (`INSERT … SELECT` unique après `products FOR UPDATE`) dans **une** transaction ; bundle vide refusé avant l'insertion de la ligne ; idempotence par `checkout_idempotency_hash`. | ⬜ TODO |
 | **P3-D3** Payment Initiation | `p3-d3-payment-initiation` | Port fournisseur + ligne `payments` `pending` ; `idempotency_key_hash` ; aucun webhook, aucune livraison. | ⬜ TODO |
 | **P3-D4** Server-side Payment Confirmation | `p3-d4-payment-confirmation` | Webhook signé + **contre-appel fournisseur** + montant/devise revérifiés en entiers ; `Payment succeeded` · `Order → paid` · `coupon_redemptions` ; branche gratuite `total_minor = 0` sans ligne `payments` ; rejeu idempotent. | ⬜ TODO |

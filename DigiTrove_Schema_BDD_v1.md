@@ -1882,7 +1882,7 @@ Grant Revocation        ↓
 
 | Gate | Branche future | Migration | Invariants BDD mobilisés |
 |---|---|:--:|---|
-| **P3-D1** Pricing & Quote Kernel | `p3-d1-pricing-kernel` | non | *aucune écriture* — prépare `orders_total_formula_check`, `order_items_line_*_formula_check`, `validate_order_items_consistency` |
+| **P3-D1** Pricing & Quote Kernel ✅ *implémenté, en attente de merge* | `p3-d1-pricing-kernel` | non | *aucune écriture* — prépare `orders_total_formula_check`, `order_items_line_*_formula_check`, `validate_order_items_consistency` |
 | **P3-D2** Checkout Order Transaction | `p3-d2-checkout-order-transaction` | non | `orders_checkout_idempotency_hash_unique`, `orders_coupon_snapshot_consistency_check`, `validate_order_items_consistency` (différé), `order_items_order_id_product_id_unique`, S1/S2/S3 |
 | **P3-D3** Payment Initiation | `p3-d3-payment-initiation` | non | `payments_idempotency_key_hash_unique`, `payments_order_id_attempt_number_unique`, transitions T (D-028.5) |
 | **P3-D4** Server-side Payment Confirmation | `p3-d4-payment-confirmation` | non | uniques de rejeu `payment_webhook_events`, `UNIQUE(order_id) WHERE status='succeeded'`, `coupon_redemptions_order_id_unique`, constraint triggers P3C différés |
@@ -1926,6 +1926,39 @@ exige `discount_minor > 0` dès qu'un snapshot coupon existe. Une remise de coup
 le COMMIT échoue en `23514`. L'allocation retenue est **Hamilton (plus grand
 reste)**, départage `résidu décroissant → product_id croissant → identifiant de
 ligne croissant`, sans aucun `float`, division flottante ni `round()`.
+
+### Contrat d'implémentation P3-D1 (livré, en attente de merge)
+
+Neuf classes, **aucune migration** : `App\Support\IntegerMath` (multiply / add /
+subtract avec `OverflowException` au dépassement — PHP promeut silencieusement un
+entier débordant en float), `App\Support\Money` (`int` + devise `^[A-Z]{3}$`,
+jamais de conversion ni de repli), et `App\Services\Pricing\{PricingService,
+DiscountAllocator, PricedQuote, PricedLine, CouponSnapshot, PricingException,
+PricingRefusalReason}`. Points de contrat retenus, tous couverts par test :
+
+* **Prix** : `product_prices` sur `(product_id, currency)` avec
+  `is_active = true` uniquement. Produit **fail-closed** — `status = published`
+  exigé ; `draft`, `archived` et soft-deleted refusés. Lecture stricte de
+  l'enum `ProductStatus`, conservatrice, à reconfirmer au gate P3-D2.
+* **Fenêtre coupon** : `starts_at <= at <= ends_at`, **inclusive aux deux
+  bornes**, avec un instant de référence unique et immuable par tarification
+  (jamais deux `now()` susceptibles d'encadrer une frontière).
+* **`min_order_minor`** : plancher mesuré sur le **sous-total du panier entier**
+  (c'est un plancher de *commande*) ; la **base de remise** reste le sous-total
+  **éligible**.
+* **Portée** : aucun pivot ⇒ coupon global ; sinon **UNION** produit ∪ catégorie,
+  jamais une intersection. Un produit rattaché à plusieurs catégories éligibles
+  n'est compté qu'une seule fois.
+* **Plafonds** : `max_discount_minor`, puis sous-total éligible ; une remise
+  résultante nulle est **refusée** —
+  `orders_coupon_snapshot_consistency_check` interdit un snapshot coupon avec
+  `discount_minor = 0`.
+* **`taxMinor = 0`**, explicitement : aucune politique fiscale, aucun
+  `TaxService`, aucune configuration fiscale, aucune conformité revendiquée.
+  Toute fiscalité future exigera sa propre décision et son propre gate.
+* **Zéro écriture, zéro verrou** : `coupon_redemptions` et
+  `coupons.redemptions_count` restent P3-D4 (D-027, point 5) ; les verrous
+  `FOR UPDATE` restent P3-D2/P3-D4.
 
 ### Points de vigilance figés par D-030
 

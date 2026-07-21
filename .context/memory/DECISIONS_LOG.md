@@ -2031,6 +2031,87 @@ décision.** Migrations `000001`–`000013` inchangées ; aucune `000014` ;
 `origin/main` intact. **Prochaine tâche : implémenter `P3-D1 — Pricing & Quote
 Kernel` sur la branche `p3-d1-pricing-kernel`.**
 
+**Note d'exécution P3-D1** (aucune décision nouvelle) : gate **`P3-D1 — Pricing &
+Quote Kernel`** implémenté sur la branche `p3-d1-pricing-kernel`, créée depuis la
+stable exacte `ba48cce1`. **AUCUNE migration** (29 migrations inchangées, aucune
+`000014`), aucune route, aucun contrôleur, aucun paiement, aucun grant, aucune
+écriture BDD.
+
+*Classes livrées (9)* : `App\Support\IntegerMath` (multiply/add/subtract avec
+refus `OverflowException` — PHP promeut silencieusement un dépassement d'entier
+en float, ce qui détruirait un montant exact) ; `App\Support\Money`
+(`final readonly`, montant `int` seul, devise canonique `^[A-Z]{3}$`, addition/
+soustraction/comparaison **uniquement à devise identique**, aucune conversion) ;
+`App\Services\Pricing\{PricingService, DiscountAllocator, PricedQuote, PricedLine,
+CouponSnapshot, PricingException, PricingRefusalReason}`. Aucun repository
+abstrait, aucune interface sans seconde implémentation, aucun bus, aucun event,
+aucun listener, aucun DTO générique.
+
+*`declare(strict_types=1)` introduit sur les fichiers du gate* — nouveauté dans le
+dépôt, justifiée et bornée : sans lui, `Money::of(1.5, 'XOF')` serait coercé en
+`1` (dépréciation silencieuse PHP 8.3), exactement la corruption monétaire que
+D-005 interdit. Pint (preset `laravel`) reste vert.
+
+*Résolution des prix* : lecture exclusive de `product_prices` sur
+`(product_id, currency)` avec `is_active = true`. **Aucun repli de devise**
+(D-018), aucun prix issu du panier (`cart_items` n'en porte aucun, D-024/1) ni de
+l'appelant. Produit **fail-closed** : `status` doit valoir `published` et un
+produit soft-deleted n'est pas chargé du tout ; `draft` et `archived` sont
+refusés. Cette lecture stricte de l'enum `ProductStatus` est conservatrice
+(refuse plus, ne sur-autorise jamais) et devra être reconfirmée au gate P3-D2.
+
+*Coupons* : fenêtre `starts_at`/`ends_at` **inclusive aux deux bornes** ;
+`min_order_minor` mesuré sur le **sous-total du panier entier** (la colonne est un
+plancher de commande) tandis que la base de remise reste le **sous-total
+éligible** ; portée produit et portée catégorie combinées en **UNION** (jamais
+une intersection) ; un coupon `fixed` sans règle utilisable dans la devise
+demandée est refusé ; plafonds `max_discount_minor` puis sous-total éligible ;
+remise nulle refusée (`orders_coupon_snapshot_consistency_check` interdit un
+snapshot coupon avec `discount_minor = 0`). **Q3 = A appliqué** : un coupon scopé
+sans ligne éligible produit un refus explicite `CouponNotApplicable`, jamais un
+retrait silencieux.
+
+*Hamilton* : `numeratorᵢ = D × sᵢ`, `baseᵢ = intdiv(numeratorᵢ, S)`,
+`remainderᵢ = numeratorᵢ % S`, puis distribution unité par unité du reste selon
+**résidu décroissant → `product_id` croissant → id de ligne croissant**. Garde
+défensive supplémentaire : une ligne n'absorbe jamais plus que son propre
+sous-total (protège une ligne gratuite). Aucun `float`, aucune division
+flottante, aucun `round()` — audit statique confirmé : les seules occurrences de
+`float`/`round(` dans les fichiers du gate sont des **commentaires**.
+
+*`taxMinor` explicitement `0`* : P3-D1 ne définit **aucune** politique fiscale,
+ne crée aucun `TaxService` ni configuration fiscale, et ne revendique aucune
+conformité. Toute fiscalité future exigera une décision dédiée.
+
+*Aucune consommation de coupon* : ni `coupon_redemptions`, ni incrément de
+`coupons.redemptions_count`, ni réservation de quota — cela reste P3-D4 (D-027,
+point 5). Prouvé par test : compteurs et lignes inchangés après tarification.
+
+*Tests réels* : **Unit 36 tests / 55 assertions** (aucun accès PostgreSQL —
+`IntegerMath`, `Money`, `DiscountAllocator`) et **Feature 48 tests /
+167 assertions** sur PostgreSQL réel, migrations sous le migrateur et requêtes
+sous **`digitrove_runtime`** (identité prouvée dans le test). Absence d'écriture
+prouvée deux fois : capture du journal SQL (aucun `insert|update|delete|truncate|
+merge`, aucun `FOR UPDATE`) **et** comparaison octet à octet des tables
+`carts`/`cart_items`/`coupons`/`products`/`product_prices` avant/après. Absence
+de N+1 prouvée par `Model::preventLazyLoading()` **et** par une comparaison de
+volumétrie (panier de 2 vs 8 lignes → nombre de requêtes identique), sans figer
+un nombre fragile.
+
+*Adaptation historique nécessaire* : le garde-fou de périmètre de
+`P4BDownloadLogsTest` assertait `app/Services` inexistant. P3-D1 crée
+légitimement `app/Services/Pricing`. L'assertion est **restreinte, pas
+supprimée** : `app/Listeners` et `app/Jobs` restent prouvés absents, et aucun
+espace de noms de service ne peut correspondre à `download|delivery|grant`.
+Suite P4-B : 19 tests / **612** assertions (était 603).
+
+*Validation* : suite complète **274 tests / 3206 assertions** (base 190/2975) ;
+Pint **132 fichiers** ; `git diff --check` propre ; 29 migrations inchangées ;
+P3A 15/139, P3B 18/357, Catalogue 12/111 verts. **Exclusions confirmées** :
+aucune Order, aucun `CouponRedemption`, aucun Payment, aucun DownloadGrant,
+aucun DownloadLog, aucune config queue/mail, aucun P4-C, aucun P5. PR ouverte
+vers `p0-foundations-laravel13`, **jamais mergée par l'agent**.
+
 ---
 
 ## À AJOUTER AU FIL DU PROJET

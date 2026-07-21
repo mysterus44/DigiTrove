@@ -162,9 +162,26 @@ ne déclare que la page d'accueil, `OrderService` / `OrderPaid` /
   runtime). **Ne plus l'utiliser comme modèle de code ; le réécrire avant le gate
   `P4-C4`.**
 
-**PROCHAINE TÂCHE : implémenter `P3-D1 — Pricing & Quote Kernel`** sur la branche
-`p3-d1-pricing-kernel` — zéro écriture BDD, zéro Order, zéro route, zéro paiement,
-zéro grant, **zéro migration**. P5 non démarré.
+- **`P3-D1 — Pricing & Quote Kernel` ✅ IMPLÉMENTÉ — EN ATTENTE DE MERGE**
+  (branche `p3-d1-pricing-kernel`, depuis `ba48cce1`) : **9 classes, AUCUNE
+  migration, AUCUNE écriture BDD** — `App\Support\{IntegerMath, Money}` et
+  `App\Services\Pricing\{PricingService, DiscountAllocator, PricedQuote,
+  PricedLine, CouponSnapshot, PricingException, PricingRefusalReason}`.
+  Prix lus exclusivement dans `product_prices` sur `(product_id, currency)` +
+  `is_active` ; produit **fail-closed** (`published` seul) ; **aucun repli de
+  devise** ; fenêtre coupon inclusive aux deux bornes sur un instant unique ;
+  portée produit ∪ catégorie (**union**) ; `min_order_minor` mesuré sur le panier
+  entier, remise sur le sous-total éligible ; plafonds puis refus si remise nulle ;
+  **allocation Hamilton** (résidu ↓ → `product_id` ↑ → id de ligne ↑) ;
+  `taxMinor` explicitement `0` (aucune politique fiscale) ; `coupon_redemptions`
+  et `redemptions_count` restent P3-D4. Unit **36/55**, Feature **48/167** sous
+  `digitrove_runtime`, suite complète **274/3206**, Pint **132**.
+
+**PROCHAINE TÂCHE : revue et merge de la PR `P3-D1`** vers
+`p0-foundations-laravel13`, puis clôture post-merge. **Ne pas commencer P3-D2**
+avant ce merge. Deux jugements conservateurs à confirmer en revue : seul
+`products.status = 'published'` est vendable ; `min_order_minor` est un plancher
+mesuré sur le panier entier. P5 non démarré.
 
 ## 🔄 EN FIN DE TÂCHE
 
