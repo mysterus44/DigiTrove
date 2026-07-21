@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Services\Pricing\CouponSnapshot;
 use App\Services\Pricing\DiscountAllocator;
+use App\Services\Pricing\PricedLine;
+use App\Services\Pricing\PricedQuote;
 use App\Support\IntegerMath;
 use App\Support\Money;
 
@@ -281,4 +284,234 @@ it('refuses to allocate a positive discount over an empty eligible base', functi
     expect(fn () => allocateP3D1(5, [
         ['line_id' => 10, 'product_id' => 1, 'subtotal_minor' => 0],
     ]))->toThrow(InvalidArgumentException::class);
+});
+
+// ===========================================================================
+// P3-D1.1 — post-merge hardening (A1 to A4)
+// ===========================================================================
+
+// --- A1: the currency contract must be exactly three ASCII uppercase letters.
+// PCRE's `$` also matches just before a FINAL newline, so '/^[A-Z]{3}$/'
+// silently accepted "XOF\n".
+
+it('refuses any currency that is not exactly three ASCII uppercase letters', function (string $currency) {
+    expect(fn () => Money::of(100, $currency))->toThrow(InvalidArgumentException::class);
+})->with([
+    'trailing newline' => ["XOF\n"],
+    'trailing CRLF' => ["XOF\r\n"],
+    'trailing space' => ['XOF '],
+    'leading space' => [' XOF'],
+    'lowercase' => ['xof'],
+    'trailing tab' => ["XOF\t"],
+    'trailing NUL' => ["XOF\0"],
+    'inner newline' => ["X\nO"],
+    'non ascii lookalike' => ["XO\u{0130}"],
+    'digits' => ['X0F'],
+]);
+
+it('still accepts the exact canonical currency', function () {
+    expect(Money::of(100, 'XOF')->currency)->toBe('XOF')
+        ->and(Money::of(0, 'EUR')->currency)->toBe('EUR');
+});
+
+// --- A4: duplicate line ids used to collapse silently, returning a sum that
+// was smaller than the requested discount.
+
+it('refuses duplicated line ids instead of silently collapsing the allocation', function () {
+    expect(fn () => allocateP3D1(10, [
+        ['line_id' => 7, 'product_id' => 1, 'subtotal_minor' => 100],
+        ['line_id' => 7, 'product_id' => 2, 'subtotal_minor' => 100],
+    ]))->toThrow(InvalidArgumentException::class);
+});
+
+it('refuses a non positive line id', function (int $lineId) {
+    expect(fn () => allocateP3D1(10, [
+        ['line_id' => $lineId, 'product_id' => 1, 'subtotal_minor' => 100],
+    ]))->toThrow(InvalidArgumentException::class);
+})->with([[0], [-1]]);
+
+it('refuses a non positive product id', function () {
+    expect(fn () => allocateP3D1(10, [
+        ['line_id' => 1, 'product_id' => 0, 'subtotal_minor' => 100],
+    ]))->toThrow(InvalidArgumentException::class);
+});
+
+it('always allocates the full discount for valid input', function () {
+    $shares = [
+        ['line_id' => 3, 'product_id' => 9, 'subtotal_minor' => 701],
+        ['line_id' => 1, 'product_id' => 4, 'subtotal_minor' => 299],
+        ['line_id' => 2, 'product_id' => 4, 'subtotal_minor' => 1],
+    ];
+
+    expect(array_sum(allocateP3D1(457, $shares)))->toBe(457);
+});
+
+// --- A3: the pricing DTOs must not be constructible in an inconsistent state.
+
+function validP3D1Line(array $overrides = []): PricedLine
+{
+    $attributes = array_merge([
+        'cartItemId' => 1,
+        'productId' => 2,
+        'productNameSnapshot' => 'Pack Laravel',
+        'productSlugSnapshot' => 'pack-laravel',
+        'productTypeSnapshot' => 'ebook',
+        'unitPriceMinor' => 1_000,
+        'quantity' => 2,
+        'lineSubtotalMinor' => 2_000,
+        'lineDiscountMinor' => 500,
+        'lineTotalMinor' => 1_500,
+    ], $overrides);
+
+    return new PricedLine(...$attributes);
+}
+
+it('builds a coherent priced line', function () {
+    expect(validP3D1Line()->lineTotalMinor)->toBe(1_500);
+});
+
+it('refuses an incoherent priced line', function (array $overrides) {
+    expect(fn () => validP3D1Line($overrides))->toThrow(InvalidArgumentException::class);
+})->with([
+    'cart item id zero' => [['cartItemId' => 0]],
+    'cart item id negative' => [['cartItemId' => -1]],
+    'product id zero' => [['productId' => 0]],
+    'blank name' => [['productNameSnapshot' => '   ']],
+    'blank slug' => [['productSlugSnapshot' => "\t"]],
+    'blank type' => [['productTypeSnapshot' => '']],
+    'unknown type' => [['productTypeSnapshot' => 'hologram']],
+    'quantity zero' => [['quantity' => 0]],
+    'quantity negative' => [['quantity' => -3]],
+    'negative unit price' => [['unitPriceMinor' => -1, 'lineSubtotalMinor' => -2, 'lineTotalMinor' => -2]],
+    'subtotal not price times quantity' => [['lineSubtotalMinor' => 1_999, 'lineTotalMinor' => 1_499]],
+    'negative discount' => [['lineDiscountMinor' => -1, 'lineTotalMinor' => 2_001]],
+    'discount above subtotal' => [['lineDiscountMinor' => 2_001, 'lineTotalMinor' => -1]],
+    'total not subtotal minus discount' => [['lineTotalMinor' => 1_499]],
+]);
+
+it('refuses a priced line whose subtotal would overflow', function () {
+    expect(fn () => validP3D1Line([
+        'unitPriceMinor' => PHP_INT_MAX,
+        'quantity' => 2,
+        'lineSubtotalMinor' => PHP_INT_MAX,
+        'lineDiscountMinor' => 0,
+        'lineTotalMinor' => PHP_INT_MAX,
+    ]))->toThrow(OverflowException::class);
+});
+
+function validP3D1Snapshot(array $overrides = []): CouponSnapshot
+{
+    $attributes = array_merge([
+        'couponId' => 1,
+        'codeSnapshot' => 'PROMO10',
+        'discountTypeSnapshot' => 'percent',
+        'percentBasisPointsSnapshot' => 1_000,
+        'fixedAmountMinorSnapshot' => null,
+    ], $overrides);
+
+    return new CouponSnapshot(...$attributes);
+}
+
+it('builds both coherent coupon snapshots', function () {
+    expect(validP3D1Snapshot()->percentBasisPointsSnapshot)->toBe(1_000)
+        ->and(validP3D1Snapshot([
+            'discountTypeSnapshot' => 'fixed',
+            'percentBasisPointsSnapshot' => null,
+            'fixedAmountMinorSnapshot' => 2_500,
+        ])->fixedAmountMinorSnapshot)->toBe(2_500);
+});
+
+it('refuses an incoherent coupon snapshot', function (array $overrides) {
+    expect(fn () => validP3D1Snapshot($overrides))->toThrow(InvalidArgumentException::class);
+})->with([
+    'coupon id zero' => [['couponId' => 0]],
+    'blank code' => [['codeSnapshot' => '  ']],
+    'unknown type' => [['discountTypeSnapshot' => 'tiered']],
+    'percent without basis points' => [['percentBasisPointsSnapshot' => null]],
+    'percent basis points zero' => [['percentBasisPointsSnapshot' => 0]],
+    'percent basis points above 10000' => [['percentBasisPointsSnapshot' => 10_001]],
+    'percent carrying a fixed amount' => [['fixedAmountMinorSnapshot' => 500]],
+    'fixed without amount' => [[
+        'discountTypeSnapshot' => 'fixed',
+        'percentBasisPointsSnapshot' => null,
+        'fixedAmountMinorSnapshot' => null,
+    ]],
+    'fixed amount zero' => [[
+        'discountTypeSnapshot' => 'fixed',
+        'percentBasisPointsSnapshot' => null,
+        'fixedAmountMinorSnapshot' => 0,
+    ]],
+    'fixed carrying basis points' => [[
+        'discountTypeSnapshot' => 'fixed',
+        'fixedAmountMinorSnapshot' => 500,
+    ]],
+]);
+
+/**
+ * @param  list<PricedLine>|null  $lines
+ */
+function validP3D1Quote(array $overrides = []): PricedQuote
+{
+    $attributes = array_merge([
+        'currency' => 'XOF',
+        'subtotalMinor' => 2_000,
+        'discountMinor' => 500,
+        'taxMinor' => 0,
+        'totalMinor' => 1_500,
+        'lines' => [validP3D1Line()],
+        'couponSnapshot' => validP3D1Snapshot(),
+    ], $overrides);
+
+    return new PricedQuote(...$attributes);
+}
+
+it('builds a coherent quote', function () {
+    expect(validP3D1Quote()->totalMinor)->toBe(1_500);
+});
+
+it('builds a coherent quote without any coupon', function () {
+    expect(validP3D1Quote([
+        'discountMinor' => 0,
+        'totalMinor' => 2_000,
+        'lines' => [validP3D1Line(['lineDiscountMinor' => 0, 'lineTotalMinor' => 2_000])],
+        'couponSnapshot' => null,
+    ])->discountMinor)->toBe(0);
+});
+
+it('refuses an incoherent quote', function (array $overrides) {
+    expect(fn () => validP3D1Quote($overrides))->toThrow(InvalidArgumentException::class);
+})->with([
+    'no line' => [['lines' => []]],
+    'foreign element in lines' => [['lines' => [validP3D1Line(), 'injected']]],
+    'duplicated cart item id' => [[
+        'subtotalMinor' => 4_000,
+        'discountMinor' => 1_000,
+        'totalMinor' => 3_000,
+        'lines' => [validP3D1Line(), validP3D1Line()],
+    ]],
+    'invalid currency' => [['currency' => 'zzz']],
+    'currency with trailing newline' => [['currency' => "XOF\n"]],
+    'subtotal not the sum of lines' => [['subtotalMinor' => 1_999, 'totalMinor' => 1_499]],
+    'discount not the sum of lines' => [['discountMinor' => 400, 'totalMinor' => 1_600]],
+    'total breaking the order formula' => [['totalMinor' => 1_499]],
+    'negative total' => [['subtotalMinor' => -1, 'totalMinor' => -1]],
+    'non zero tax in this gate' => [['taxMinor' => 10, 'totalMinor' => 1_510]],
+    'coupon snapshot with a zero discount' => [[
+        'discountMinor' => 0,
+        'totalMinor' => 2_000,
+        'lines' => [validP3D1Line(['lineDiscountMinor' => 0, 'lineTotalMinor' => 2_000])],
+    ]],
+    'positive discount without a coupon snapshot' => [['couponSnapshot' => null]],
+]);
+
+it('keeps a hardened quote deeply immutable', function () {
+    $quote = validP3D1Quote();
+
+    expect(fn () => $quote->lines[] = 'injected')->toThrow(Error::class)
+        ->and(fn () => $quote->subtotalMinor = 1)->toThrow(Error::class);
+
+    $copy = $quote->lines;
+    $copy[] = 'local';
+
+    expect($quote->lines)->toHaveCount(1);
 });

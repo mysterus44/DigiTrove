@@ -22,7 +22,14 @@ use InvalidArgumentException;
  */
 final readonly class Money
 {
-    private const CURRENCY_PATTERN = '/^[A-Z]{3}$/';
+    /**
+     * `\A` and `\z` are ABSOLUTE anchors.
+     *
+     * `^...$` was not: in PCRE, `$` also matches just before a FINAL newline,
+     * so `/^[A-Z]{3}$/` accepted "XOF\n" (P3-D1.1 / A1). Never reintroduce `$`
+     * here without the `D` modifier.
+     */
+    private const CURRENCY_PATTERN = '/\A[A-Z]{3}\z/';
 
     private function __construct(
         public int $minor,
@@ -31,13 +38,26 @@ final readonly class Money
 
     public static function of(int $minor, string $currency): self
     {
-        if (preg_match(self::CURRENCY_PATTERN, $currency) !== 1) {
-            throw new InvalidArgumentException(
-                "Currency must be three uppercase letters, got [{$currency}]."
-            );
-        }
+        self::assertValidCurrency($currency);
 
         return new self($minor, $currency);
+    }
+
+    /**
+     * Single source of truth for the currency contract: exactly three ASCII
+     * uppercase letters, matching the `currency = upper(currency)` and
+     * `char_length(currency) = 3` CHECK constraints carried by every monetary
+     * table. Reused by the pricing DTOs so one rule governs the whole kernel.
+     *
+     * @throws InvalidArgumentException
+     */
+    public static function assertValidCurrency(string $currency): void
+    {
+        if (preg_match(self::CURRENCY_PATTERN, $currency) !== 1) {
+            throw new InvalidArgumentException(
+                'Currency must be exactly three uppercase ASCII letters, got ['.addcslashes($currency, "\0..\37").'].'
+            );
+        }
     }
 
     public static function zero(string $currency): self

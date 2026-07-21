@@ -37,8 +37,26 @@ final class DiscountAllocator
         }
 
         $eligibleSubtotal = 0;
+        $seenLineIds = [];
 
         foreach ($shares as $share) {
+            if ($share['line_id'] < 1) {
+                throw new InvalidArgumentException('A share requires a positive line id.');
+            }
+
+            // Without this guard two shares sharing a line id collapse onto the
+            // same array key and the allocation silently sums to LESS than the
+            // requested discount (P3-D1.1 / A4).
+            if (isset($seenLineIds[$share['line_id']])) {
+                throw new InvalidArgumentException('A line id cannot appear twice in an allocation.');
+            }
+
+            $seenLineIds[$share['line_id']] = true;
+
+            if ($share['product_id'] < 1) {
+                throw new InvalidArgumentException('A share requires a positive product id.');
+            }
+
             if ($share['subtotal_minor'] < 0) {
                 throw new InvalidArgumentException('A line subtotal cannot be negative.');
             }
