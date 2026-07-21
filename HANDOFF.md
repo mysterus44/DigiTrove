@@ -8,8 +8,15 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-21
-- **Branche git active** : `p0-foundations-laravel13` (stable à `50d043ec` avant
-  ce commit documentaire)
+- **Branche git active** : `p3-d1-pricing-kernel` (stable `p0-foundations-laravel13`
+  à `ba48cce1`, inchangée)
+- **P3-D1 IMPLÉMENTÉ — EN ATTENTE DE MERGE** : premier gate applicatif de D-030,
+  branche `p3-d1-pricing-kernel` créée depuis `ba48cce1`. **Aucune migration**
+  (29 inchangées), aucune route, aucun contrôleur, aucune écriture BDD.
+  9 classes : `IntegerMath`, `Money`, `PricingService`, `DiscountAllocator`,
+  `PricedQuote`, `PricedLine`, `CouponSnapshot`, `PricingException`,
+  `PricingRefusalReason`. Unit **36/55**, Feature **48/167** sous
+  `digitrove_runtime`, suite complète **274/3206**, Pint **132**.
 - **D-030 FINALISÉE ET VALIDÉE** : roadmap de la couche applicative Commerce →
   Livraison. KingKouda tranche **Q1 = A renforcée** (token CSPRNG jamais
   reconstructible ; reprise = révoquer puis réémettre ; at-least-once assumé),
@@ -280,10 +287,28 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 `P3-D1 — Pricing & Quote Kernel` — branche future `p3-d1-pricing-kernel`
+## 🎯 Revue et merge de `P3-D1 — Pricing & Quote Kernel`
 
-Le schéma P1→P4 est complet (29 migrations). **D-030 est finalisée et validée** :
-la couche applicative est planifiée en 12 gates, **aucun ne crée de migration**.
+**P3-D1 est IMPLÉMENTÉ et poussé sur `p3-d1-pricing-kernel`** ; la PR est ouverte
+vers `p0-foundations-laravel13` et **n'a pas été mergée par l'agent**. La
+prochaine tâche est la **revue puis le merge**, suivi de la clôture post-merge.
+**Ne pas commencer P3-D2** avant ce merge.
+
+Points à vérifier en revue :
+- deux jugements conservateurs pris faute de règle explicite dans D-030, à
+  confirmer ou corriger : (1) seul `products.status = 'published'` est vendable
+  (`draft`/`archived`/soft-deleted refusés) ; (2) `min_order_minor` est mesuré
+  sur le sous-total du **panier entier**, la remise portant sur le sous-total
+  **éligible** ;
+- `declare(strict_types=1)` introduit sur les fichiers du gate (nouveauté dans le
+  dépôt) — nécessaire pour que `Money::of(1.5, …)` lève au lieu de tronquer ;
+- adaptation historique du garde-fou de périmètre de `P4BDownloadLogsTest`
+  (assertion **restreinte**, pas supprimée : `Listeners`/`Jobs` toujours prouvés
+  absents, aucun namespace de service `download|delivery|grant`).
+
+Rappel du contexte : le schéma P1→P4 est complet (29 migrations) et **D-030 est
+finalisée et validée** — la couche applicative est planifiée en 12 gates, **aucun
+ne crée de migration**.
 
 **Objectif unique du gate** : transformer `(panier, devise, coupon?)` en un devis
 immuable `PricedQuote`, avec la remise **allouée aux lignes**. **Zéro écriture
@@ -402,6 +427,77 @@ aucun push direct sur `main`.
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-21 — Claude Code (P3-D1 Pricing & Quote Kernel implémenté)
+- Garde-fous : stable locale = distante `ba48cce1` (0/0), worktree propre,
+  `origin/main` intact `11130f4d`, 29 migrations, aucune `000014`, aucune branche
+  `p3-d1-*` préexistante. Branche `p3-d1-pricing-kernel` créée depuis la stable,
+  **merge-base exact `ba48cce1`**, sans rebase ni force-push.
+- **Audit du schéma réel avant code** — trois constats qui ont façonné le gate :
+  `cart_items` ne porte **aucun prix** (`id, cart_id, product_id, quantity`) ;
+  `product_prices` est unique sur `(product_id, currency)` avec `is_active` ; et
+  `validate_order_items_consistency` exige au COMMIT
+  `SUM(line_discount_minor) = orders.discount_minor` **exactement**, ce qui rend
+  l'allocation entière de la remise obligatoire et non optionnelle.
+- **TDD strict** : suites écrites d'abord et **échec observé** avant toute ligne
+  de production (Unit 35 échecs par classe absente, puis Feature 42 échecs), puis
+  implémentation minimale jusqu'au vert.
+- **9 classes livrées, aucune migration** : `App\Support\IntegerMath` (garde
+  d'overflow — PHP promeut silencieusement un entier débordant en float),
+  `App\Support\Money` (`final readonly`, `int` seul, devise `^[A-Z]{3}$`
+  **refusée** si non canonique plutôt que normalisée, aucune conversion), et
+  `App\Services\Pricing\{PricingService, DiscountAllocator, PricedQuote,
+  PricedLine, CouponSnapshot, PricingException, PricingRefusalReason}`.
+- **Hamilton** implémenté exactement : `numeratorᵢ = D × sᵢ`,
+  `baseᵢ = intdiv(numeratorᵢ, S)`, `remainderᵢ = numeratorᵢ % S`, puis
+  distribution du reste unité par unité selon **résidu ↓ → `product_id` ↑ → id de
+  ligne ↑**. Garde défensive : une ligne n'absorbe jamais plus que son propre
+  sous-total (protège une ligne gratuite d'un résidu nul gagnant un départage).
+- **Refus explicites** (enum fermé `PricingRefusalReason`) : panier vide, produit
+  indisponible, prix absent dans la devise, coupon inactif / pas encore actif /
+  expiré, règle de devise manquante pour un coupon fixe, minimum non atteint,
+  **coupon scopé sans ligne éligible** (Q3 = A, jamais de retrait silencieux),
+  remise résultante nulle.
+- **Zéro écriture prouvée deux fois** : capture du journal SQL (aucun
+  `insert|update|delete|truncate|merge`, aucun `FOR UPDATE`) **et** comparaison
+  octet à octet de `carts`/`cart_items`/`coupons`/`products`/`product_prices`
+  avant/après. `redemptions_count` inchangé ; 0 Order, 0 CouponRedemption,
+  0 Payment, 0 DownloadGrant, 0 DownloadLog.
+- **Absence de N+1 prouvée deux fois** : `Model::preventLazyLoading()` sur un
+  panier de 5 lignes avec coupon scopé par catégorie, **et** comparaison de
+  volumétrie 2 lignes vs 8 lignes → nombre de requêtes identique (aucun nombre
+  fragile figé).
+- **Auto-audit contradictoire** : prix client falsifié en mémoire, devise absente,
+  prix inactif, coupon global sans règle, coupon scopé vide, produit multi-
+  catégories, portées produit ET catégorie simultanées, collection mélangée, ids
+  non séquentiels, quantité 100 000, prix à `PHP_INT_MAX`, basis points 10 000,
+  montant fixe > sous-total, plafond < remise, bornes `starts_at`/`ends_at`
+  exactes, résidus parfaitement égaux, produit gratuit avec coupon, panier vide,
+  produit soft-deleted. Cinq vecteurs manquants ont été ajoutés en test après
+  l'audit ; aucun n'a révélé de défaut fonctionnel.
+- **Audit statique** : aucune occurrence **fonctionnelle** de `float`, `double`,
+  `round(`, `ceil(`, `floor(`, `number_format(`, cast `(float)`, écriture BDD,
+  verrou, route ou `request()` dans les fichiers du gate — les seules
+  correspondances sont des commentaires.
+- **Deux jugements conservateurs signalés pour la revue** (aucune règle explicite
+  dans D-030, choix fail-closed retenus) : seul `status = 'published'` est
+  vendable ; `min_order_minor` mesuré sur le panier entier, remise sur le
+  sous-total éligible.
+- **Adaptation historique** : le garde-fou de périmètre de `P4BDownloadLogsTest`
+  assertait `app/Services` inexistant. Assertion **restreinte, pas supprimée** —
+  `Listeners`/`Jobs` toujours prouvés absents et aucun namespace de service ne
+  peut correspondre à `download|delivery|grant`. Suite P4-B 19/**612** (était 603).
+- **`declare(strict_types=1)`** introduit sur les fichiers du gate (nouveauté dans
+  le dépôt) : sans lui `Money::of(1.5, 'XOF')` serait coercé en `1`. Pint reste
+  vert (preset `laravel`).
+- Validation : Unit **36/55**, Feature **48/167**, suite complète **274/3206**
+  (base 190/2975), Pint **132**, `git diff --check` propre, 29 migrations
+  inchangées, P3A 15/139, P3B 18/357, Catalogue 12/111 verts.
+- Aucune migration, route, contrôleur, Request, event, listener, job,
+  notification, mail, config, paiement, checkout persistant, P4-C ni P5 créés.
+  `main` et la stable non modifiés.
+  Laisse à : **revue et merge de la PR P3-D1**, puis clôture post-merge.
+  Ne pas commencer P3-D2 avant ce merge.
 
 ### 2026-07-21 — Claude Code (D-030 : roadmap applicative Commerce → Livraison)
 - Garde-fous : stable locale = distante = `50d043ec` (0/0), worktree propre,

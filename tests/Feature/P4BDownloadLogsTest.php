@@ -929,9 +929,20 @@ it('keeps the gate purely relational: no HTTP surface, no HEAD artefact, no P5 o
     foreach ($appFiles as $file) {
         expect((string) $file)->not->toMatch('/DownloadController|DownloadService|IssueDownloadGrants|Stream|RateLimit/i');
     }
-    expect(File::isDirectory(app_path('Services')))->toBeFalse()
-        ->and(File::isDirectory(app_path('Listeners')))->toBeFalse()
+    // P3-D1 (D-030) legitimately introduces app/Services/Pricing, a read-only
+    // COMMERCE kernel. What this gate guards is the absence of the DELIVERY
+    // application layer, so the assertion is narrowed instead of dropped: no
+    // listener, no job, and no service namespace related to downloads.
+    expect(File::isDirectory(app_path('Listeners')))->toBeFalse()
         ->and(File::isDirectory(app_path('Jobs')))->toBeFalse();
+
+    $serviceNamespaces = File::isDirectory(app_path('Services'))
+        ? collect(File::directories(app_path('Services')))->map(fn ($path) => basename($path))
+        : collect();
+
+    foreach ($serviceNamespaces as $namespace) {
+        expect($namespace)->not->toMatch('/download|delivery|grant/i');
+    }
 });
 
 // ── 21.9 — Transitions ───────────────────────────────────────────────────────
