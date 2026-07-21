@@ -2316,5 +2316,81 @@ un seam de test dans le service pour les tests de concurrence.
 
 ---
 
+### D-032 — Expiration des commandes `pending` ✅
+**Date** : 2026-07-21. **Statut** : appliquée sur `p3-d2-checkout-order-transaction`
+(P3-D2 toujours **EN ATTENTE DE MERGE**). **Aucune migration.**
+
+**CONTEXTE** : la revue pré-publication de P3-D2 a relevé que
+`orders.expires_at` était calculé avec une constante `CART_TTL_MINUTES = 30`
+codée en dur dans `OrderService`. `orders.expires_at` est `NOT NULL` **sans
+DEFAULT** (aucune politique commerciale en base, D-029.1-B) et D-024 ne
+mentionne les 30 minutes que comme **recommandation non figée** : la constante
+était donc une décision commerciale implicite. Toute mention antérieure
+laissant croire que ces 30 minutes étaient déjà arbitrées est **corrigée par la
+présente décision**.
+
+**CHOIX** : `expires_at = placed_at + durée configurée`. Défaut **30 minutes**,
+**configurable sans modification du code** via `config/checkout.php`
+(`pending_ttl_minutes`, alimenté par `CHECKOUT_PENDING_TTL_MINUTES`). Unité :
+**minutes entières**, minimum `1`, plafond `525 600` (une année — borne de
+sûreté Carbon/PHP). Une valeur absente retombe sur `30`. Une valeur configurée
+**invalide provoque un échec explicite AVANT toute écriture métier**, classé
+`IntegrityFailure` — c'est un incident serveur, **jamais une faute du client**.
+`OrderService` ne lit jamais `env()` directement et n'accepte aucune durée
+depuis la requête de checkout. **Le rejeu idempotent conserve l'`expires_at`
+d'origine** et ne recalcule rien. P3-D3 pourra exploiter cette échéance mais ne
+devra pas la redéfinir silencieusement.
+*Validation stricte* : `is_int` (booléen exclu) ou chaîne `/\A[1-9][0-9]*\z/`.
+Sont refusés `0`, négatif, décimal, `'1.5'`, `'abc'`, `''`, `'0'`, `' 30'`,
+`true`, `false`, `null`, tableau, `30.5` et toute valeur au-delà du plafond
+(13 cas couverts par test).
+
+**CORRECTIF ASSOCIÉ — retry `order_number` en transaction PostgreSQL avortée.**
+La même revue a demandé de vérifier empiriquement le retry de collision. **Le
+défaut était réel** : le retry se faisait par `try/catch` **sans savepoint**
+dans la transaction de checkout. Reproduction sous `digitrove_runtime` :
+`INSERT` → `23505 orders_order_number_unique` → toute commande suivante de la
+même transaction reçoit *« current transaction is aborted, commands ignored »*
+(**25P02**) — le retry était donc **non fonctionnel** et dégradait en
+`IntegrityFailure` avec un message trompeur. La même sonde avec
+`SAVEPOINT` / `ROLLBACK TO SAVEPOINT` réussit la seconde tentative et laisse la
+transaction utilisable (2 lignes visibles). **Correctif** : l'INSERT susceptible
+de collision est enveloppé dans une **transaction Laravel imbriquée**, qui émet
+un véritable `SAVEPOINT` PostgreSQL et y revient sur exception — le verrou du
+Cart et tout le travail antérieur sont préservés. Maximum **3 essais**, puis
+`IntegrityFailure`. Seule la contrainte `orders_order_number_unique` est
+retentée ; `orders_cart_id_unique` et
+`orders_checkout_idempotency_hash_unique` restent traduites distinctement.
+
+**Primitive extraite** : `App\Support\OrderNumberGenerator` (alphabet Crockford
+sans I/L/O/U, suffixe CSPRNG, format `DGT-YYYY-XXXXXXXXXX`). Résolue par le
+conteneur et **non `final`** : le numérotage est une vraie primitive métier
+qu'un gate ultérieur peut faire varier, et c'est ce qui permet d'exercer le
+chemin de collision **de bout en bout sans seam de test dans la signature
+publique de `checkout()`**. Elle vit sous `app/Support`, donc l'allowlist P4-B
+(`app/Services` uniquement) est inchangée.
+
+**Hachage d'idempotence — audité, inchangé** : clé brute jamais stockée, jamais
+loguée, jamais placée dans une exception (test dédié) ; digest exactement
+64 caractères hexadécimaux. SHA-256 est documenté comme **identifiant
+d'idempotence**, pas comme mécanisme d'authentification ; toute évolution de
+cette stratégie exigerait une décision séparée.
+
+**Validation** : P3-D2 **66 tests / 308 assertions** (était 47/171) ; suite
+complète **399 / 3584** (était 380/3446) ; Pint **138** ; `git diff --check`
+propre ; **29 migrations inchangées**, aucune `000014`. Non-régressions P3-D2
+confirmées : propriété User/Visitor, refus anti-énumération, idempotence et ses
+quatre variantes de conflit, bundle vide, composant soft-deleted, snapshot
+exhaustif, Cart converti, rollback vers Cart `active`, Order gratuite `pending`,
+aucune consommation de coupon, aucun Payment, aucun P4-C.
+
+**ALTERNATIVES REJETÉES** : laisser la constante en dur ; lire `env()` dans le
+service ; accepter la durée depuis la requête ; tolérer une valeur invalide en
+retombant silencieusement sur 30 ; recalculer `expires_at` au rejeu ; rollbacker
+toute la transaction pour retenter (perte du verrou du Cart) ; traiter tout
+`23505` comme une collision de numéro ; ajouter un callback de test au service.
+
+---
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

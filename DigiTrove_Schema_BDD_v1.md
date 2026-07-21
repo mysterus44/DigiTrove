@@ -2004,6 +2004,21 @@ globalement en « rejeu ».
 **Order gratuite** : reste `pending`, aucune ligne `payments`. **Coupon** :
 snapshot copié, **aucune** consommation (P3-D4).
 
+**Expiration (D-032)** : `orders.expires_at = placed_at + config('checkout.
+pending_ttl_minutes')`. Défaut **30 min**, surchargeable par
+`CHECKOUT_PENDING_TTL_MINUTES` **sans toucher au code** ; minutes entières,
+minimum 1, plafond 525 600. Une valeur invalide échoue **avant toute écriture**
+(`IntegrityFailure`, incident serveur). Le rejeu idempotent **conserve**
+l'`expires_at` d'origine. La colonne restant `NOT NULL` sans DEFAULT, aucune
+politique commerciale n'entre en base.
+
+**Retry `order_number` (D-032)** : un `23505` place toute la transaction
+PostgreSQL en état avorté — un retry nu ne peut recevoir que **`25P02`**
+(mesuré). L'INSERT susceptible de collision est donc enveloppé dans une
+**transaction Laravel imbriquée** = un vrai `SAVEPOINT` ; le `ROLLBACK TO
+SAVEPOINT` préserve le verrou du Cart. 3 essais maximum, puis
+`IntegrityFailure`. Seule `orders_order_number_unique` est retentée.
+
 ### Points de vigilance figés par D-030
 
 * **Coupon** : les snapshots vont sur `orders` à la création ; `coupon_redemptions`

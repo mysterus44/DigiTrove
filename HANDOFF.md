@@ -321,11 +321,28 @@ applicable). Idempotence par digest SHA-256 seul, rejeu résolu avant toute règ
 d'état, comparaison de colonnes faute de fingerprint, `orders_cart_id_unique` en
 backstop. Order gratuite `pending`, aucune consommation de coupon.
 
-Validation : P3-D2 **47/171**, P4-B **20/619**, suite complète **380/3446**,
-Pint **136**, 29 migrations inchangées. Concurrence prouvée sur bases jetables +
+**Finalisation pré-publication (D-032)** — deux défauts relevés en revue et
+fermés avant tout push :
+1. les **30 minutes d'expiration étaient codées en dur** (décision commerciale
+   implicite) → `config/checkout.php` + `CHECKOUT_PENDING_TTL_MINUTES`, défaut
+   30, minutes entières ≥ 1, valeur invalide = échec **avant toute écriture**,
+   rejeu conservant l'`expires_at` d'origine ;
+2. le **retry d'`order_number` n'avait aucun savepoint** : reproduction sous
+   `digitrove_runtime` → après `23505` toute commande suivante reçoit **`25P02`
+   (transaction avortée)**, le retry était non fonctionnel. Corrigé par une
+   transaction Laravel imbriquée (vrai `SAVEPOINT`), 3 essais maximum, verrou du
+   Cart préservé. Primitive `App\Support\OrderNumberGenerator` extraite (sous
+   `app/Support`, donc allowlist P4-B inchangée).
+
+Validation : P3-D2 **66/308**, P4-B **20/619**, suite complète **399/3584**,
+Pint **138**, 29 migrations inchangées. Concurrence prouvée sur bases jetables +
 deux connexions PDO réelles (`55P03` ×2, `23505` sur `orders_cart_id_unique`).
 
-**Ne pas commencer P3-D3 avant ce merge.**
+⚠️ **La branche n'est PAS publiée** : le push échoue faute d'identifiants Git
+dans la session. Quatre commits locaux à pousser :
+`git push -u origin p3-d2-checkout-order-transaction`.
+
+**Ne pas commencer P3-D3 avant publication, revue et merge.**
 
 ### Historique : audit pré-implémentation P3-D2
 
@@ -502,6 +519,42 @@ aucun push direct sur `main`.
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-21 — Claude Code (finalisation P3-D2 avant publication, D-032)
+- Garde-fous : branche `p3-d2-checkout-order-transaction` à `c90c3383`, worktree
+  propre, **distante absente** (jamais publiée), base `5d07abad`, `origin/main`
+  intact, `D-032` libre. Aucun rebase, aucun amend des deux commits existants.
+- **Défaut 1 — 30 minutes codées en dur.** `CART_TTL_MINUTES = 30` dans
+  `OrderService` était une décision commerciale implicite ; `orders.expires_at`
+  est `NOT NULL` sans DEFAULT et D-024 ne donnait les 30 min que comme
+  recommandation. Corrigé par `config/checkout.php` +
+  `CHECKOUT_PENDING_TTL_MINUTES` dans `.env.example`. Validation stricte
+  (`is_int` hors booléen, ou `/\A[1-9][0-9]*\z/`), plafond 525 600, refus
+  **avant toute écriture** classé `IntegrityFailure` (incident serveur, jamais
+  faute client). 13 valeurs invalides couvertes. Le rejeu **conserve**
+  l'`expires_at` d'origine même si la config a changé entre-temps.
+- **Défaut 2 — retry `order_number` dans une transaction avortée.** Prouvé
+  empiriquement sous `digitrove_runtime` sur la table `orders` réelle : après
+  `23505 orders_order_number_unique`, toute commande suivante de la même
+  transaction reçoit *« current transaction is aborted »* (**25P02**) — le
+  `try/catch` sans savepoint était donc **inopérant** et dégradait en
+  `IntegrityFailure` trompeur. La même sonde avec `SAVEPOINT` /
+  `ROLLBACK TO SAVEPOINT` réussit la 2ᵉ tentative (2 lignes visibles).
+  Corrigé par une **transaction Laravel imbriquée** (vrai savepoint), 3 essais,
+  verrou du Cart préservé, seule `orders_order_number_unique` retentée.
+- **Primitive extraite** : `App\Support\OrderNumberGenerator`, non `final` et
+  résolue par le conteneur — c'est ce qui permet d'exercer la collision **de
+  bout en bout** sans ajouter de callback de test à `checkout()`. Sous
+  `app/Support`, donc **l'allowlist P4-B reste inchangée**.
+- **Idempotence auditée, inchangée** : clé brute jamais stockée/loguée/exposée
+  (test dédié), digest 64 hex, SHA-256 documenté comme identifiant
+  d'idempotence et non comme authentification.
+- Validation : P3-D2 **66/308** (était 47/171), suite complète **399/3584**
+  (était 380/3446), Pint **138**, `git diff --check` propre, 29 migrations
+  inchangées. Non-régressions P3-D2 toutes confirmées.
+- **Branche volontairement non publiée** (consigne de mission) ; 4 commits
+  locaux. Aucun P3-D3, P4-C ni P5.
+  Laisse à : **publier, faire relire et merger P3-D2**.
 
 ### 2026-07-21 — Claude Code (P3-D2 Checkout Order Transaction implémenté)
 - Garde-fous : stable `5d07abad` (0/0), worktree propre, `origin/main` intact,

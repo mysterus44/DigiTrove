@@ -219,8 +219,17 @@ conservées, `origin/main` intact.
   Idempotence : digest SHA-256 seul, rejeu avant toute règle d'état, égalité par
   comparaison de colonnes, `orders_cart_id_unique` en backstop, chaque `23505`
   traduit par contrainte. Order gratuite `pending`, **aucune** consommation de
-  coupon (P3-D4), aucun Payment. P3-D2 **47/171**, P4-B **20/619**, suite
-  complète **380/3446**, Pint **136**.
+  coupon (P3-D4), aucun Payment.
+- **`D-032` — finalisation pré-publication de P3-D2** : (1) l'expiration des
+  commandes `pending` n'est plus codée en dur — `config/checkout.php` +
+  `CHECKOUT_PENDING_TTL_MINUTES`, **défaut 30 min**, minutes entières ≥ 1,
+  valeur invalide ⇒ échec **avant toute écriture**, rejeu conservant
+  l'`expires_at` d'origine ; (2) le retry d'`order_number` est protégé par un
+  **savepoint** (transaction Laravel imbriquée) — sans lui, un `23505` avorte
+  toute la transaction et le retry ne peut recevoir que **`25P02`**, prouvé
+  empiriquement. Primitive `App\Support\OrderNumberGenerator` extraite (hors
+  `app/Services`, allowlist P4-B inchangée). P3-D2 **66/308**, P4-B **20/619**,
+  suite complète **399/3584**, Pint **138**.
 
 **PROCHAINE TÂCHE : revue et merge de la PR `P3-D2`**, puis clôture post-merge.
 **Ne pas commencer P3-D3** avant ce merge. Deux jugements conservateurs hérités
