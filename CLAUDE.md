@@ -117,11 +117,54 @@ Validation post-merge : 29 migrations, P4-B 19/603, suite complète 190/2975,
 Pint 121, provisioning idempotent, identités migration/runtime prouvées,
 6 fonctions / 7 triggers P4, G4 différé, zéro résidu.
 
-**Le schéma P4 Livraison est COMPLET.** La couche applicative P4 (listener
-`OrderPaid`, service de consommation, contrôleur, streaming, rate limiting, job de
-purge, e-mails) n'a jamais été entamée. **La prochaine étape se lit dans le
-roadmap** (`DigiTrove_Schema_BDD_v1.md`) et les décisions existantes — elle n'est
-pas commencée. P5 non démarré.
+**Le schéma P4 Livraison est COMPLET** (29 migrations). La couche applicative
+n'existe pas : `app/Services|Actions|Events|Listeners|Jobs|Notifications|Mail|
+Policies|Support|Http\Requests|Http\Middleware` n'existent pas, `routes/web.php`
+ne déclare que la page d'accueil, `OrderService` / `OrderPaid` /
+`IssueDownloadGrants` / `DownloadService` / `DownloadController` sont absents.
+
+- **Couche applicative planifiée** ✅ **D-030 FINALISÉE ET VALIDÉE**
+  (KingKouda : **Q1 = A renforcée**, **Q2 = B renforcée**, **Q3 = A**) —
+  **12 gates, AUCUNE migration** :
+  `P3-D1` Pricing & Quote Kernel → `P3-D2` Checkout Order Transaction →
+  `P3-D3` Payment Initiation → `P3-D4` Server-side Payment Confirmation →
+  `P3-D5` OrderPaid Domain Event → **`P4-C0` Queue & Mail Secret Safety** →
+  `P4-C1` Download Grant Issuance → (`P4-C2` Refund Grant Revocation ∥
+  `P4-C3` Secure Secret Delivery Job) → `P4-C4` Download Authorization →
+  `P4-C5` HTTP File Delivery → `P4-C6` Delivery Operations.
+  **Nommage** : tarification/checkout/paiement = **P3-D** ; livraison = **P4-C**.
+- **Q1 = A renforcée** : token CSPRNG, mémoire vive seulement, SHA-256 en base,
+  **jamais reconstructible** (ni dérivation, ni outbox, ni stockage temporaire).
+  Panne après COMMIT ⇒ **révoquer puis réémettre**, jamais « réessayer avec
+  l'ancien token » (l'unique partiel actif l'impose physiquement). Sémantique
+  **at-least-once** assumée pour l'e-mail — aucun exactly-once promis.
+- **Q2 = B renforcée** : **job queued unique par Order portant `order_id` SEUL**.
+  Tokens générés dans le worker, e-mail composé et envoyé **synchroniquement**
+  dans le même processus. Aucun token/hash/lien/`storage_path`/IP/clé HMAC dans
+  Redis, `jobs`, `failed_jobs`, une exception ou un log.
+- **Q3 = A** : coupon scopé sans ligne éligible ⇒ **refus explicite** (jamais de
+  retrait silencieux) ; remise allouée par **Hamilton (plus grand reste)**,
+  départage `résidu ↓ → product_id ↑ → id de ligne ↑` ; aucun `float`, aucune
+  division flottante, aucun `round()` sur les montants.
+- **Ordonnancement contraint** : `P4-C0` bloque tous les gates de livraison ;
+  **`P4-C2` doit être mergé avant l'activation réelle de `P4-C3`** (G4 différé sur
+  `orders` rend les remboursements impossibles sans révocation) ; `P4-C1` peut
+  vivre comme service non câblé ; **aucun téléchargement public avant `P4-C5`**.
+- **Dettes reconnues (D-030)** : `config/queue.php` défauts `database` /
+  **`database-uuids`** / `job_batches` **sans aucune table** ; `after_commit =
+  false` partout ; `MAIL_MAILER` par défaut `log` (fuite de token dans
+  `storage/logs`) ; `phpunit.xml` en `sync` ⇒ sérialisation jamais prouvée ;
+  `DOWNLOAD_*` de `.env.example` lues par aucun `config/` ; enums `DownloadLog*`
+  absents ; `coupons.redemptions_count` 100 % applicatif ; pas de `Money`.
+- 🚨 **`.context/skills/SECURITE_TELECHARGEMENT.md` est PARTIELLEMENT PÉRIMÉ**
+  (UPDATE direct de `downloads_count`, colonne `grant_id` inexistante, colonnes
+  P4-B obligatoires absentes, ni tentative authentifiée ni G5 ni frontière
+  runtime). **Ne plus l'utiliser comme modèle de code ; le réécrire avant le gate
+  `P4-C4`.**
+
+**PROCHAINE TÂCHE : implémenter `P3-D1 — Pricing & Quote Kernel`** sur la branche
+`p3-d1-pricing-kernel` — zéro écriture BDD, zéro Order, zéro route, zéro paiement,
+zéro grant, **zéro migration**. P5 non démarré.
 
 ## 🔄 EN FIN DE TÂCHE
 

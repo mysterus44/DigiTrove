@@ -1822,9 +1822,129 @@ Ordre technique des migrations à respecter avant P1 :
    (`000010`, PR #13) → P4-A2.1 hardening G2/G3 (`000011`, PR #14) → P4-B0
    frontière de privilèges runtime (`000012`, PR #15) → P4-B `download_logs`
    (`000013`, PR #16 → `98441014`) ✅ **SCHÉMA P4 COMPLET**
-5. `events` partitionnée + rollups (analytique)
-6. `campaigns` + `customer_segments` (marketing)
-7. Affiliation dédiée (`affiliate_profiles`, `affiliate_links`, `referrals`,
+5. **Couche applicative Commerce → Livraison (D-030)** — voir le bloc dédié
+   ci-dessous. Aucune migration : `P3-D1` → `P3-D5` puis `P4-C0` → `P4-C6`.
+6. `events` partitionnée + rollups (analytique)
+7. `campaigns` + `customer_segments` (marketing)
+8. Affiliation dédiée (`affiliate_profiles`, `affiliate_links`, `referrals`,
    `affiliate_commissions`, `affiliate_payouts`) après validation produit ultérieure
 
 Ne code aucune logique métier avant que 1→4 soient migrés et testés.
+**1→4 sont migrés et testés** (29 migrations, suite 190/2975, Pint 121) : la
+couche applicative peut commencer, gate par gate, selon D-030.
+
+---
+
+## 🧩 COUCHE APPLICATIVE COMMERCE → LIVRAISON (D-030)
+
+> Le schéma relationnel P1→P4 est **complet**. Ce bloc ne décrit **aucune
+> migration** : il fige l'ordre des gates applicatifs et les invariants BDD que
+> chacun doit respecter. Décisions humaines figées : **Q1 = A renforcée**
+> (token jamais reconstructible), **Q2 = B renforcée** (job queued portant
+> `order_id` seul), **Q3 = A** (refus explicite + allocation Hamilton).
+> Nommage : la tarification, le checkout et le paiement relèvent de **P3
+> Commerce** ; **P4 Livraison** ne commence qu'à l'émission des grants.
+
+### Graphe des gates
+
+```text
+P3-D1 Pricing & Quote Kernel
+    ↓
+P3-D2 Checkout Order Transaction
+    ↓
+P3-D3 Payment Initiation
+    ↓
+P3-D4 Server-side Payment Confirmation
+    ↓
+P3-D5 OrderPaid Domain Event
+    ↓
+P4-C0 Queue & Mail Secret Safety
+    ↓
+P4-C1 Download Grant Issuance
+    ├──────────────┐
+    ↓              ↓
+P4-C2 Refund       P4-C3 Secure Secret Delivery Job
+Grant Revocation        ↓
+                   P4-C4 Download Authorization
+                        ↓
+                   P4-C5 HTTP File Delivery
+                        ↓
+                   P4-C6 Delivery Operations
+```
+
+* **P4-C2 doit être mergé avant l'activation réelle de P4-C3.**
+* **P4-C1 peut être implémenté comme service non câblé** tant que P4-C2/P4-C3 ne
+  sont pas prêts.
+* **Aucun téléchargement public n'existe avant P4-C5.**
+* **P5 ne commence pas** pendant cette roadmap.
+
+### Table des gates
+
+| Gate | Branche future | Migration | Invariants BDD mobilisés |
+|---|---|:--:|---|
+| **P3-D1** Pricing & Quote Kernel | `p3-d1-pricing-kernel` | non | *aucune écriture* — prépare `orders_total_formula_check`, `order_items_line_*_formula_check`, `validate_order_items_consistency` |
+| **P3-D2** Checkout Order Transaction | `p3-d2-checkout-order-transaction` | non | `orders_checkout_idempotency_hash_unique`, `orders_coupon_snapshot_consistency_check`, `validate_order_items_consistency` (différé), `order_items_order_id_product_id_unique`, S1/S2/S3 |
+| **P3-D3** Payment Initiation | `p3-d3-payment-initiation` | non | `payments_idempotency_key_hash_unique`, `payments_order_id_attempt_number_unique`, transitions T (D-028.5) |
+| **P3-D4** Server-side Payment Confirmation | `p3-d4-payment-confirmation` | non | uniques de rejeu `payment_webhook_events`, `UNIQUE(order_id) WHERE status='succeeded'`, `coupon_redemptions_order_id_unique`, constraint triggers P3C différés |
+| **P3-D5** OrderPaid Domain Event | `p3-d5-order-paid-event` | non | — (dispatch `afterCommit` uniquement) |
+| **P4-C0** Queue & Mail Secret Safety | `p4-c0-queue-mail-secret-safety` | non | — (infrastructure) |
+| **P4-C1** Download Grant Issuance | `p4-c1-grant-issuance` | non | **G3** (`orders FOR UPDATE`, statut livrable, fichier actif, lignée, bénéficiaire null-safe), `download_grants_active_pair_unique`, `token_hash` unique |
+| **P4-C2** Refund Grant Revocation | `p4-c2-refund-grant-revocation` | non | **G4** différé bidirectionnel (`download_grants` + `orders`), révocation set-once appariée au motif |
+| **P4-C3** Secure Secret Delivery Job | `p4-c3-secret-delivery-job` | non | unique partiel du couple actif = clé d'idempotence du job |
+| **P4-C4** Download Authorization | `p4-c4-download-authorization` | non | **G5** (`SECURITY DEFINER`, unique mutante), **G2** (`current_user = digitrove_download_executor`), unique partiel `attempt_token_hash` |
+| **P4-C5** HTTP File Delivery | `p4-c5-http-file-delivery` | non | — (transport ; `storage_path` jamais exposé) |
+| **P4-C6** Delivery Operations | `p4-c6-delivery-operations` | non | **G6** (terminal + rétention échue), G1 prevent-delete des grants |
+
+### Premier gate — `P3-D1 — Pricing & Quote Kernel`
+
+Sortie contractuelle :
+
+```text
+PricedQuote
+- currency          (VARCHAR(3) majuscule)
+- subtotalMinor     (BIGINT, unités mineures)
+- discountMinor
+- taxMinor
+- totalMinor
+- lines[]
+- couponSnapshot|null
+```
+
+Chaque ligne porte `product_id`, `product_name_snapshot`, `product_slug_snapshot`,
+`product_type_snapshot`, `unit_price_minor`, `quantity`, `line_subtotal_minor`,
+`line_discount_minor`, `line_total_minor`.
+
+**Pourquoi la tarification précède le checkout (mesuré sur le code réel)** :
+`cart_items` ne porte **aucun prix** (`id, cart_id, product_id, quantity,
+timestamps`) ; le prix se résout depuis `product_prices` par devise. Or le
+constraint trigger différé `validate_order_items_consistency` (migration
+`000002`) exige au COMMIT `SUM(line_subtotal_minor) = orders.subtotal_minor`,
+**`SUM(line_discount_minor) = orders.discount_minor`** et `SUM(line_total_minor)
++ orders.tax_minor = orders.total_minor` ; et `orders_coupon_snapshot_consistency_check`
+exige `discount_minor > 0` dès qu'un snapshot coupon existe. Une remise de coupon
+**doit** donc être répartie sur les lignes, en entiers, avec un reste géré — sinon
+le COMMIT échoue en `23514`. L'allocation retenue est **Hamilton (plus grand
+reste)**, départage `résidu décroissant → product_id croissant → identifiant de
+ligne croissant`, sans aucun `float`, division flottante ni `round()`.
+
+### Points de vigilance figés par D-030
+
+* **Coupon** : les snapshots vont sur `orders` à la création ; `coupon_redemptions`
+  et `coupons.redemptions_count` n'existent qu'à la confirmation de paiement (ou au
+  passage légitime d'une commande gratuite à `paid`), dans la même transaction,
+  sous verrou du coupon. Aucun trigger ne maintient `redemptions_count` : le
+  plafond global et le plafond client sont **100 % applicatifs**.
+* **Token** : CSPRNG, mémoire vive seulement, SHA-256 en base, jamais
+  reconstructible. Reprise = **révoquer puis réémettre** (l'unique partiel actif
+  l'impose physiquement), jamais « réessayer avec l'ancien token ». Sémantique
+  **at-least-once** assumée pour l'e-mail.
+* **Queue** : le job de livraison transporte **`order_id` seul**. Aucun token,
+  hash, lien, `storage_path`, IP ou clé HMAC ne traverse la queue. L'e-mail est
+  composé et envoyé **synchroniquement dans le worker**.
+* **Révocation** : G4 étant différé et monté sur `orders`, un remboursement total
+  devient **impossible** si les grants actifs ne sont pas révoqués dans la même
+  transaction. D'où P4-C2 avant l'activation de P4-C3.
+* **`SECURITE_TELECHARGEMENT.md` est partiellement périmé** (UPDATE direct du
+  compteur, colonne `grant_id` inexistante, colonnes P4-B obligatoires absentes,
+  ni tentative authentifiée ni G5 ni frontière runtime). **À réécrire avant le
+  gate P4-C4** ; il ne doit plus servir de modèle de code d'ici là.

@@ -12,7 +12,9 @@ SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
-P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014) ; couche applicative à venir
+P3-D APPLICATIF     : ░░░░░░░░░░  0% — planifié D-030 (P3-D1→P3-D5), non démarré
+P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
+P4-C APPLICATIF     : ░░░░░░░░░░  0% — planifié D-030 (P4-C0→P4-C6), non démarré
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
@@ -59,8 +61,13 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > forgé même par le propriétaire superuser est refusé (23514) ; le runtime est
 > arrêté en 42501. Validation post-merge : 29 migrations, P4-B 19/603, suite
 > 190/2975, Pint 121, provisioning idempotent, identités migration/runtime
-> prouvées, zéro résidu. **Le schéma P4 est complet** ; la prochaine étape se lit
-> dans le roadmap (couche applicative P4 ou P5 analytique), non commencée.
+> prouvées, zéro résidu. **Le schéma P4 est complet.**
+> **La couche applicative est désormais PLANIFIÉE (D-030, validée KingKouda :
+> Q1=A renforcée, Q2=B renforcée, Q3=A)** et non démarrée. Nommage figé : la
+> tarification, le checkout et le paiement relèvent de **P3-D** ; la livraison
+> commence à **P4-C**. Douze gates, **aucune migration** : `P3-D1` → `P3-D5`
+> puis `P4-C0` → `P4-C6`. **Premier gate : `P3-D1 — Pricing & Quote Kernel`**
+> (branche future `p3-d1-pricing-kernel`). P5 non démarré.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -379,15 +386,63 @@ route, job, listener) créée. P5 non démarré.
 | Plan P4-B0 + décision D-029.6 (3 rôles PostgreSQL, G5 `SECURITY DEFINER`, identité effective dans G2, fermeture TEMP/CREATE/EXECUTE, double connexion, provisioning) | ✅ DONE — validé par KingKouda |
 | **P4-B0** `p4-b0-postgresql-runtime-privileges` — migration ACL `000012_harden_database_runtime_privileges` + `docker/postgres/provision-runtime-roles.sql` + `db:provision-runtime-roles` + double connexion + harness dual-identité + CI durcie | ✅ **MERGÉ PR #15 → `6d23e546`** (parents `a3eac5e` + `9b69f192`) ; validation post-merge : 13 tests / 84 assertions, suite complète 171/2385, Pint 117, 28 migrations, provisioning idempotent, identités migration/runtime prouvées, 26 fonctions trigger sans EXECUTE runtime, défauts fonctions globaux (ns=0), rollback ACL sans réouverture, zéro résidu |
 | Findings P4-B0 (REVOKE EXECUTE réservé au propriétaire · exécuteur exige SELECT · default privileges FONCTIONS : forme GLOBALE efficace / `IN SCHEMA` inefficace, propre au rôle créateur → migrateur ET exécuteur) | ✅ DOCUMENTÉS + testés ; la migration applique les deux défauts globaux + REVOKE explicite sur l'existant ; P4-B devra `GRANT EXECUTE` sur G5 au migrateur pour attacher le trigger |
-| Listener IssueDownloadGrants (sur OrderPaid) | ⬜ TODO — après schéma P4 |
-| DownloadService (token haché, expiration, quota atomique) | ⬜ TODO — après schéma P4 |
-| DownloadController + rate limiting | ⬜ TODO — après schéma P4 |
-| Stratégie gros fichiers (X-Accel-Redirect ou URL S3 pré-signée) | ⬜ TODO |
-| E-mail de livraison (double canal : écran + e-mail) | ⬜ TODO |
-| Révocation sur remboursement (RefundService, même transaction que `refunded`) | ⬜ TODO — invariant BDD prévu par D-029 |
-| Détection de partage de lien (> 3 IP / 24h) | ⬜ TODO — requête sur `download_logs` |
-| Tests sécurité (lien expiré, quota, révoqué, 404 générique) | ⬜ TODO |
+| Audit de la couche applicative + roadmap D-030 (12 gates, Q1/Q2/Q3 tranchées) | ✅ DONE — validé par KingKouda |
+| Listener IssueDownloadGrants / DownloadService / DownloadController / streaming / e-mail / révocation / purge | ➡️ REPLANIFIÉS — voir les sections **P3-D** et **P4-C** ci-dessous (D-030) |
 | Phase licences (`licenses`) | ❌ BLOCKED — hors P4, décision produit KingKouda requise |
+
+## P3-D — COUCHE APPLICATIVE COMMERCE (D-030)
+Statut : **planifiée, non démarrée**. Aucune migration. Le schéma P3 est complet ;
+ces gates n'écrivent que du code applicatif. Décisions figées : **Q3 = A** (coupon
+scopé sans ligne éligible ⇒ refus explicite ; allocation **Hamilton**, départage
+`résidu décroissant → product_id croissant → id de ligne croissant`, aucun `float`,
+aucune division flottante, aucun `round()` sur les montants). Consommation du
+coupon **jamais** à la création de la commande : snapshots sur `orders` en P3-D2,
+`coupon_redemptions` + `redemptions_count` en P3-D4 seulement, sous verrou du
+coupon, dans la même transaction que la transition vers `paid`.
+
+| Gate | Branche future | Objectif unique | Statut |
+|------|----------------|-----------------|--------|
+| **P3-D1** Pricing & Quote Kernel | `p3-d1-pricing-kernel` | Money value object + `PricedQuote` immuable : prix fixe par devise depuis `product_prices`, validation coupon, remise globale, **allocation Hamilton aux lignes**. Zéro écriture BDD, zéro migration. | 🎯 **PROCHAINE TÂCHE** |
+| **P3-D2** Checkout Order Transaction | `p3-d2-checkout-order-transaction` | `Order` + `order_items` + snapshot bundle exhaustif (`INSERT … SELECT` unique après `products FOR UPDATE`) dans **une** transaction ; bundle vide refusé avant l'insertion de la ligne ; idempotence par `checkout_idempotency_hash`. | ⬜ TODO |
+| **P3-D3** Payment Initiation | `p3-d3-payment-initiation` | Port fournisseur + ligne `payments` `pending` ; `idempotency_key_hash` ; aucun webhook, aucune livraison. | ⬜ TODO |
+| **P3-D4** Server-side Payment Confirmation | `p3-d4-payment-confirmation` | Webhook signé + **contre-appel fournisseur** + montant/devise revérifiés en entiers ; `Payment succeeded` · `Order → paid` · `coupon_redemptions` ; branche gratuite `total_minor = 0` sans ligne `payments` ; rejeu idempotent. | ⬜ TODO |
+| **P3-D5** OrderPaid Domain Event | `p3-d5-order-paid-event` | Événement `final` portant **`order_id` seul**, dispatché en `afterCommit`, uniquement si la transition a réellement eu lieu. **Aucun listener dans ce gate.** | ⬜ TODO |
+
+## P4-C — COUCHE APPLICATIVE LIVRAISON (D-030)
+Statut : **planifiée, non démarrée**. Aucune migration. Décisions figées :
+**Q1 = A renforcée** (token CSPRNG en mémoire vive, SHA-256 en base, jamais
+reconstructible ; reprise = **révoquer puis réémettre**, jamais « réessayer avec
+l'ancien token » ; sémantique **at-least-once** assumée pour l'e-mail) et
+**Q2 = B renforcée** (job queued unique par Order transportant **`order_id`
+seul** ; tokens générés dans le worker ; e-mail envoyé **synchroniquement** dans
+le même processus ; aucun secret dans Redis, `jobs`, `failed_jobs`, une exception
+ou un log).
+
+| Gate | Branche future | Objectif unique | Statut |
+|------|----------------|-----------------|--------|
+| **P4-C0** Queue & Mail Secret Safety | `p4-c0-queue-mail-secret-safety` | Rendre l'infra asynchrone sûre **avant** qu'un secret existe : connexion de queue explicite, **`after_commit = true`**, stratégie de failed jobs sans token, worker/retry, **tests de sérialisation sur connexion non-`sync`**, garde anti-journalisation du token, interdiction de `MAIL_MAILER=log` en environnement émettant de vrais liens. | ⬜ TODO — **bloque tous les suivants** |
+| **P4-C1** Download Grant Issuance | `p4-c1-grant-issuance` | Service d'émission : CSPRNG, hash seul, `orders FOR UPDATE`, G3, unique partiel du couple actif. Implémentable **non câblé** tant que C2/C3 ne sont pas prêts. | ⬜ TODO |
+| **P4-C2** Refund Grant Revocation | `p4-c2-refund-grant-revocation` | `RefundService` : verrou Order → révocation de tous les grants actifs → `orders.status = refunded`, **même transaction** (G4 différé). Refund partiel : **aucune** révocation automatique. | ⬜ TODO — **à merger avant activation de P4-C3** |
+| **P4-C3** Secure Secret Delivery Job | `p4-c3-secret-delivery-job` | Job queued `order_id` seul : verrou Order, génération des tokens en mémoire, émission ou révocation/réémission au retry, envoi synchrone. Nouveau dispatch après succès ⇒ sans effet. | ⬜ TODO |
+| **P4-C4** Download Authorization | `p4-c4-download-authorization` | Résolution uniforme non énumérable, tentative authentifiée (secret CSPRNG dédié), log `started` + `+1` atomique via **G5**, Range/retry sur une seule ligne, HEAD sans effet. **Prérequis : réécrire `SECURITE_TELECHARGEMENT.md`.** | ⬜ TODO |
+| **P4-C5** HTTP File Delivery | `p4-c5-http-file-delivery` | Route + contrôleur mince + rate limiting + transport du secret (header/cookie, **jamais** en query string) + mécanisme de remise choisi selon `size_bytes`. **Aucun téléchargement public n'existe avant ce gate.** | ⬜ TODO |
+| **P4-C6** Delivery Operations | `p4-c6-delivery-operations` | Purge via G6, réconciliation des `started` anciens, détection d'abus (> 3 IP / 24 h), révocation support, métriques. | ⬜ TODO |
+
+### Dettes reconnues par D-030 et leur gate
+
+| Dette mesurée | Gate |
+|---|---|
+| `DOWNLOAD_LINK_TTL_HOURS` / `DOWNLOAD_MAX_PER_GRANT` dans `.env.example`, lus par **aucun** fichier `config/` | P4-C1 |
+| queue par défaut `database` sans table `jobs` / `job_batches` | P4-C0 |
+| failed jobs par défaut **`database-uuids`** sans table `failed_jobs` (sous-point **ouvert**, à trancher au gate) | P4-C0 |
+| `after_commit = false` sur toutes les connexions de queue | P4-C0 |
+| `MAIL_MAILER` par défaut `log` ⇒ une URL avec token brut irait dans `storage/logs` | P4-C0 |
+| `phpunit.xml` force `QUEUE_CONNECTION=sync` ⇒ sérialisation réelle jamais prouvée | P4-C0 |
+| enums `DownloadLogStatus` / `DownloadDenialReasonCode` prévus par D-029.5, absents de `app/Enums/` | P4-C4 |
+| `coupons.redemptions_count` et plafonds coupon entièrement applicatifs (aucun trigger) | P3-D4 |
+| aucun `Money` value object malgré `LARAVEL_PATTERNS.md` | P3-D1 |
+| G4 rend la révocation obligatoire au remboursement total | P4-C2 |
+| `SECURITE_TELECHARGEMENT.md` périmé (UPDATE direct du compteur, `grant_id` inexistante, colonnes P4-B absentes, ni tentative ni G5 ni frontière runtime) | à réécrire **avant P4-C4** |
 
 ## P5 — ANALYTIQUE
 | Tâche | Statut |

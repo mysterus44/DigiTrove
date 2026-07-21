@@ -8,7 +8,17 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-21
-- **Branche git active** : `p0-foundations-laravel13` (stable à `98441014`)
+- **Branche git active** : `p0-foundations-laravel13` (stable à `50d043ec` avant
+  ce commit documentaire)
+- **D-030 FINALISÉE ET VALIDÉE** : roadmap de la couche applicative Commerce →
+  Livraison. KingKouda tranche **Q1 = A renforcée** (token CSPRNG jamais
+  reconstructible ; reprise = révoquer puis réémettre ; at-least-once assumé),
+  **Q2 = B renforcée** (job queued unique portant `order_id` seul, tokens générés
+  et e-mail envoyé dans le worker) et **Q3 = A** (coupon scopé sans ligne
+  éligible ⇒ refus explicite ; allocation **Hamilton**). Nommage corrigé :
+  tarification/checkout/paiement = **P3-D**, livraison = **P4-C**. Douze gates,
+  **aucune migration**. **Premier gate : `P3-D1 — Pricing & Quote Kernel`**
+  (branche future `p3-d1-pricing-kernel`). P5 non démarré.
 - **P4-B0 TERMINÉ ET MERGÉ** via
   [PR #15](https://github.com/mysterus44/DigiTrove/pull/15), merge `6d23e546`
   (parents `a3eac5e` + `9b69f192`) : frontière de privilèges PostgreSQL runtime
@@ -270,25 +280,56 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-**P4-B TERMINÉ ET MERGÉ** (PR #16, merge `98441014`, parents `d7c53cf` +
-`49692e25`). Le **schéma P4 Livraison est désormais complet** : P4-A0 → P4-A1 →
-P4-A2 → P4-A2.1 → P4-B0 → P4-B, tous mergés, 29 migrations.
+## 🎯 `P3-D1 — Pricing & Quote Kernel` — branche future `p3-d1-pricing-kernel`
 
-**La prochaine étape doit être lue dans le roadmap et les décisions existantes,
-elle n'est pas commencée ici.** Rappels utiles pour la choisir :
-- Le bloc « ordre de création » du schéma v1 place après P4 : `events`
-  partitionnée + rollups (analytique, P5), puis `campaigns` +
-  `customer_segments`, puis l'affiliation dédiée.
-- La **couche applicative P4** reste entièrement à faire et n'a jamais été
-  entamée : listener `OrderPaid` / `IssueDownloadGrants`, service de
-  consommation, contrôleur de téléchargement, streaming (X-Accel/X-Sendfile),
-  URL temporaires, rate limiting, job de purge, e-mails. Aucune de ces briques
-  n'existe : le gate BDD s'est arrêté au relationnel.
-- Décisions ouvertes à trancher avant les phases concernées : le champ `usb` du
-  legacy (livraison physique éventuelle), `licenses` (exclu de P4 par D-029), la
-  conversion multi-devises automatique, et les paramètres de CONFIG APPLICATIVE
-  jamais mis en DEFAULT BDD (TTL grant 72 h, quota 5, rétention logs 365 j,
-  durée de tentative, rate limiting).
+Le schéma P1→P4 est complet (29 migrations). **D-030 est finalisée et validée** :
+la couche applicative est planifiée en 12 gates, **aucun ne crée de migration**.
+
+**Objectif unique du gate** : transformer `(panier, devise, coupon?)` en un devis
+immuable `PricedQuote`, avec la remise **allouée aux lignes**. **Zéro écriture
+BDD, zéro Order, zéro route, zéro paiement, zéro grant, zéro migration.**
+
+Sortie contractuelle :
+
+```text
+PricedQuote { currency, subtotalMinor, discountMinor, taxMinor, totalMinor,
+              lines[], couponSnapshot|null }
+```
+
+Chaque ligne : `product_id`, `product_name_snapshot`, `product_slug_snapshot`,
+`product_type_snapshot`, `unit_price_minor`, `quantity`, `line_subtotal_minor`,
+`line_discount_minor`, `line_total_minor`.
+
+**Pourquoi ce gate d'abord (mesuré sur le code)** : `cart_items` ne porte **aucun
+prix** ; le prix se résout depuis `product_prices` par devise. Or le constraint
+trigger différé `validate_order_items_consistency` (`000002`) exige au COMMIT
+`SUM(line_subtotal_minor) = orders.subtotal_minor`, **`SUM(line_discount_minor) =
+orders.discount_minor`** et `SUM(line_total_minor) + orders.tax_minor =
+orders.total_minor` ; `orders_coupon_snapshot_consistency_check` exige
+`discount_minor > 0` dès qu'un snapshot coupon existe. Une remise non allouée fait
+donc échouer le COMMIT en `23514`.
+
+**Règles figées (Q3 = A)** : coupon scopé (`coupon_products` /
+`coupon_categories`) sans ligne éligible ⇒ **refus explicite de validation**,
+jamais de retrait silencieux ; allocation **Hamilton (plus grand reste)**,
+départage `résidu décroissant → product_id croissant → id de ligne croissant` ;
+`0 <= line_discount_minor <= line_subtotal_minor` ; **somme exacte** ; aucun
+`float`, aucune division flottante, aucun `round()` sur les montants ; produit
+sans prix dans la devise demandée ⇒ **refus**, jamais de repli sur une autre
+devise (D-018).
+
+**Tests attendus** : arithmétique entière pure ; produit direct ; bundle ; devise
+absente ⇒ refus ; coupon `percent` plafonné par `max_discount_minor` ; coupon
+`fixed` par devise ; `min_order_minor` non atteint ; coupon scopé sans ligne
+éligible ⇒ refus ; **Σ remises de lignes == remise Order sur restes non
+divisibles** ; départage stable sur résidus égaux ; coupon expiré / inactif ;
+absence de `float` dans le code.
+
+**Gates suivants (ne pas anticiper)** : P3-D2 checkout → P3-D3 initiation →
+P3-D4 confirmation serveur → P3-D5 `OrderPaid` → **P4-C0 Queue & Mail Secret
+Safety** (bloque tout le reste) → P4-C1 émission → P4-C2 révocation refund
+(**avant** activation de P4-C3) → P4-C3 job de remise → P4-C4 autorisation →
+P4-C5 remise HTTP → P4-C6 opérations.
 
 Garde-fous inchangés : une feature à la fois, la BDD avant la logique, arrêt
 obligatoire pour validation humaine avant toute migration d'une nouvelle phase,
@@ -296,6 +337,37 @@ aucun push direct sur `main`.
 
 ## ⚠️ POINTS D'ATTENTION
 
+- 🚨 **`.context/skills/SECURITE_TELECHARGEMENT.md` est PARTIELLEMENT PÉRIMÉ et ne
+  doit plus servir de modèle de code.** Son `DownloadService` fait un `increment
+  ('downloads_count')` depuis PHP — refusé `42501` pour `digitrove_runtime` et
+  `23514` par G2 même pour le propriétaire depuis D-029.6 ; son `DownloadLog::
+  create` utilise une colonne `grant_id` inexistante (la vraie est
+  `download_grant_id`) et omet `public_id`, `quota_consumed`, `retention_until`
+  (tous NOT NULL sans DEFAULT) ; ni tentative authentifiée, ni G5, ni frontière
+  runtime. **À réécrire avant le gate P4-C4** (action obligatoire de D-030).
+- 🚨 **Infrastructure de queue non opérationnelle par défaut** (D-030, dette
+  P4-C0) : `config/queue.php` L16 `env('QUEUE_CONNECTION', 'database')`, L124
+  `env('QUEUE_FAILED_DRIVER', 'database-uuids')` table `failed_jobs`, L105-107
+  batching `job_batches` — **aucune de ces trois tables n'a de migration**.
+  `after_commit = false` sur toutes les connexions (L44/L53/L64/L73) : un job
+  programmé dans une transaction peut être consommé avant son COMMIT. Seul
+  `.env.example` masque le problème (Redis + `QUEUE_FAILED_DRIVER=file`).
+  `config/mail.php` L17 vaut `env('MAIL_MAILER', 'log')` : un e-mail portant un
+  token brut serait écrit intégralement dans `storage/logs`. Enfin `phpunit.xml`
+  force `QUEUE_CONNECTION=sync`, donc l'invariant « aucun secret sérialisé » est
+  aujourd'hui **inprouvable en test**. Tout cela doit être réglé par **P4-C0**
+  avant qu'un secret de téléchargement existe.
+- ⚠️ **G4 rend la révocation obligatoire** : `validate_download_grant_order_
+  consistency` est différé et monté sur `download_grants` **et** `orders`. Dès
+  qu'un grant actif existe, passer un Order à `refunded` échoue au COMMIT si les
+  grants ne sont pas révoqués dans la même transaction. **P4-C2 doit donc être
+  mergé avant l'activation réelle de P4-C3.**
+- ⚠️ `coupons.redemptions_count` n'est maintenu par **aucun trigger** : plafond
+  global et plafond client sont 100 % applicatifs, sous `FOR UPDATE` (gate P3-D4).
+- ⚠️ `DOWNLOAD_LINK_TTL_HOURS` et `DOWNLOAD_MAX_PER_GRANT` existent dans
+  `.env.example` mais **aucun fichier `config/` ne les lit** : il n'existe encore
+  aucun point de configuration pour porter `expires_at` / `max_downloads`, que
+  D-029.1-B exige explicites à chaque INSERT (gate P4-C1).
 - 🚨 **Legacy** : deux mots de passe en clair étaient dans l'historique git de l'ancien
   dépôt. Les scripts concernés sont neutralisés, mais les valeurs historiques doivent
   rester considérées compromises.
@@ -330,6 +402,55 @@ aucun push direct sur `main`.
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-21 — Claude Code (D-030 : roadmap applicative Commerce → Livraison)
+- Garde-fous : stable locale = distante = `50d043ec` (0/0), worktree propre,
+  `origin/main` intact `11130f4d`, `98441014`/`49692e25`/`6d23e546` confirmés
+  ancêtres, 29 migrations, aucune `000014`, aucune branche applicative, un seul
+  `git fetch --all --prune`. Numéro de décision vérifié libre : **D-030**.
+- **Audit applicatif (mission P4-C0 précédente, verdict `DÉCISIONS COUCHE
+  APPLICATIVE REQUISES`)** : couche applicative **intégralement absente** —
+  `app/Services|Actions|Events|Listeners|Jobs|Notifications|Mail|Policies|Support|
+  Http\Requests|Http\Middleware` n'existent pas ; `Http/Controllers` ne contient
+  que la classe abstraite ; `routes/web.php` = page d'accueil ; `AppServiceProvider`
+  et `withMiddleware()` vides. `OrderService`, `OrderPaid`, `IssueDownloadGrants`,
+  `DownloadService`, `DownloadController` **absents, sans alias**.
+- **Décisions humaines intégrées** : **Q1 = A renforcée**, **Q2 = B renforcée**,
+  **Q3 = A** (détail complet en D-030).
+- **Correction de nommage appliquée** : le gate de tarification n'est plus
+  `P4-C1 — Pricing & Money kernel` mais **`P3-D1 — Pricing & Quote Kernel`**.
+  Tarification / checkout / paiement = **P3-D1→P3-D5** ; livraison =
+  **P4-C0→P4-C6**. Douze gates, douze branches futures, **aucune migration**.
+- **Correction factuelle du rapport d'audit** : le driver d'échec de queue par
+  défaut est **`database-uuids`** (`config/queue.php` L124, table `failed_jobs`),
+  **pas `file`** — `file` n'est qu'un override de `.env.example`. Vérifié aussi :
+  défaut `database` (L16), `after_commit = false` sur `database`/`beanstalkd`/
+  `sqs`/`redis` (L44/L53/L64/L73), batching `job_batches` (L105-107). **Aucune
+  migration `jobs`, `job_batches` ni `failed_jobs` n'existe.**
+- **Gate préalable `P4-C0 — Queue & Mail Secret Safety`** ajouté : il doit être
+  mergé avant tout job de livraison. Son sous-point « stockage des failed jobs »
+  (`failed_jobs` en base / désactivés / autre stockage sûr) est **laissé
+  explicitement OUVERT**, à trancher au gate sur le code réel — jamais tranché
+  silencieusement ici.
+- **Contrainte d'ordonnancement figée** : G4 étant différé et monté sur
+  `download_grants` ET `orders`, **P4-C2 (révocation) doit être mergé avant
+  l'activation réelle de P4-C3** ; P4-C1 peut vivre comme service non câblé ;
+  aucun téléchargement public avant P4-C5.
+- **Onze dettes consignées et rattachées à leur gate** (env DOWNLOAD non lues,
+  queue/failed/batching sans tables, `after_commit=false`, `MAIL_MAILER=log`,
+  tests en `sync`, enums DownloadLog absents, compteur coupon applicatif, pas de
+  `Money`, G4/révocation, skill périmé).
+- **`SECURITE_TELECHARGEMENT.md` déclaré partiellement périmé** ; non modifié ici
+  (cinq documents autorisés) ; **réécriture obligatoire avant le gate P4-C4**.
+- Validation : `php artisan test` **190/2975**, `./vendor/bin/pint --test`
+  **121 fichiers**, `git diff --check` propre, **29 migrations inchangées**.
+- **Mission strictement documentaire** : aucun fichier PHP, migration, test,
+  route, contrôleur, service, repository, event, listener, job, notification,
+  mailable, middleware, policy, config, Docker, CI, script SQL, rôle PostgreSQL,
+  table, fonction, trigger ni `.env` créé ou modifié. Aucune branche. Aucun P5.
+  Seuls les cinq documents autorisés sont modifiés.
+  Laisse à : **implémenter `P3-D1 — Pricing & Quote Kernel`** sur la branche
+  `p3-d1-pricing-kernel`.
 
 ### 2026-07-21 — Claude Code (clôture post-merge P4-B)
 - **P4-B mergé** via [PR #16](https://github.com/mysterus44/DigiTrove/pull/16),

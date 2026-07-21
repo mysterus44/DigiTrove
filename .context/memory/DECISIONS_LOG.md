@@ -1718,5 +1718,320 @@ nouvelle. **Prochaine étape à lire dans le roadmap** (couche applicative P4 �
 listener, service, contrôleur, streaming, rate limiting, purge, e-mails — ou P5
 analytique) ; elle n'est pas commencée.
 
+---
+
+### D-030 — Roadmap applicative Commerce → Livraison sécurisée ✅
+**Date** : 2026-07-21. **Statut** : **FINALISÉE ET VALIDÉE** (KingKouda : Q1=A
+renforcée, Q2=B renforcée, Q3=A). **Aucun code applicatif écrit par cette
+décision.**
+
+**CONTEXTE.** Le schéma relationnel P1→P4 est complet et mergé (29 migrations,
+dernière `000013`, merge P4-B `98441014`). L'audit applicatif P4-C0 mené sur la
+stable `50d043ec` a établi par lecture du code réel que **la couche applicative
+est intégralement absente** : les répertoires `app/Services/`, `app/Actions/`,
+`app/Events/`, `app/Listeners/`, `app/Jobs/`, `app/Notifications/`, `app/Mail/`,
+`app/Policies/`, `app/Support/`, `app/Http/Requests/` et `app/Http/Middleware/`
+n'existent pas ; `app/Http/Controllers/` ne contient que la classe abstraite
+`Controller.php` ; `routes/web.php` ne déclare que la page d'accueil ;
+`AppServiceProvider` et `withMiddleware()` sont vides ; la seule commande Artisan
+est `ProvisionRuntimeRoles` (infrastructure P4-B0). Confirmé nominativement :
+`OrderService`, `OrderPaid`, `IssueDownloadGrants`, `DownloadService` et
+`DownloadController` sont **ABSENTS, sans alias ni équivalent sous un autre nom**.
+
+**1. CORRECTION DE NOMMAGE (contraignante).** Le rapport d'audit nommait le
+premier gate `P4-C1 — Pricing & Money kernel`. **Ce nom est incorrect** :
+tarification, checkout et paiement relèvent de **P3 Commerce** ; P4 Livraison ne
+commence qu'à l'émission des grants. Nommage officiel figé :
+
+| Gate | Nom | Branche future |
+|---|---|---|
+| **P3-D1** | Pricing & Quote Kernel | `p3-d1-pricing-kernel` |
+| **P3-D2** | Checkout Order Transaction | `p3-d2-checkout-order-transaction` |
+| **P3-D3** | Payment Initiation | `p3-d3-payment-initiation` |
+| **P3-D4** | Server-side Payment Confirmation | `p3-d4-payment-confirmation` |
+| **P3-D5** | OrderPaid Domain Event | `p3-d5-order-paid-event` |
+| **P4-C0** | Queue & Mail Secret Safety | `p4-c0-queue-mail-secret-safety` |
+| **P4-C1** | Download Grant Issuance | `p4-c1-grant-issuance` |
+| **P4-C2** | Refund Grant Revocation | `p4-c2-refund-grant-revocation` |
+| **P4-C3** | Secure Secret Delivery Job | `p4-c3-secret-delivery-job` |
+| **P4-C4** | Download Authorization | `p4-c4-download-authorization` |
+| **P4-C5** | HTTP File Delivery | `p4-c5-http-file-delivery` |
+| **P4-C6** | Delivery Operations | `p4-c6-delivery-operations` |
+
+Discipline D-029.2 reconduite : **une branche par gate, un objectif par gate,
+merge du gate N avant l'ouverture du gate N+1**, jamais de push sur `main`. Aucun
+de ces gates ne crée de migration ; `licenses` reste exclu ; **P5 reste
+entièrement non démarré**.
+
+**2. Q1 = A RENFORCÉE — Token perdu après le COMMIT du grant.** Le token de
+`download_grants` est généré par CSPRNG, existe **uniquement en mémoire vive**,
+est haché en SHA-256 avant persistance, et n'est **jamais** reconstructible.
+Rejetées définitivement : secret déterministe dérivé d'une clé serveur ; outbox
+contenant le secret chiffré ; stockage temporaire du token brut ; toute
+possibilité de retrouver le secret depuis la BDD. Motif : DigiTrove vend le
+catalogue lui-même ; une clé maître compromise régénérerait tous les tokens
+actifs, exactement le scénario que D-009 interdit (« exactement comme un mot de
+passe » — un mot de passe n'est pas dérivable).
+*Sémantique de panne acceptée* : si une panne survient après le COMMIT du grant
+mais avant confirmation fiable de la remise, le token peut être perdu et le grant
+actif devient inutilisable par le client. Il ne doit **jamais** être « retrouvé ».
+Toute reprise suit la séquence stricte : (1) verrouiller l'Order ; (2) révoquer
+les grants actifs concernés avec un motif fermé (candidat `delivery_retry`, code
+exact à confirmer au gate P4-C1/P4-C3) ; (3) émettre de nouveaux grants ; (4)
+générer de nouveaux tokens ; (5) remettre uniquement les nouveaux tokens. La
+règle est **« révoquer puis réémettre »**, jamais « réessayer avec l'ancien
+token ». Cette contrainte n'est pas seulement doctrinale : l'unique partiel
+`download_grants_active_pair_unique (order_item_id, product_file_id) WHERE
+revoked_at IS NULL` **empêche physiquement** une nouvelle émission tant que le
+grant fantôme n'est pas révoqué (finding 2 de D-029.4).
+*Risque résiduel assumé et documenté honnêtement* : si l'e-mail a été envoyé mais
+que le worker meurt avant l'ACK, le retry peut révoquer le premier lien ; le
+client peut recevoir un premier e-mail devenu invalide, suivi d'un second
+contenant le lien actif. Cette sémantique est **at-least-once**. Aucun
+exactly-once externe n'est promis.
+*Récupération client* : hors du premier gate et hors P4-C1. Lorsqu'elle arrivera,
+elle devra : ne jamais afficher un secret après simple saisie d'un numéro de
+commande ; envoyer la nouvelle livraison à l'e-mail de la commande ; être
+rate-limitée ; être protégée contre l'énumération ; révoquer puis réémettre ;
+utiliser l'authentification du compte lorsqu'elle existe.
+
+**3. Q2 = B RENFORCÉE — Queue et e-mail.** La livraison passe par **un job queued
+unique par Order, dont le payload ne transporte que `order_id`**. Le payload ne
+doit contenir aucun token de grant, secret de tentative, hash de token, lien de
+téléchargement complet, `storage_path`, IP, clé HMAC, ni contenu d'e-mail porteur
+du lien.
+*Chaîne retenue* : (1) `OrderPaid` dispatché **après COMMIT** de la transition
+effective vers `paid` ; (2) le listener programme un job unique par Order ; (3) le
+job transporte `order_id` seul ; (4) le worker verrouille l'Order ; (5) le worker
+génère les tokens en mémoire ; (6) le worker crée les grants — ou révoque puis
+réémet lors d'un retry ; (7) le worker compose et envoie l'e-mail **de manière
+synchrone dans le même processus** ; (8) le token disparaît de la mémoire.
+*Interdits* : notification elle-même mise en queue avec le token ; Mailable queued
+portant le token ; job enfant portant le token ; événement portant le token ;
+token dans Redis, dans `jobs`, dans `failed_jobs`, dans une exception ou un log.
+*Idempotence et concurrence* : unicité par `order_id`, prévention de chevauchement
+par `order_id`, verrou PostgreSQL sur l'Order, invariants uniques de
+`download_grants`, réémission contrôlée lors d'un retry réel. Un **nouveau
+dispatch après succès** ne doit pas envoyer silencieusement un nouveau jeu de
+liens : il détecte les grants actifs et se termine sans effet, sauf procédure de
+réémission explicitement demandée. Un **retry après échec de remise** peut
+révoquer les grants actifs de la tentative précédente, émettre de nouveaux
+secrets et envoyer un nouveau message.
+*Le transport Laravel n'est pas exactly-once* et ne doit jamais être présenté
+comme tel : seule l'idempotence garantie par les invariants BDD fait foi.
+
+**4. CORRECTION FACTUELLE — configuration de la queue.** Le rapport d'audit P4-C0
+affirmait que le driver d'échec par défaut était `file`. **C'est faux** : `file`
+n'est qu'un override de `.env.example` (`QUEUE_FAILED_DRIVER=file`). État réel
+mesuré dans `config/queue.php` :
+
+| Point | Valeur réelle | Ligne |
+|---|---|---|
+| connexion par défaut | `env('QUEUE_CONNECTION', 'database')` | L16 |
+| `database.after_commit` | `false` | L44 |
+| `redis.after_commit` | `false` | L73 |
+| `beanstalkd` / `sqs` `after_commit` | `false` | L53 / L64 |
+| driver d'échec par défaut | **`env('QUEUE_FAILED_DRIVER', 'database-uuids')`** | L124 |
+| table d'échec attendue | `failed_jobs` | L126 |
+| batching | table `job_batches`, base `env('DB_CONNECTION', 'sqlite')` | L105–107 |
+
+Il n'existe **aucune migration `jobs`, `job_batches` ni `failed_jobs`** dans les
+29 migrations. Conséquences : le défaut `database` n'est **pas opérationnel** ; le
+défaut `database-uuids` n'est **pas opérationnel** ; `.env.example` masque
+partiellement le problème en choisissant Redis ; `after_commit = false` est
+dangereux pour la livraison (un job programmé dans une transaction peut être
+consommé avant son COMMIT, et lire un Order qui n'est pas encore `paid`) ; et
+`phpunit.xml` fixant `QUEUE_CONNECTION=sync` ne prouve **jamais** la sérialisation
+réelle du payload.
+
+**5. P4-C0 — Queue & Mail Secret Safety (gate préalable obligatoire).** Aucun job
+de livraison ne peut être mergé avant lui. Objectif unique : **rendre
+l'infrastructure asynchrone sûre avant qu'un secret de téléchargement existe**.
+Périmètre futur : configuration de queue explicite ; Redis comme backend prévu du
+projet si confirmé par l'environnement existant (`docker-compose` expose Redis 7
+sur l'hôte `6380`) ; **`after_commit = true` sur la connexion de livraison** ;
+stratégie de failed jobs sans token ; worker et politique de retry ; **tests de
+sérialisation réelle sur une connexion non-`sync`** ; garde empêchant un mailer de
+journaliser un token ; configuration mail sûre ; vérification que
+`MAIL_MAILER=log` ne peut pas être utilisé dans un environnement émettant de vrais
+liens.
+**Sous-point explicitement LAISSÉ OUVERT, à trancher au gate P4-C0 sur le code
+réel** : le stockage des failed jobs — (a) `failed_jobs` en base via la migration
+Laravel standard, (b) failed jobs désactivés (`QUEUE_FAILED_DRIVER=null`) avec
+alerte externe, ou (c) autre stockage sécurisé. Ce point n'est **pas** tranché
+ici : il dépend d'une évaluation de ce que le job de livraison expose réellement
+en cas d'échec. Aucun fichier de configuration n'est créé par la présente
+décision documentaire.
+
+**6. Q3 = A — Coupon scopé et allocation de la remise.**
+*Coupon sans ligne éligible* : si un coupon scopé par `coupon_products` ou
+`coupon_categories` ne couvre aucune ligne du panier, **le checkout est refusé par
+une erreur de validation explicite**. Le coupon n'est jamais retiré
+silencieusement ; la commande n'est jamais créée au plein tarif sans consentement
+explicite du client. Motif : le retrait silencieux produit la classe de litige la
+plus coûteuse en e-commerce (« mon code n'a pas été appliqué et vous m'avez quand
+même débité »).
+*Allocation* : méthode du **plus grand reste (Hamilton)**, contractuellement —
+(1) déterminer uniquement les lignes éligibles ; (2) calculer le montant global de
+remise sur leur sous-total ; (3) appliquer le pourcentage en basis points ou la
+remise fixe de la devise, puis le plafond `coupon_currency_rules.max_discount_minor`
+et le plafond naturel du sous-total éligible ; (4) calculer la part rationnelle de
+chaque ligne ; (5) affecter la partie entière à chaque ligne ; (6) distribuer le
+reste **unité par unité** aux plus grands résidus ; (7) départager de façon stable.
+*Ordre de départage contractuel* : résidu décroissant, puis `product_id`
+croissant, puis identifiant stable de ligne croissant si nécessaire.
+*Garanties* : aucun `float`, aucune division flottante, aucun `round()` sur les
+montants ; `line_discount_minor >= 0` ; `line_discount_minor <=
+line_subtotal_minor` ; **somme des remises de lignes exactement égale à
+`orders.discount_minor`** ; algorithme déterministe au rejeu ; résultat
+indépendant de l'ordre de chargement de la collection.
+*Quantité multiple* : l'allocation se fait au niveau de la ligne ;
+`line_subtotal_minor = unit_price_minor * quantity` ; aucune distribution par
+unité physique n'est nécessaire dans ce gate.
+*Fondement mesuré* : le constraint trigger différé `validate_order_items_consistency`
+(migration `000002`) exige au COMMIT `SUM(line_subtotal_minor) =
+orders.subtotal_minor`, **`SUM(line_discount_minor) = orders.discount_minor`** et
+`SUM(line_total_minor) + orders.tax_minor = orders.total_minor` ; et
+`orders_coupon_snapshot_consistency_check` exige `discount_minor > 0` dès qu'un
+snapshot coupon existe. Une remise non allouée fait donc échouer le COMMIT en
+`23514`. `cart_items` ne portant **aucun prix** (`id, cart_id, product_id,
+quantity, timestamps`), la tarification est un prérequis arithmétique dur du
+checkout, et non un détail interne.
+
+**7. CONSOMMATION DU COUPON — correction figée.** La création d'une Order
+`pending` stocke les snapshots du coupon dans `orders`, **n'insère pas**
+`coupon_redemptions` et **n'incrémente pas** `coupons.redemptions_count`
+(D-027/5). La consommation effective du quota intervient lors de la confirmation
+serveur du paiement, ou du passage légitime d'une commande gratuite
+(`total_minor = 0`) à `paid` : elle verrouille le coupon, revalide les limites,
+crée `coupon_redemptions`, incrémente `redemptions_count`, et **participe à la
+même transaction que la transition finale vers `paid`**. Un panier abandonné ou
+une Order `pending` ne consomme jamais le quota. Vérifié : aucun trigger ne
+maintient `coupons.redemptions_count` (aucune occurrence dans `000003`) — le
+plafond global et le plafond par client (`(coupon_id, customer_key_version,
+customer_key_hash)`) sont **100 % applicatifs**, sous `FOR UPDATE`.
+
+**8. ROADMAP FINALE.**
+
+```text
+P3-D1 Pricing & Quote Kernel
+    ↓
+P3-D2 Checkout Order Transaction
+    ↓
+P3-D3 Payment Initiation
+    ↓
+P3-D4 Server-side Payment Confirmation
+    ↓
+P3-D5 OrderPaid Domain Event
+    ↓
+P4-C0 Queue & Mail Secret Safety
+    ↓
+P4-C1 Download Grant Issuance
+    ├──────────────┐
+    ↓              ↓
+P4-C2 Refund       P4-C3 Secure Secret Delivery Job
+Grant Revocation        ↓
+                   P4-C4 Download Authorization
+                        ↓
+                   P4-C5 HTTP File Delivery
+                        ↓
+                   P4-C6 Delivery Operations
+```
+
+Règles d'ordonnancement : **P4-C2 doit être mergé avant l'activation réelle de
+P4-C3** ; **P4-C1 peut être implémenté comme service non câblé** tant que P4-C2 et
+P4-C3 ne sont pas prêts (aucun listener branché, aucune émission déclenchée par un
+événement réel) ; **aucun téléchargement public n'existe avant P4-C5** ; P5 ne
+commence pas pendant cette roadmap.
+*Justification de la contrainte P4-C2 avant P4-C3* : G4
+(`validate_download_grant_order_consistency`) est monté **DEFERRABLE INITIALLY
+DEFERRED sur `download_grants` ET sur `orders`**. Dès qu'un grant actif existe,
+toute transition d'`orders` vers `refunded` échoue au COMMIT si les grants ne sont
+pas révoqués dans la même transaction. Livrer l'émission en production sans la
+révocation rendrait donc **les remboursements totaux impossibles**. Ce n'est pas
+une amélioration optionnelle : c'est un couplage dur imposé par le schéma.
+
+**9. PREMIER GATE OFFICIEL — `P3-D1 — Pricing & Quote Kernel`**, branche future
+`p3-d1-pricing-kernel`. Il **remplace** le nom incorrect « P4-C1 — Pricing & Money
+kernel » du rapport d'audit.
+*Périmètre* : Money value object ; quote immuable ; résolution de prix fixe par
+devise depuis `product_prices` ; snapshots produit nécessaires au futur OrderItem ;
+validation du coupon ; calcul de la remise globale ; allocation Hamilton.
+*Exclusions strictes* : zéro écriture BDD, zéro Order créée, zéro route, zéro
+paiement, zéro grant, zéro migration.
+*Sortie attendue* : `PricedQuote { currency, subtotalMinor, discountMinor,
+taxMinor, totalMinor, lines[], couponSnapshot|null }`, chaque ligne portant
+`product_id`, `product_name_snapshot`, `product_slug_snapshot`,
+`product_type_snapshot`, `unit_price_minor`, `quantity`, `line_subtotal_minor`,
+`line_discount_minor`, `line_total_minor`.
+*Invariants préparés pour P3-D2* : `line_subtotal_minor = unit_price_minor *
+quantity` ; `line_total_minor = line_subtotal_minor - line_discount_minor` ;
+`Σ line_subtotal_minor = subtotalMinor` ; `Σ line_discount_minor = discountMinor` ;
+`Σ line_total_minor + taxMinor = totalMinor` ; `discountMinor <= subtotalMinor` ;
+devise unique en majuscules ; `discountMinor > 0 ⟺ couponSnapshot != null`.
+*Sécurité* : aucun secret manipulé ; interdiction absolue de `float`/`round()` sur
+des montants ; le prix ne provient **jamais** d'une entrée client, uniquement de
+`product_prices` ; un produit sans prix dans la devise demandée est un **refus**,
+jamais un repli sur une autre devise (D-018 : conversion automatique reportée).
+*Matrice de tests* : arithmétique entière pure ; produit direct ; bundle ; devise
+absente ⇒ refus ; coupon `percent` avec `max_discount_minor` ; coupon `fixed` par
+devise ; `min_order_minor` non atteint ; coupon scopé sans ligne éligible ⇒ refus
+explicite ; **Σ remises de lignes == remise Order sur restes non divisibles** ;
+départage stable prouvé sur résidus égaux ; coupon expiré / inactif ; absence de
+`float` dans le code.
+*Nom exact des classes* : à confirmer par lecture des conventions au moment du
+gate. **Aucune décision métier ne reste ouverte pour ce gate.**
+
+**10. DETTE — `SECURITE_TELECHARGEMENT.md` PARTIELLEMENT PÉRIMÉ.** Le skill n'est
+**pas modifié** par la présente décision (seuls cinq documents sont autorisés),
+mais il ne doit **plus servir de modèle de code**. Points périmés mesurés :
+UPDATE direct de `downloads_count` depuis PHP (refusé `42501` pour le runtime,
+`23514` pour le propriétaire depuis D-029.6) ; création simplifiée de DownloadLog ;
+colonne `grant_id` inexistante (la colonne réelle est `download_grant_id`) ;
+colonnes P4-B obligatoires absentes (`public_id`, `quota_consumed`,
+`retention_until`, tous NOT NULL sans DEFAULT) ; absence de la notion de tentative
+authentifiée ; absence de G5 ; absence de la frontière PostgreSQL runtime.
+**Action obligatoire consignée : réécrire `SECURITE_TELECHARGEMENT.md` avant le
+gate P4-C4**, réaligné sur D-029.5 et D-029.6.
+
+**11. DETTES RECONNUES ET LEUR GATE.** Consignées sans correction dans cette
+mission :
+
+| # | Dette mesurée | Gate responsable |
+|---|---|---|
+| 1 | `DOWNLOAD_LINK_TTL_HOURS` / `DOWNLOAD_MAX_PER_GRANT` présents dans `.env.example` mais **lus par aucun fichier `config/`** | **P4-C1** |
+| 2 | queue par défaut `database` **sans table `jobs`/`job_batches`** | **P4-C0** |
+| 3 | failed jobs par défaut `database-uuids` **sans table `failed_jobs`** | **P4-C0** (sous-point ouvert) |
+| 4 | `after_commit = false` sur toutes les connexions de queue | **P4-C0** |
+| 5 | `MAIL_MAILER` par défaut `log` ⇒ une URL avec token brut serait écrite dans `storage/logs` | **P4-C0** |
+| 6 | `phpunit.xml` force `QUEUE_CONNECTION=sync` ⇒ la sérialisation réelle n'est jamais prouvée | **P4-C0** |
+| 7 | enums `DownloadLogStatus` et `DownloadDenialReasonCode` prévus par D-029.5 mais **absents** de `app/Enums/` | **P4-C4** |
+| 8 | `coupons.redemptions_count` et les plafonds coupon sont **entièrement applicatifs** (aucun trigger) | **P3-D4** |
+| 9 | aucun `Money` value object alors que `LARAVEL_PATTERNS.md` le prescrit | **P3-D1** |
+| 10 | G4 rend la révocation **obligatoire** au remboursement total, sans quoi les refunds deviennent impossibles | **P4-C2** |
+| 11 | `SECURITE_TELECHARGEMENT.md` périmé et dangereux à copier | **avant P4-C4** |
+
+**ALTERNATIVES REJETÉES** : nommer le gate de tarification « P4-* » (la
+tarification, le checkout et le paiement relèvent de P3 Commerce) ; démarrer la
+couche applicative par `IssueDownloadGrants` ou `DownloadController` (leurs
+prérequis n'existent pas) ; construire `OrderService` avant le noyau de
+tarification (l'allocation entière de la remise serait enfouie dans une
+transaction, bien plus coûteuse à tester) ; consommer le coupon à la création de
+la commande (D-027/5) ; secret dérivé ou outbox chiffrée (Q1) ; token brut
+traversant la queue (Q2) ; retrait silencieux d'un coupon inapplicable (Q3) ;
+fusionner résolution, tentative, streaming, rate limiting et purge dans un
+`DownloadService` unique ; créer la table `events` ou toute logique P5.
+
+**IMPACT** : `DECISIONS_LOG.md` (cette décision), `DigiTrove_Schema_BDD_v1.md`
+(bloc roadmap applicative), `PROGRESS_TRACKER.md` (sections P3-D et P4-C),
+`HANDOFF.md` (état + prochaine tâche + journal), `CLAUDE.md` (état résumé).
+**Aucun fichier PHP, migration, test, route, service, job, event, listener,
+notification, config, script SQL, rôle PostgreSQL ni branche n'est créé par cette
+décision.** Migrations `000001`–`000013` inchangées ; aucune `000014` ;
+`origin/main` intact. **Prochaine tâche : implémenter `P3-D1 — Pricing & Quote
+Kernel` sur la branche `p3-d1-pricing-kernel`.**
+
+---
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]
