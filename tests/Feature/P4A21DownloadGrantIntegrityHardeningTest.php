@@ -136,10 +136,10 @@ function runP4A21Migration(string $database, string $command, string $migration)
 }
 
 it('applies additive migration 000011 without changing the P4-A2 object topology', function () {
-    expect(DB::table('migrations')->count())->toBe(28)
+    expect(DB::table('migrations')->count())->toBe(29)
         ->and(DB::table('migrations')->where('migration', '2026_07_14_000011_harden_download_grants_integrity')->exists())->toBeTrue()
         ->and(Schema::hasTable('download_grants'))->toBeTrue()
-        ->and(Schema::hasTable('download_logs'))->toBeFalse();
+        ->and(Schema::hasTable('licenses'))->toBeFalse();
 
     $functions = [
         'prevent_download_grants_delete',
@@ -258,27 +258,21 @@ it('rejects isolated updated_at falsification while accepting an identical assig
 });
 
 it('allows updated_at to advance only with consumption or revocation and keeps valid FK nullification independent', function () {
+    // Since P4-B, a DIRECT consumption (even with a coherent updated_at) is
+    // refused at trigger depth 1: only the nested G5 UPDATE may consume, and the
+    // P4-B suite proves updated_at then advances strictly with it.
     $consumptionPurchase = createP4A21DirectPurchase();
     $consumption = DownloadGrant::factory()->forOrderItem($consumptionPurchase['item'])->forProductFile($consumptionPurchase['file'])->create();
     $consumptionBefore = DB::table('download_grants')->where('id', $consumption->id)->first();
 
-    expect(DB::table('download_grants')->where('id', $consumption->id)->update([
-        'downloads_count' => 1,
-        'updated_at' => now()->addMinute(),
-    ]))->toBe(1);
-    expect((int) DB::table('download_grants')->where('id', $consumption->id)->value('downloads_count'))->toBe(1)
-        ->and(DB::table('download_grants')->where('id', $consumption->id)->value('updated_at'))->not->toBe($consumptionBefore->updated_at);
-
-    $backwardConsumptionPurchase = createP4A21DirectPurchase();
-    $backwardConsumption = DownloadGrant::factory()->forOrderItem($backwardConsumptionPurchase['item'])->forProductFile($backwardConsumptionPurchase['file'])->create();
     expectP4A21TriggerViolation(
-        fn () => DB::table('download_grants')->where('id', $backwardConsumption->id)->update([
+        fn () => DB::table('download_grants')->where('id', $consumption->id)->update([
             'downloads_count' => 1,
-            'updated_at' => now()->subMinute(),
+            'updated_at' => now()->addMinute(),
         ]),
-        'download_grants updated_at must move strictly forward',
+        'download_grants consumption must originate from the download log executor',
     );
-    expect((int) DB::table('download_grants')->where('id', $backwardConsumption->id)->value('downloads_count'))->toBe(0);
+    expect(DB::table('download_grants')->where('id', $consumption->id)->first())->toEqual($consumptionBefore);
 
     $revocationPurchase = createP4A21DirectPurchase();
     $revocation = DownloadGrant::factory()->forOrderItem($revocationPurchase['item'])->forProductFile($revocationPurchase['file'])->create();
@@ -347,20 +341,21 @@ it('preserves the original G2 quota, expiry and irreversible revocation rules', 
     $purchase = createP4A21DirectPurchase();
     $grant = DownloadGrant::factory()->forOrderItem($purchase['item'])->forProductFile($purchase['file'])->create(['max_downloads' => 2]);
 
-    expect(DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 1]))->toBe(1);
+    // Since P4-B the direct +1 is refused at depth 1; wrong deltas keep their
+    // precise diagnostics, and the P4-B suite proves quota exhaustion through G5.
     expectP4A21TriggerViolation(
-        fn () => DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 0]),
+        fn () => DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => -1]),
         'download_grants downloads_count may only increase by exactly one',
     );
     expectP4A21TriggerViolation(
         fn () => DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 3]),
         'download_grants downloads_count may only increase by exactly one',
     );
-    expect(DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 2]))->toBe(1);
     expectP4A21TriggerViolation(
-        fn () => DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 3]),
-        'download_grants quota is exhausted',
+        fn () => DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 1]),
+        'download_grants consumption must originate from the download log executor',
     );
+    expect((int) DB::table('download_grants')->where('id', $grant->id)->value('downloads_count'))->toBe(0);
 
     $expiredPurchase = createP4A21DirectPurchase();
     $expired = DownloadGrant::factory()->forOrderItem($expiredPurchase['item'])->forProductFile($expiredPurchase['file'])->expired()->create();

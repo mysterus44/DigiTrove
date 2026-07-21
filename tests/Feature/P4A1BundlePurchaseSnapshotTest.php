@@ -85,7 +85,7 @@ function snapshotP4A1(OrderItem $item, Product $component): OrderItemBundleCompo
 
 it('applies migration 000009 with the exact physical schema, three functions and three triggers', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000009_create_order_item_bundle_components_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(28)
+        ->and(DB::table('migrations')->count())->toBe(29)
         ->and(Schema::hasTable('order_item_bundle_components'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')
@@ -574,7 +574,7 @@ it('adds no side effects to P4-A0, the pivot, order items or future gates', func
     expect(DB::table('pg_proc')->where('proname', 'enforce_product_file_content_immutability')->count())->toBe(1)
         ->and(DB::table('pg_trigger')->where('tgname', 'product_files_enforce_content_immutability_trigger')->count())->toBe(1);
 
-    foreach (['download_logs', 'licenses'] as $table) {
+    foreach (['licenses'] as $table) {
         expect(Schema::hasTable($table))->toBeFalse("Unexpected future table exists: {$table}");
     }
 });

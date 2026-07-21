@@ -12,7 +12,7 @@ SITE-00 PREVIEW     : ██████████  100%
 P1 IDENTITÉ         : ██████████  100%
 P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
-P4 LIVRAISON        : █████████░  P4-A* + P4-B0 mergés (PR #15 → 6d23e546) ; P4-B BLOQUÉ (D-029.6), à reprendre
+P4 LIVRAISON        : █████████░  P4-A* + P4-B0 mergés ; P4-B ADAPTÉ après P4-B0 (000013, G5 SECURITY DEFINER) — en attente de merge
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
@@ -49,9 +49,15 @@ P7 BLOG & SEO       : ░░░░░░░░░░  0%
 > provisioning cluster, double connexion, harness dual-identité, CI durcie, 13
 > tests sous le vrai rôle runtime. Validation post-merge : 28 migrations, P4-B0
 > 13/84, suite 171/2385, Pint 117, provisioning idempotent, identités
-> migration/runtime prouvées, zéro résidu. Prochaine étape : **reprendre P4-B**
-> (rebase, renumérotation `000013`, G5 `SECURITY DEFINER`, autorité `current_user`
-> dans G2).
+> migration/runtime prouvées, zéro résidu.
+> **P4-B est désormais ADAPTÉ après P4-B0 — EN ATTENTE DE MERGE** : stable
+> intégrée par merge `fca10d9` (jamais rebase), migration renumérotée `000013`,
+> G5 `SECURITY DEFINER` possédée par `digitrove_download_executor` (search_path
+> épinglé, objets qualifiés), autorité de G2 par `current_user` (profondeur en
+> défense secondaire), ACL `download_logs` normalisées. Un trigger forgé même par
+> le propriétaire superuser est refusé (23514) ; le runtime est arrêté en 42501.
+> Validation : 29 migrations, P4-B 19/603, suite 190/2975, Pint 121. Prochaine
+> étape : **review + merge de la PR P4-B**.
 > Point d'entrée Claude Code `CLAUDE.md` créé (miroir d'`AGENTS.md`, D-023).
 
 ---
@@ -364,7 +370,8 @@ route, job, listener) créée. P5 non démarré.
 | P4-A2 tests PostgreSQL (token, autorisation snapshot bundle, quota, concurrence 2 connexions, refund total différé) | ✅ DONE — 18 tests / 315 assertions ; suite complète 151/2188 (1882 − 9 adaptations + 315), Pint 110, rollback isolé `000010` vert |
 | **P4-A2.1** `p4-a2-1-grant-integrity-hardening` — migration additive `000011`, remplacement G2/G3 sans modifier `000010` | ✅ DONE — **mergé PR #14 → `2c25e2a`** ; bénéficiaire G3 null-safe ; `updated_at` G2 lié aux transitions ; 7/113, suite 158/2301, Pint 112, rollback exact vert |
 | Plan P4-B + décision D-029.5 (1A/2A/3A + R1A/R2A/R3A, schéma exact, tentative/Range/HEAD/completed, G5/G6, rollback, tests/threat model) | ✅ DONE — validé par KingKouda |
-| **P4-B** `p4-b-download-logs` (`8cf24a8`) — migration `000012` `download_logs` G5–G6 + modèle/factory/tests | ⚠️ IMPLÉMENTÉ (19/599, suite 177/2885, Pint 116) mais **BLOQUÉ AU MERGE** — audit offensif : autorité `pg_trigger_depth() > 1` de G2 contournable (trigger temporaire/permanent → +1 sans log). PR NON ouverte |
+| **P4-B** `p4-b-download-logs` (`8cf24a8`) — migration `000012` `download_logs` G5–G6 + modèle/factory/tests | ⚠️ 1ʳᵉ version BLOQUÉE — audit offensif : autorité `pg_trigger_depth() > 1` de G2 contournable (trigger temporaire/permanent → +1 sans log) |
+| **P4-B adapté après P4-B0** — merge de reprise `fca10d9` (stable `d7c53cf`, sans rebase) · migration renumérotée **`000013`** · préconditions fail-closed · **G5 `SECURITY DEFINER` possédée par `digitrove_download_executor`** (search_path épinglé, objets qualifiés) · **autorité G2 par `current_user`** (profondeur secondaire) · ACL `download_logs` normalisées · grant de verrou minimal `UPDATE (updated_at) ON orders` à l'exécuteur | ✅ **ADAPTÉ — EN ATTENTE DE MERGE** ; 29 migrations, P4-B 19/603, suite complète 190/2975, Pint 121 ; trigger forgé par le **propriétaire superuser** refusé en 23514 et runtime en 42501 ; rollback vide restaure G2 post-`000012` à l'octet près, rollback non vide refusé ; aucun endpoint/streaming/P5 |
 | Audit offensif P4-B (sondes trigger temporaire/permanent, rôle superuser) | ✅ DONE — vulnérabilité confirmée ; verdict ANOMALIE ; option A renforcée validée |
 | Plan P4-B0 + décision D-029.6 (3 rôles PostgreSQL, G5 `SECURITY DEFINER`, identité effective dans G2, fermeture TEMP/CREATE/EXECUTE, double connexion, provisioning) | ✅ DONE — validé par KingKouda |
 | **P4-B0** `p4-b0-postgresql-runtime-privileges` — migration ACL `000012_harden_database_runtime_privileges` + `docker/postgres/provision-runtime-roles.sql` + `db:provision-runtime-roles` + double connexion + harness dual-identité + CI durcie | ✅ **MERGÉ PR #15 → `6d23e546`** (parents `a3eac5e` + `9b69f192`) ; validation post-merge : 13 tests / 84 assertions, suite complète 171/2385, Pint 117, 28 migrations, provisioning idempotent, identités migration/runtime prouvées, 26 fonctions trigger sans EXECUTE runtime, défauts fonctions globaux (ns=0), rollback ACL sans réouverture, zéro résidu |

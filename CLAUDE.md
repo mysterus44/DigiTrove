@@ -55,8 +55,8 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
   **P4-A2.1 hardening `download_grants` (`000011`, bénéficiaire G3 null-safe et
   `updated_at` G2 lié au cycle de vie) MERGÉ (PR #14 → `2c25e2a`)** → **P4-B0
   frontière de privilèges runtime (`000012` ACL, D-029.6) MERGÉ (PR #15 →
-  `6d23e546`)** → **P4-B `download_logs` (à renuméroter `000013`, implémenté
-  `8cf24a8` mais BLOQUÉ — à reprendre)** ;
+  `6d23e546`)** → **P4-B `download_logs` (`000013`) ADAPTÉ APRÈS P4-B0 — EN
+  ATTENTE DE MERGE** ;
   `licenses` exclu de P4. Une migration, une branche, une frontière de rollback par
   gate ; migration N+1 jamais créée avant merge du gate N. Détail dans le bloc P4 de
   `DigiTrove_Schema_BDD_v1.md`.
@@ -97,11 +97,25 @@ l'exécuteur exige `SELECT` en plus de `UPDATE` ; pour les default privileges de
 FONCTIONS, la forme GLOBALE `ALTER DEFAULT PRIVILEGES FOR ROLE r REVOKE EXECUTE ON
 FUNCTIONS FROM PUBLIC` fonctionne (la forme `IN SCHEMA public` non), elle est propre
 au rôle créateur (migrateur ET exécuteur via `SET ROLE`) — la migration `000012`
-les pose, donc G5 naîtra verrouillée mais devra recevoir `GRANT EXECUTE … TO
-digitrove` pour attacher son trigger. **P4-B sera renuméroté `000013`** après merge
-de P4-B0. Prochaine
-étape : merger P4-B0, puis rebaser/corriger P4-B. La branche `8cf24a8` reste
-inchangée ; sa PR ne s'ouvre pas avant P4-B0. P5 non démarré.
+les pose, donc G5 naît verrouillée mais reçoit `GRANT EXECUTE … TO digitrove` le
+temps d'attacher son trigger.
+
+**P4-B est ADAPTÉ APRÈS P4-B0 — EN ATTENTE DE MERGE.** La stable `d7c53cf` a été
+intégrée dans `p4-b-download-logs` par **merge** `fca10d9` (jamais rebase, aucun
+force-push), la migration renumérotée **`000013`** (ordre `000011` → `000012`
+P4-B0 → `000013` P4-B ; 29 migrations). Le contrat D-029.5 est intact (15
+colonnes, CHECK, tentative, Range/retries, HEAD hors gate, `completed` = remise au
+mécanisme, rétention, HMAC IP versionné). Durcissement : préconditions
+fail-closed, **G5 `SECURITY DEFINER` possédée par `digitrove_download_executor`**
+(search_path épinglé, objets qualifiés, sans EXECUTE PUBLIC/runtime), **autorité
+de G2 par `current_user = digitrove_download_executor`** (profondeur en défense
+secondaire), ACL `download_logs` normalisées, et `UPDATE (updated_at) ON orders`
+accordé à l'exécuteur — privilège minimal exigé par `FOR UPDATE OF orders`
+(SELECT seul refusé, mesuré). **La vulnérabilité est fermée** : un trigger forgé
+même par le PROPRIÉTAIRE superuser est refusé en 23514 ; le runtime est arrêté en
+42501. Validation : P4-B 19/603, suite complète 190/2975, Pint 121, rollback vide
+restaurant G2 post-`000012` à l'octet près et rollback non vide refusé. Prochaine
+étape : **review + merge de la PR P4-B**. P5 non démarré.
 
 ## 🔄 EN FIN DE TÂCHE
 

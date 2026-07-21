@@ -1590,5 +1590,88 @@ pour l'attachement du trigger, autorité `current_user = digitrove_download_exec
 dans G2, `pg_trigger_depth()` en défense secondaire, tests de contournement sous
 runtime). Aucune décision nouvelle.
 
+**Note d'exécution P4-B après P4-B0 (2026-07-20)** — aucune décision nouvelle,
+application conjointe de D-029.5 (contrat Download Logs) et D-029.6 (frontière de
+privilèges). **`P4-B ADAPTÉ APRÈS P4-B0 — EN ATTENTE DE MERGE`**, `P4-B0 TERMINÉ
+ET MERGÉ` conservé.
+
+*Intégration* : la stable `d7c53cf` a été intégrée dans `p4-b-download-logs` par
+**merge** `fca10d9` (parents `8cf24a8` + `d7c53cf`) — jamais de rebase, aucun
+force-push, aucun commit publié amendé. Conflits limités aux 5 documents (résolus
+en conservant la version stable post-P4-B0) ; les 11 suites historiques ont
+fusionné automatiquement ; migrations `000001`–`000011` identiques à la stable.
+
+*Renumérotation* : `git mv` de `000012_create_download_logs_table.php` vers
+**`000013_create_download_logs_table.php`**. Ordre final `000011` P4-A2.1 →
+`000012` P4-B0 (ACL) → `000013` P4-B ; **29 migrations** ; aucune seconde
+`000012`.
+
+*Préconditions fail-closed de `000013`* : rôles `digitrove_runtime` et
+`digitrove_download_executor` présents, exécuteur NOLOGIN non-superuser, runtime
+non-superuser sans membership vers migrateur/exécuteur, migrateur détenant le
+chemin `SET ROLE` vers l'exécuteur, runtime sans TEMP, sans CREATE sur `public` et
+sans UPDATE sur `downloads_count`, défauts globaux de fonctions présents pour les
+deux rôles. Aucune table, fonction, trigger ni index n'est créé si la frontière
+P4-B0 n'est pas en force ; `000013` ne corrige jamais P4-B0.
+
+*G5 sécurisée* : `enforce_download_logs_integrity` devient `SECURITY DEFINER`
+**possédée par `digitrove_download_executor`**, créée par la danse prouvée (GRANT
+CREATE temporaire → `SET ROLE` exécuteur → `CREATE FUNCTION` → `GRANT EXECUTE` au
+migrateur juste le temps d'attacher le trigger → `RESET ROLE` → `REVOKE CREATE` →
+`CREATE TRIGGER` → retour sous l'exécuteur pour révoquer EXECUTE au migrateur,
+à PUBLIC et au runtime). `search_path` épinglé `pg_catalog, public, pg_temp`,
+objets qualifiés `public.orders`/`public.order_items`/`public.download_grants`/
+`public.product_files`. ACL finale mesurée :
+`{digitrove_download_executor=X/digitrove_download_executor}` — ni PUBLIC ni
+runtime ; l'exécuteur ne conserve aucun CREATE. G6 reste possédée par le
+migrateur, SECURITY INVOKER, sans EXECUTE PUBLIC/runtime (défauts globaux), et son
+trigger se déclenche quand même.
+
+*Autorité G2 non forgeable* : l'exact `downloads_count + 1` n'est accepté que si
+**`current_user = 'digitrove_download_executor'` ET `pg_trigger_depth() > 1`** ;
+l'identité effective est l'autorité principale, la profondeur une simple défense
+secondaire (l'ancienne condition `pg_trigger_depth() <= 1` a disparu). Toutes les
+protections P4-A2/P4-A2.1 sont conservées verbatim. **Preuve décisive** : un
+trigger forgé par le **propriétaire superuser** à profondeur 2 est refusé en
+`23514` — l'ancienne G2 l'aurait accepté ; le runtime est arrêté encore plus tôt,
+en `42501`, sans jamais atteindre G2. Aucun GUC secret, marqueur de session ni
+quatrième rôle n'a été introduit.
+
+*Finding d'implémentation (mesuré, PG 16.14)* : `SELECT … FOR UPDATE OF orders`
+exige un **privilège de verrou** — un GRANT `SELECT` seul est refusé, et même
+`FOR KEY SHARE` l'est ; un **UPDATE de colonne** suffit. La migration accorde donc
+`GRANT UPDATE (updated_at) ON orders TO digitrove_download_executor`, le
+privilège minimal permettant à G5 de tenir l'ordre de verrouillage Order → Grant.
+G5 n'écrit jamais `orders`, et le trigger d'immutabilité des commandes reste en
+défense.
+
+*ACL `download_logs`* : PUBLIC révoqué ; runtime `SELECT, INSERT, UPDATE, DELETE`
++ `USAGE, SELECT` sur la séquence, **sans** TRIGGER, TRUNCATE, REFERENCES ni
+ownership ; l'exécuteur ne reçoit **rien** sur la table (G5 ne lit/écrit que
+grants, orders, order_items et product_files).
+
+*Identités de test* : la suite P4-B tourne sous `digitrove_runtime` pour les
+chemins métier et offensifs. Les sondes internes qui doivent atteindre G2/G1
+seedent leur propre grant dans une **transaction propriétaire** annulée — une
+connexion séparée ne voit pas la transaction de test du runtime — ce qui préserve
+la double couverture : ACL sous runtime (42501) et triggers sous propriétaire
+(23514). Le test de rollback vide s'arrête à `000012` (la frontière que `down()`
+doit restaurer).
+
+*Rollbacks* : table non vide → refus fail-closed avant toute destruction (table,
+lignes, G5/G6, G2 version P4-B, ACL et compteur conservés). Table vide → triggers
+puis G6 supprimés par le migrateur, **G5 supprimée sous l'identité exécuteur**
+(seul son propriétaire le peut), grant de verrou révoqué, **G2 restaurée OCTET
+POUR OCTET à son état post-`000012`**, table et séquence supprimées ; `000012`
+reste appliquée et la frontière P4-B0 intacte (TEMP/CREATE/EXECUTE toujours
+fermés).
+
+*Validation réelle* : 29 migrations ; `download_logs` à 15 colonnes ; 6 fonctions
+/ 7 triggers du domaine P4 ; G4 toujours différé ; G2 unique et non dupliquée ;
+suite **P4-B 19 tests / 603 assertions** ; **suite complète 190 / 2975** ;
+**Pint 121** ; `git diff --check` propre ; zéro base temporaire résiduelle ; aucun
+objet P5. Aucun endpoint, route, contrôleur, service, streaming, listener, job ni
+e-mail créé.
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

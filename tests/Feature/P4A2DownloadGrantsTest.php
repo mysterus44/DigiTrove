@@ -122,7 +122,7 @@ function createP4A2BundlePurchase(bool $withSnapshot = true): array
 
 it('applies migration 000010 with the exact schema, four functions and five triggers', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000010_create_download_grants_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(28)
+        ->and(DB::table('migrations')->count())->toBe(29)
         ->and(Schema::hasTable('download_grants'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')
@@ -245,9 +245,9 @@ it('applies migration 000010 with the exact schema, four functions and five trig
         ->and($orderTrigger->tgdeferrable)->toBeTrue()
         ->and($orderTrigger->tginitdeferred)->toBeTrue();
 
-    // P4-A2 never touches refunds, and P4-B does not exist yet.
+    // P4-A2 never touches refunds; `licenses` stays excluded from P4 (D-029).
     expect(DB::table('pg_trigger')->whereRaw("tgrelid = 'refunds'::regclass")->where('tgisinternal', false)->where('tgname', 'like', '%download%')->count())->toBe(0)
-        ->and(Schema::hasTable('download_logs'))->toBeFalse();
+        ->and(Schema::hasTable('licenses'))->toBeFalse();
 });
 
 it('issues a grant on a deliverable direct purchase and stores only the digest', function () {
@@ -509,32 +509,29 @@ it('freezes identity, token and bounds while allowing an identical assignment', 
         ->and(DB::table('download_grants')->where('id', $grant->id)->first())->toEqual($original);
 });
 
-it('bounds the consumption counter structurally without consuming anything in P4-A2', function () {
+it('bounds the consumption counter structurally and refuses every direct write since P4-B', function () {
     $purchase = createP4A2DirectPurchase();
     $grant = DownloadGrant::factory()->forOrderItem($purchase['item'])->forProductFile($purchase['file'])->create(['max_downloads' => 2]);
 
-    // Structural +1 steps (P4-B will pair these with a log, atomically).
-    expect(DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 1]))->toBe(1)
-        ->and(DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 2]))->toBe(1);
-
-    // Quota exhausted: G2 refuses first (it runs BEFORE the row CHECK, which stays
-    // as defence in depth), so the counter can never exceed max_downloads.
+    // Since P4-B, consumption is REAL and paired with a download log: the exact
+    // +1 is only accepted from the nested G5 UPDATE. Every direct write path is
+    // refused; the P4-B suite proves the nested path and quota exhaustion.
     expectP4A2TriggerViolation(
-        fn () => DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 3]),
-        'download_grants quota is exhausted',
+        fn () => DB::table('download_grants')->where('id', $grant->id)->update(['downloads_count' => 1]),
+        'download_grants consumption must originate from the download log executor',
     );
+    expect((int) DB::table('download_grants')->where('id', $grant->id)->value('downloads_count'))->toBe(0);
 
     $fresh = createP4A2DirectPurchase();
     $second = DownloadGrant::factory()->forOrderItem($fresh['item'])->forProductFile($fresh['file'])->create(['max_downloads' => 3]);
 
-    // Never backwards, never by more than one.
+    // Never backwards, never by more than one (still reported precisely).
     expectP4A2TriggerViolation(
         fn () => DB::table('download_grants')->where('id', $second->id)->update(['downloads_count' => 2]),
         'download_grants downloads_count may only increase by exactly one',
     );
-    DB::table('download_grants')->where('id', $second->id)->update(['downloads_count' => 1]);
     expectP4A2TriggerViolation(
-        fn () => DB::table('download_grants')->where('id', $second->id)->update(['downloads_count' => 0]),
+        fn () => DB::table('download_grants')->where('id', $second->id)->update(['downloads_count' => -1]),
         'download_grants downloads_count may only increase by exactly one',
     );
 
