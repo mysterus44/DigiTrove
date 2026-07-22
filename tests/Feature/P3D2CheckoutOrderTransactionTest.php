@@ -900,6 +900,108 @@ it('gives up cleanly after three order number collisions', function () {
 });
 
 // ---------------------------------------------------------------------------
+// P3-D2.1 — a spoofed message is never a PostgreSQL classification
+// ---------------------------------------------------------------------------
+
+/**
+ * A generator that throws a plain application exception whose message contains
+ * a constraint name. Nothing about it is a database error.
+ */
+function p3d21SpoofingGenerator(string $constraintName): OrderNumberGenerator
+{
+    return new class($constraintName) extends OrderNumberGenerator
+    {
+        public int $calls = 0;
+
+        public function __construct(private readonly string $constraintName) {}
+
+        public function generate(CarbonImmutable $at): string
+        {
+            $this->calls++;
+
+            if ($this->calls === 1) {
+                throw new RuntimeException(
+                    "duplicate key value violates unique constraint \"{$this->constraintName}\""
+                );
+            }
+
+            return 'DGT-'.$at->format('Y').'-SPOOFED234';
+        }
+    };
+}
+
+it('never retries on an application exception that merely names the order number constraint', function () {
+    $user = User::factory()->create();
+    $cart = p3d2Cart([['product' => p3d2Product(5_000)]], user: $user);
+
+    app()->instance(OrderNumberGenerator::class, p3d21SpoofingGenerator('orders_order_number_unique'));
+
+    p3d2ExpectRefusal(
+        fn () => p3d2Service()->checkout($user, $cart->public_id, 'XOF', p3d2Key('H')),
+        CheckoutRefusalReason::IntegrityFailure,
+    );
+
+    // The decisive assertion: a single generation. A substring match would have
+    // mistaken this for a real 23505 collision and generated a second number.
+    expect(app(OrderNumberGenerator::class)->calls)->toBe(1)
+        ->and(Order::count())->toBe(0)
+        ->and($cart->fresh()->status)->toBe(CartStatus::Active);
+
+    p3d2AssertNoDownstreamWrites();
+});
+
+it('never translates a spoofed constraint message into a business refusal', function (string $constraint) {
+    $user = User::factory()->create();
+    $cart = p3d2Cart([['product' => p3d2Product(5_000)]], user: $user);
+
+    app()->instance(OrderNumberGenerator::class, p3d21SpoofingGenerator($constraint));
+
+    p3d2ExpectRefusal(
+        fn () => p3d2Service()->checkout($user, $cart->public_id, 'XOF', p3d2Key('I')),
+        CheckoutRefusalReason::IntegrityFailure,
+    );
+
+    expect(Order::count())->toBe(0)
+        ->and($cart->fresh()->status)->toBe(CartStatus::Active);
+})->with([['orders_cart_id_unique'], ['orders_checkout_idempotency_hash_unique']]);
+
+it('keeps every refusal message free of sqlstate, constraint name and sql', function () {
+    $user = User::factory()->create();
+    $cart = p3d2Cart([['product' => p3d2Product(5_000)]], user: $user);
+
+    app()->instance(OrderNumberGenerator::class, p3d21SpoofingGenerator('orders_cart_id_unique'));
+
+    try {
+        p3d2Service()->checkout($user, $cart->public_id, 'XOF', p3d2Key('J'));
+    } catch (CheckoutException $exception) {
+        expect($exception->getMessage())->not->toContain('23505')
+            ->and($exception->getMessage())->not->toContain('orders_cart_id_unique')
+            ->and($exception->getMessage())->not->toContain('SQLSTATE')
+            ->and($exception->getMessage())->not->toContain('insert into');
+    }
+});
+
+it('still refuses a real duplicate idempotency digest as a conflict', function () {
+    // Exercises translateWriteFailure's idempotency branch with a REAL 23505:
+    // an order already holds the digest, and its cart is not this one, so the
+    // replay guard cannot short-circuit before the insert.
+    $user = User::factory()->create();
+    $first = p3d2Cart([['product' => p3d2Product(5_000)]], user: $user);
+    $second = p3d2Cart([['product' => p3d2Product(5_000)]], user: $user);
+    $key = p3d2Key('K');
+
+    p3d2Service()->checkout($user, $first->public_id, 'XOF', $key);
+
+    p3d2ExpectRefusal(
+        fn () => p3d2Service()->checkout($user, $second->public_id, 'XOF', $key),
+        CheckoutRefusalReason::IdempotencyConflict,
+    );
+
+    expect(Order::count())->toBe(1)
+        ->and($second->fresh()->status)->toBe(CartStatus::Active);
+});
+
+// ---------------------------------------------------------------------------
 // Real concurrency (two PostgreSQL connections)
 // ---------------------------------------------------------------------------
 
