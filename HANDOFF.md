@@ -8,7 +8,18 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-21
-- **Branche git active** : `p0-foundations-laravel13` (stable à `0e18d69d`)
+- **Branche git active** : `p0-foundations-laravel13` (stable à `0854a393`)
+- **P3-D2 TERMINÉ, MERGÉ ET VALIDÉ** via
+  [PR #19](https://github.com/mysterus44/DigiTrove/pull/19), head `ef758bbb`,
+  merge `4c691864bb2c87d97fbed0091fd9974a259a97b8` (parents `5d07abad` +
+  `ef758bbb`), **CI #22 verte**, 13 fichiers, aucune migration. D-031 et D-032.
+- **Hotfix temporel P3-D1 TERMINÉ ET MERGÉ** via
+  [PR #20](https://github.com/mysterus44/DigiTrove/pull/20), head `0d6e95d9`,
+  merge `0854a3933729c6ce4488b9d51e69a1983afaa450` (parents `4c691864` +
+  `0d6e95d9`), **CI #23 verte**, **1 fichier de test** (+10/−1) : un test P3-D1
+  **préexistant** mélangeait une fenêtre de coupon relative à `now()` avec une
+  référence figée au 2026-07-21 12:00 et est devenu rouge au changement de date.
+  **Aucune régression métier P3-D2**, aucun code métier touché.
 - **P3-D1 TERMINÉ ET MERGÉ** via
   [PR #17](https://github.com/mysterus44/DigiTrove/pull/17), merge
   `78f475e750b0e060fd38c44d6733844807683ff9` (parents `ba48cce1` + `95ab5627`),
@@ -307,12 +318,46 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 Revue et merge de `P3-D2 — Checkout Order Transaction`
+## 🎯 `P3-D3 — Payment Initiation` — branche future `p3-d3-payment-initiation`
 
-**P3-D2 est IMPLÉMENTÉ** sur `p3-d2-checkout-order-transaction` (depuis
-`5d07abad`), **en attente de merge**. D-031 consignée : **Q1 = C** (composant de
-bundle soft-deleted ⇒ checkout refusé, aucun snapshot partiel) et **Q2 = B**
-(Cart → `converted` dans la même transaction). **Aucune migration.**
+**P3-D2 EST TERMINÉ, MERGÉ ET VALIDÉ** — [PR #19](https://github.com/mysterus44/DigiTrove/pull/19),
+head `ef758bbb`, merge `4c691864`, CI #22 verte. Le **hotfix temporel P3-D1** est
+également fermé — [PR #20](https://github.com/mysterus44/DigiTrove/pull/20),
+head `0d6e95d9`, merge `0854a393`, CI #23 verte : il corrige un test P3-D1
+**préexistant** qui mélangeait une fenêtre de coupon relative à `now()` avec une
+référence figée, **sans aucune régression métier P3-D2**.
+
+Stable avant le commit documentaire : **`0854a3933729c6ce4488b9d51e69a1983afaa450`**.
+Validation post-merge : P3-D1 **48/167**, P3-D2 **66/323**, P4-B **20/620**,
+suite complète **399/3599**, Pint **138**, **29 migrations**, aucune `000014`.
+
+**Le prochain gate autorisé est `P3-D3 — Payment Initiation`, non commencé.**
+
+Invariants à respecter en P3-D3 :
+- **l'Order et ses `order_items` sont la source autoritative** — le panier est
+  `converted` et peut avoir changé depuis ; ne jamais relire `carts` pour un
+  montant ;
+- **aucune donnée tarifaire venant du client n'est acceptée** ;
+- une **commande gratuite reste `pending`** : atteindre `paid` est P3-D4 ;
+- **aucun coupon n'est consommé au checkout** ; `coupon_redemptions` et
+  `coupons.redemptions_count` n'arrivent qu'à la **confirmation serveur du
+  paiement** (P3-D4), sous verrou. Une commande `pending` ne réserve rien ;
+- le **TTL `pending` est validé côté serveur** (D-032) et un **rejeu idempotent
+  conserve l'expiration d'origine** ;
+- la **clé d'idempotence brute n'est jamais persistée** (digest SHA-256 seul) ;
+- les collisions d'`order_number` passent par un **savepoint PostgreSQL** — un
+  retry nu ne recevrait que `25P02` ;
+- le **Cart devient `converted` dans la transaction de checkout** ;
+- **aucun Payment**, **aucun événement `OrderPaid`**, **aucun DownloadGrant**
+  n'existe encore ;
+- ⚠️ tout nouveau fichier sous `app/Services` impose d'élargir explicitement
+  `P4B_ALLOWED_SERVICE_FILES`.
+
+### Historique : ce qu'a livré P3-D2
+
+D-031 : **Q1 = C** (composant de bundle soft-deleted ⇒ checkout refusé, aucun
+snapshot partiel) et **Q2 = B** (Cart → `converted` dans la même transaction).
+**Aucune migration.**
 
 3 classes : `App\Services\Checkout\{OrderService, CheckoutException,
 CheckoutRefusalReason}`. Verrouillage `carts` → `products` du panier →
@@ -519,6 +564,39 @@ aucun push direct sur `main`.
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-22 — Claude Code (clôture post-merge P3-D2 + hotfix temporel P3-D1)
+- **Deux merges prouvés.** P3-D2 : `4c691864`, parents `5d07abad` + `ef758bbb`
+  (CI #22). Hotfix : `0854a393`, parents `4c691864` + `0d6e95d9` (CI #23). Les
+  trois SHA confirmés ancêtres de la stable — aucun squash, aucun rebase, aucun
+  commit fonctionnel perdu, le hotfix bien **postérieur** au merge P3-D2.
+- **Synchronisation** : le `git pull --ff-only` a échoué sur un timeout réseau,
+  mais le `git fetch` initial avait déjà rapatrié les objets ; fast-forward
+  effectué hors réseau via `git merge --ff-only origin/…`, qui ne peut par
+  construction créer aucun commit de merge. Stable locale = distante =
+  `0854a393`, **0/0**.
+- **Périmètres** : P3-D2 = **13 fichiers**, aucune migration, aucune route,
+  contrôleur, Payment, CouponRedemption, event, listener, job, DownloadGrant,
+  P3-D3, P4-C ni P5. Hotfix = **exclusivement**
+  `tests/Feature/P3D1PricingKernelDatabaseTest.php` : référence figée conservée
+  et déclarée **avant** le coupon, `starts_at`/`ends_at` centrés sur elle, plus
+  aucune dépendance à `now()`, assertions de déterminisme inchangées.
+- **Validations en isolation, séquentielles** : test temporel ciblé **1/2**,
+  P3-D1 **48/167**, P3-D2 **66/323**, P4-B **20/620**, suite complète
+  **399/3599**, Pint **138**, `git diff --check` propre, **29 migrations**,
+  aucune `000014`, bases = `digitrove` + `digitrove_testing` seulement, worktree
+  inchangé après les tests. Aucun `CouponNotStarted`.
+- **Concurrence P3-D2 confirmée** sous les vraies identités : seed `digitrove`,
+  A et B `digitrove_runtime`, `TEMP` refusé pour A et B ; soft-delete concurrent
+  d'un composant **`55P03`**, deux checkouts du même Cart **`55P03`**, seconde
+  Order du même Cart **`23505`** sur `orders_cart_id_unique`. **Aucun `42501`**,
+  aucun élargissement d'ACL.
+- **Leçon consignée** : une suite mélangeant une factory relative à `now()` et
+  une référence figée porte la même bombe à retardement. Une vérification ciblée
+  des suites P3A/P3B/P3C reste souhaitable avant P3-D3.
+- Aucun code métier ni test modifié pendant cette clôture ; seuls les documents
+  de suivi. Aucun P3-D3 commencé.
+  Laisse à : **planifier `P3-D3 — Payment Initiation`**.
 
 ### 2026-07-21 — Claude Code (finalisation P3-D2 avant publication, D-032)
 - Garde-fous : branche `p3-d2-checkout-order-transaction` à `c90c3383`, worktree

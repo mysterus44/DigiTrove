@@ -206,8 +206,10 @@ ne déclare que la page d'accueil, `OrderService` / `OrderPaid` /
 aucune politique métier modifiée, branches locales supprimées et distantes
 conservées, `origin/main` intact.
 
-- **`P3-D2 — Checkout Order Transaction` ✅ IMPLÉMENTÉ — EN ATTENTE DE MERGE**
-  (branche `p3-d2-checkout-order-transaction`, **D-031**, aucune migration) :
+- **`P3-D2 — Checkout Order Transaction` ✅ TERMINÉ, MERGÉ ET VALIDÉ** via
+  [PR #19](https://github.com/mysterus44/DigiTrove/pull/19), head `ef758bbb`,
+  merge `4c691864`, CI #22 verte, 13 fichiers
+  (**D-031** + **D-032**, aucune migration) :
   3 classes `App\Services\Checkout\{OrderService, CheckoutException,
   CheckoutRefusalReason}`. Transaction unique Order `pending` + `order_items` +
   snapshot bundle exhaustif + Cart → `converted`.
@@ -228,11 +230,32 @@ conservées, `origin/main` intact.
   **savepoint** (transaction Laravel imbriquée) — sans lui, un `23505` avorte
   toute la transaction et le retry ne peut recevoir que **`25P02`**, prouvé
   empiriquement. Primitive `App\Support\OrderNumberGenerator` extraite (hors
-  `app/Services`, allowlist P4-B inchangée). P3-D2 **66/308**, P4-B **20/619**,
-  suite complète **399/3584**, Pint **138**.
+  `app/Services`, allowlist P4-B inchangée).
+- **Hotfix temporel P3-D1** ✅ mergé via
+  [PR #20](https://github.com/mysterus44/DigiTrove/pull/20), head `0d6e95d9`,
+  merge `0854a393`, CI #23 verte : un test P3-D1 **préexistant** mélangeait une
+  fenêtre de coupon relative à `now()` avec une référence figée au
+  2026-07-21 12:00 et est devenu rouge au changement de date.
+  **Aucune régression métier P3-D2.** Un seul fichier de test corrigé.
 
-**PROCHAINE TÂCHE : revue et merge de la PR `P3-D2`**, puis clôture post-merge.
-**Ne pas commencer P3-D3** avant ce merge. Deux jugements conservateurs hérités
+**`P3-D1`, `P3-D1.1` ET `P3-D2` SONT TERMINÉS, MERGÉS ET VALIDÉS.** Validation
+post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
+**20/620**, suite complète **399/3599**, Pint **138**, **29 migrations**, aucune
+`000014`. Concurrence prouvée sous les vraies identités (seed `digitrove`, A/B
+`digitrove_runtime`, `TEMP` refusé) : `55P03` ×2, `23505` sur
+`orders_cart_id_unique`, aucun `42501`.
+
+**PROCHAINE TÂCHE : `P3-D3 — Payment Initiation`** (branche future
+`p3-d3-payment-initiation`) — **non commencée**. Invariants hérités : l'Order et
+ses `order_items` sont la **source autoritative** (le panier est `converted` et
+peut avoir changé) ; aucune donnée tarifaire client n'est acceptée ; une commande
+gratuite reste `pending` ; **aucun coupon n'est consommé au checkout** —
+`coupon_redemptions` et `redemptions_count` n'arrivent qu'à la confirmation
+serveur du paiement (P3-D4) ; le TTL `pending` est validé côté serveur (D-032) et
+un rejeu conserve l'expiration d'origine ; la clé d'idempotence brute n'est
+jamais persistée ; les collisions d'`order_number` passent par un **savepoint**
+PostgreSQL. Aucun Payment, aucun `OrderPaid`, aucun DownloadGrant n'existe encore.
+Deux jugements conservateurs hérités
 de P3-D1 restent en vigueur : seul `products.status = 'published'` est vendable ;
 `min_order_minor` est un plancher mesuré sur le panier entier. P5 non démarré.
 
