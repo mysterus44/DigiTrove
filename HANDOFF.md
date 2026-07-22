@@ -318,7 +318,33 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 `P3-D3 — Payment Initiation` — branche future `p3-d3-payment-initiation`
+## 🎯 Revue et merge de `P3-D2.1` — puis seulement `P3-D3`
+
+🚧 **`P3-D3` EST BLOQUÉ** jusqu'au merge et au CI vert de **`P3-D2.1 — PostgreSQL
+Constraint Classification Hardening`** (branche
+`p3-d2-1-postgresql-constraint-hardening`, **aucune migration**).
+
+**P3-D2 reste fonctionnellement terminé** : aucune régression métier n'a été
+observée. Le défaut est **défensif** — `OrderService` classait certaines erreurs
+sur la seule présence d'un nom de contrainte dans le message d'un `Throwable`,
+sans exiger le SQLSTATE PostgreSQL `23505`. **Preuve RED** : une exception
+applicative dont le message contenait `orders_order_number_unique` déclenchait un
+**retry injustifié** (générateur appelé 2 fois au lieu d'1) ; des messages
+usurpant `orders_cart_id_unique` / `orders_checkout_idempotency_hash_unique`
+étaient traduits à tort en `CartAlreadyCheckedOut` / `IdempotencyConflict`.
+
+Correctif : primitive `App\Support\PostgresConstraintViolation` — SQLSTATE lu
+dans le champ **structuré** `errorInfo[0]` (jamais déduit d'un texte), nom de
+contrainte extrait **après** confirmation du `23505` et comparé par **égalité
+exacte**. Aucun `str_contains()` ne classe plus une erreur BDD en production.
+**Ce pattern devra être réutilisé en P3-D3 pour les contraintes de `payments`.**
+
+Compteurs : Unit P3-D2.1 **20/20**, P3-D2 **71/344** (était 66/323), suite
+complète **424/3641** (était 399/3599), Pint **140**, **29 migrations**.
+
+---
+
+## Ensuite : `P3-D3 — Payment Initiation` — branche future `p3-d3-payment-initiation`
 
 **P3-D2 EST TERMINÉ, MERGÉ ET VALIDÉ** — [PR #19](https://github.com/mysterus44/DigiTrove/pull/19),
 head `ef758bbb`, merge `4c691864`, CI #22 verte. Le **hotfix temporel P3-D1** est

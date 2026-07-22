@@ -245,8 +245,21 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
 `digitrove_runtime`, `TEMP` refusé) : `55P03` ×2, `23505` sur
 `orders_cart_id_unique`, aucun `42501`.
 
-**PROCHAINE TÂCHE : `P3-D3 — Payment Initiation`** (branche future
-`p3-d3-payment-initiation`) — **non commencée**. Invariants hérités : l'Order et
+- 🚧 **`P3-D2.1 — PostgreSQL Constraint Classification Hardening` EN ATTENTE DE
+  REVUE/MERGE** (branche `p3-d2-1-postgresql-constraint-hardening`, aucune
+  migration). `OrderService` classait des erreurs BDD sur la **présence d'un nom
+  de contrainte dans le message** d'un `Throwable`, sans exiger le SQLSTATE
+  `23505` : un message usurpé provoquait un **retry `order_number` injustifié**
+  et de faux `CartAlreadyCheckedOut` / `IdempotencyConflict`. **Aucune régression
+  métier observée** — défaut purement défensif. Correctif : primitive
+  `App\Support\PostgresConstraintViolation` (SQLSTATE lu dans `errorInfo[0]`,
+  nom de contrainte extrait **après** confirmation du `23505`, **égalité
+  exacte**). Unit **20/20**, P3-D2 **71/344**, suite **424/3641**, Pint **140**.
+  ⚠️ **Ce pattern est obligatoire en P3-D3 pour les contraintes de `payments`.**
+
+**PROCHAINE TÂCHE : revue et merge de `P3-D2.1`. `P3-D3 — Payment Initiation`
+(branche future `p3-d3-payment-initiation`) est BLOQUÉ** jusqu'à ce merge et à
+son CI vert — **non commencé**. Invariants hérités : l'Order et
 ses `order_items` sont la **source autoritative** (le panier est `converted` et
 peut avoir changé) ; aucune donnée tarifaire client n'est acceptée ; une commande
 gratuite reste `pending` ; **aucun coupon n'est consommé au checkout** —
