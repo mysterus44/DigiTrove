@@ -31,6 +31,10 @@ uses(RefreshDatabase::class);
  * under `app/Services` fails the guard, whatever its name or namespace.
  */
 const P4B_ALLOWED_SERVICE_FILES = [
+    // P3-D2 (D-031) — checkout transaction. Commerce only, no delivery.
+    'Checkout/CheckoutException.php',
+    'Checkout/CheckoutRefusalReason.php',
+    'Checkout/OrderService.php',
     'Pricing/CouponSnapshot.php',
     'Pricing/DiscountAllocator.php',
     'Pricing/PricedLine.php',
@@ -1009,6 +1013,8 @@ it('fails closed on any delivery service smuggled under a neutral namespace', fu
         'Ops/RateLimiter.php',
         'Pricing/UnexpectedService.php',
         'Delivery/DownloadService.php',
+        // Widening the allowlist for P3-D2 must not open the whole namespace.
+        'Checkout/UnexpectedService.php',
     ];
 
     expect(p4bUnexpectedServiceFiles($smuggled))->toBe($smuggled);

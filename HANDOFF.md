@@ -307,7 +307,44 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 Planifier `P3-D2 — Checkout Order Transaction`
+## 🎯 Revue et merge de `P3-D2 — Checkout Order Transaction`
+
+**P3-D2 est IMPLÉMENTÉ** sur `p3-d2-checkout-order-transaction` (depuis
+`5d07abad`), **en attente de merge**. D-031 consignée : **Q1 = C** (composant de
+bundle soft-deleted ⇒ checkout refusé, aucun snapshot partiel) et **Q2 = B**
+(Cart → `converted` dans la même transaction). **Aucune migration.**
+
+3 classes : `App\Services\Checkout\{OrderService, CheckoutException,
+CheckoutRefusalReason}`. Verrouillage `carts` → `products` du panier →
+`product_bundles` + **produits enfants** (c'est ce dernier verrou qui rend Q1=C
+applicable). Idempotence par digest SHA-256 seul, rejeu résolu avant toute règle
+d'état, comparaison de colonnes faute de fingerprint, `orders_cart_id_unique` en
+backstop. Order gratuite `pending`, aucune consommation de coupon.
+
+**Finalisation pré-publication (D-032)** — deux défauts relevés en revue et
+fermés avant tout push :
+1. les **30 minutes d'expiration étaient codées en dur** (décision commerciale
+   implicite) → `config/checkout.php` + `CHECKOUT_PENDING_TTL_MINUTES`, défaut
+   30, minutes entières ≥ 1, valeur invalide = échec **avant toute écriture**,
+   rejeu conservant l'`expires_at` d'origine ;
+2. le **retry d'`order_number` n'avait aucun savepoint** : reproduction sous
+   `digitrove_runtime` → après `23505` toute commande suivante reçoit **`25P02`
+   (transaction avortée)**, le retry était non fonctionnel. Corrigé par une
+   transaction Laravel imbriquée (vrai `SAVEPOINT`), 3 essais maximum, verrou du
+   Cart préservé. Primitive `App\Support\OrderNumberGenerator` extraite (sous
+   `app/Support`, donc allowlist P4-B inchangée).
+
+Validation : P3-D2 **66/308**, P4-B **20/619**, suite complète **399/3584**,
+Pint **138**, 29 migrations inchangées. Concurrence prouvée sur bases jetables +
+deux connexions PDO réelles (`55P03` ×2, `23505` sur `orders_cart_id_unique`).
+
+⚠️ **La branche n'est PAS publiée** : le push échoue faute d'identifiants Git
+dans la session. Quatre commits locaux à pousser :
+`git push -u origin p3-d2-checkout-order-transaction`.
+
+**Ne pas commencer P3-D3 avant publication, revue et merge.**
+
+### Historique : audit pré-implémentation P3-D2
 
 **`P3-D1` ET `P3-D1.1` SONT TERMINÉS ET MERGÉS** (PR #17 → `78f475e7`, CI #18
 verte ; PR #18 → `0e18d69d`, CI #19 verte). Le noyau de tarification est en
@@ -482,6 +519,84 @@ aucun push direct sur `main`.
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-21 — Claude Code (finalisation P3-D2 avant publication, D-032)
+- Garde-fous : branche `p3-d2-checkout-order-transaction` à `c90c3383`, worktree
+  propre, **distante absente** (jamais publiée), base `5d07abad`, `origin/main`
+  intact, `D-032` libre. Aucun rebase, aucun amend des deux commits existants.
+- **Défaut 1 — 30 minutes codées en dur.** `CART_TTL_MINUTES = 30` dans
+  `OrderService` était une décision commerciale implicite ; `orders.expires_at`
+  est `NOT NULL` sans DEFAULT et D-024 ne donnait les 30 min que comme
+  recommandation. Corrigé par `config/checkout.php` +
+  `CHECKOUT_PENDING_TTL_MINUTES` dans `.env.example`. Validation stricte
+  (`is_int` hors booléen, ou `/\A[1-9][0-9]*\z/`), plafond 525 600, refus
+  **avant toute écriture** classé `IntegrityFailure` (incident serveur, jamais
+  faute client). 13 valeurs invalides couvertes. Le rejeu **conserve**
+  l'`expires_at` d'origine même si la config a changé entre-temps.
+- **Défaut 2 — retry `order_number` dans une transaction avortée.** Prouvé
+  empiriquement sous `digitrove_runtime` sur la table `orders` réelle : après
+  `23505 orders_order_number_unique`, toute commande suivante de la même
+  transaction reçoit *« current transaction is aborted »* (**25P02**) — le
+  `try/catch` sans savepoint était donc **inopérant** et dégradait en
+  `IntegrityFailure` trompeur. La même sonde avec `SAVEPOINT` /
+  `ROLLBACK TO SAVEPOINT` réussit la 2ᵉ tentative (2 lignes visibles).
+  Corrigé par une **transaction Laravel imbriquée** (vrai savepoint), 3 essais,
+  verrou du Cart préservé, seule `orders_order_number_unique` retentée.
+- **Primitive extraite** : `App\Support\OrderNumberGenerator`, non `final` et
+  résolue par le conteneur — c'est ce qui permet d'exercer la collision **de
+  bout en bout** sans ajouter de callback de test à `checkout()`. Sous
+  `app/Support`, donc **l'allowlist P4-B reste inchangée**.
+- **Idempotence auditée, inchangée** : clé brute jamais stockée/loguée/exposée
+  (test dédié), digest 64 hex, SHA-256 documenté comme identifiant
+  d'idempotence et non comme authentification.
+- Validation : P3-D2 **66/308** (était 47/171), suite complète **399/3584**
+  (était 380/3446), Pint **138**, `git diff --check` propre, 29 migrations
+  inchangées. Non-régressions P3-D2 toutes confirmées.
+- **Branche volontairement non publiée** (consigne de mission) ; 4 commits
+  locaux. Aucun P3-D3, P4-C ni P5.
+  Laisse à : **publier, faire relire et merger P3-D2**.
+
+### 2026-07-21 — Claude Code (P3-D2 Checkout Order Transaction implémenté)
+- Garde-fous : stable `5d07abad` (0/0), worktree propre, `origin/main` intact,
+  29 migrations, aucune branche `p3-d2-*`, `D-031` libre. Branche créée depuis la
+  stable, **merge-base exact `5d07abad`**, sans rebase ni force-push.
+- **TDD** : suite écrite d'abord, RED observé (classes `Checkout` absentes), puis
+  implémentation minimale jusqu'au vert.
+- **3 classes livrées, aucune migration** : `OrderService`, `CheckoutException`,
+  `CheckoutRefusalReason` (enum fermé de 16 refus).
+- **Verrouillage** `carts` → `products` du panier (`withTrashed`, `id` ↑) →
+  `product_bundles` → **produits enfants** (`id` ↑). Le verrou des enfants est
+  ce qui rend **Q1=C** applicable ; prouvé par `55P03` sur deux connexions.
+- **Q1 = C** : composant soft-deleted ou bundle imbriqué ⇒
+  `BundleComponentUnavailable`, **rien n'est écrit** ; bundle sans composant ⇒
+  `BundleEmpty`. Aucun filtrage silencieux, aucun snapshot partiel.
+- **Q2 = B** : Cart → `converted` dans la même transaction, après toutes les
+  écritures ; jamais reconverti sur rejeu ; reste `active` sur rollback.
+- **Idempotence** : clé brute jamais persistée ni loguée (test dédié), digest
+  SHA-256 seul ; rejeu résolu **avant** toute règle d'état ; égalité par
+  comparaison `cart_id`/acteur/`currency`/`coupon_id`/`customer_email` ;
+  `CartAlreadyCheckedOut` pour une autre clé sur le même panier ; chaque `23505`
+  traduit par contrainte (`cart_id_unique`, `idempotency_hash_unique`,
+  `order_number_unique`), **jamais globalement en « rejeu »** ; retry borné à 3
+  pour la seule collision d'`order_number`.
+- **Propriété** : refus **uniforme** `CartUnavailable` pour un panier inexistant
+  comme pour celui d'autrui (anti-énumération de `public_id`).
+- **Snapshot bundle** : un seul `INSERT … SELECT` par bundle, sans filtre, avec
+  **comparaison du nombre de lignes** au compte mesuré sous verrou →
+  `BundleSnapshotMismatch` + rollback total.
+- **Correction de méthode en cours de gate** : ma première version des tests de
+  concurrence passait un callback au service — un **seam de test dans du code de
+  production**, anti-pattern. Remplacé par le pattern éprouvé du projet (base
+  jetable `PhaseMigrationHarness` + deux connexions PDO réelles, comme P4-A1),
+  sans aucune trace dans le service.
+- **Allowlist P4-B élargie de exactement 3 chemins** `Checkout/*`, sans
+  wildcard ; test prouvant que `Checkout/UnexpectedService.php` reste refusé.
+- Validation : P3-D2 **47/171**, P4-B **20/619**, P3-D1 Unit 94/117 et Feature
+  48/167, P3B 18/357, P3A 15/139, Catalogue 12/111, suite complète **380/3446**,
+  Pint **136**, `git diff --check` propre, 29 migrations inchangées.
+- Aucun Payment, CouponRedemption, event, listener, job, notification, mail,
+  route, contrôleur, Request, config, migration, P3-D3, P4-C ni P5.
+  Laisse à : **revue et merge de la PR P3-D2**, puis clôture post-merge.
 
 ### 2026-07-21 — Claude Code (clôture post-merge P3-D1.1)
 - **Merge P3-D1.1 prouvé** : [PR #18](https://github.com/mysterus44/DigiTrove/pull/18),

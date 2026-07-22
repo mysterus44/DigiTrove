@@ -2228,5 +2228,169 @@ code P3-D2, P4-C ou P5 créé.
 
 ---
 
+### D-031 — Contrat transactionnel P3-D2 (Checkout Order Transaction) ✅
+**Date** : 2026-07-21. **Statut** : **P3-D2 IMPLÉMENTÉ — EN ATTENTE DE MERGE**
+(branche `p3-d2-checkout-order-transaction`, depuis `5d07abad`). **Aucune
+migration** (29 inchangées). Décisions humaines : **Q1 = C**, **Q2 = B**.
+
+1. **Q1 = C — composant de bundle soft-deleted ⇒ checkout REFUSÉ.** Aucun
+   filtrage silencieux, aucun snapshot partiel. Motif : S3 ne lit pas
+   `products.deleted_at` (vérifié par `pg_get_functiondef`) et P4-A1 ne stocke ni
+   en-tête ni compteur — un snapshot partiel est **structurellement
+   indétectable** (D-029.3/5). Un incident catalogue doit échouer bruyamment au
+   checkout plutôt que produire une sous-livraison définitive et invisible.
+   Refus : `BundleComponentUnavailable`. Bundle sans composant :
+   `BundleEmpty`, refusé **avant** toute écriture.
+2. **Q2 = B — le Cart passe à `converted` dans la MÊME transaction** que
+   l'Order, après que toutes les écritures de commande sont valides. Aucun
+   vidage, aucune suppression, aucun nouveau panier. Sur rollback le Cart reste
+   `active` ; sur rejeu idempotent il n'est **pas reconverti**.
+3. **Idempotence.** Clé brute opaque, `/\A[A-Za-z0-9._-]{32,255}\z/`, **jamais
+   persistée ni loguée** ; seul `hash('sha256', clé)` entre dans
+   `checkout_idempotency_hash`. Le rejeu est résolu **après** le verrou du Cart
+   mais **avant** toute règle d'état (un panier converti est l'état normal après
+   un premier appel réussi). Rejeu identique ⇒ Order existante retournée, sans
+   rien réécrire — l'**Order**, pas le panier éventuellement muté, est la vérité
+   autoritative. Le schéma ne stockant aucun fingerprint, l'égalité est prouvée
+   par **comparaison des colonnes** `cart_id`, acteur, `currency`, `coupon_id`,
+   `customer_email` : divergence ⇒ `IdempotencyConflict`. Même Cart + autre clé
+   ⇒ `CartAlreadyCheckedOut`, jamais un faux rejeu. Backstop PostgreSQL :
+   `orders_cart_id_unique` (23505), distinct de
+   `orders_checkout_idempotency_hash_unique` et de
+   `orders_order_number_unique` — **aucun 23505 n'est classé « idempotence » par
+   défaut**, chaque contrainte est traduite séparément.
+4. **Order gratuite (`total_minor = 0`) reste `pending`.** Prouvé accepté par le
+   schéma (sonde : `SET CONSTRAINTS ALL IMMEDIATE` vert). Le passage à `paid`
+   appartient à P3-D4. **Aucune ligne `payments` dans ce gate.**
+5. **Aucune consommation de coupon.** P3-D2 valide via `PricingService` et copie
+   le `CouponSnapshot` dans `orders` ; ni `coupon_redemptions`, ni incrément de
+   `redemptions_count`, ni réservation de quota (D-027 point 5). Une Order
+   `pending` **ne réserve rien** : P3-D4 revalide sous verrou et peut refuser.
+6. **Aucun Payment, event, listener, job, route, contrôleur, Request, grant ni
+   log.** Le coupon est résolu depuis `carts.coupon_id` (D-024/6), jamais fourni
+   par l'appelant.
+
+**Ordre de verrouillage** (déterministe, anti-deadlock) : `carts` par
+`public_id` `FOR UPDATE` → `products` du panier par `id` croissant
+(`withTrashed`) → par bundle croissant : `product_bundles` par
+`child_product_id` puis **produits enfants par `id` croissant**. Le verrou des
+**enfants** est ce qui rend Q1=C réellement applicable : un soft-delete
+concurrent doit attendre la fin de la transaction (**prouvé : `55P03`**).
+`product_prices` n'est pas verrouillé — la quote et les `order_items`
+proviennent d'une **lecture unique** de `PricingService` dans la transaction.
+
+**Propriété du panier** : compte ⇒ `cart.user_id === acteur->id` ; invité ⇒
+`cart.visitor_id === acteur->id` **et** `cart.user_id IS NULL`. Panier
+inexistant et panier d'autrui produisent le **même** refus `CartUnavailable`
+(anti-énumération de `carts.public_id`). E-mail : autoritatif depuis le compte,
+exigé et validé pour un invité.
+
+**Snapshot bundle** : après création de l'`order_item` parent, **un seul
+`INSERT … SELECT`** par bundle depuis `product_bundles` (un statement = un
+instantané, exhaustif par construction, D-029.3/3), **sans filtre** — un
+composant soft-deleted a déjà provoqué le refus. Le nombre de lignes inséré est
+comparé au compte mesuré sous verrou ; toute divergence lève
+`BundleSnapshotMismatch` et rollback total.
+
+**Fichiers livrés (3)** : `App\Services\Checkout\{OrderService,
+CheckoutException, CheckoutRefusalReason}`. Aucun repository, interface, DTO
+générique, bus, event, listener, job, contrôleur ni route.
+`P4B_ALLOWED_SERVICE_FILES` élargie de **exactement** ces trois chemins, sans
+wildcard ; un test prouve que `Checkout/UnexpectedService.php` reste refusé.
+
+**Validation** : P3-D2 **47 tests / 171 assertions** ; P4-B **20/619** ; P3-D1
+Unit 94/117, Feature 48/167 ; P3B 18/357 ; P3A 15/139 ; Catalogue 12/111 ;
+suite complète **380 / 3446** (base 333/3272) ; Pint **136** ;
+`git diff --check` propre ; 29 migrations inchangées. Concurrence prouvée sur
+**bases jetables + deux connexions PDO réelles** (pattern P4-A1) : soft-delete
+concurrent d'un composant bloqué (`55P03`), deux checkouts du même panier
+sérialisés (`55P03`), seconde commande pour le même panier refusée par
+`orders_cart_id_unique` (`23505`).
+
+**ALTERNATIVES REJETÉES** : filtrer silencieusement un composant soft-deleted
+(Q1=A) ; l'inclure au snapshot (Q1=B) ; laisser le panier `active` (Q2=A) ou
+déléguer la conversion à P3-D4 (Q2=C) ; accepter un `PricedQuote` ou un montant
+du client ; recopier la tarification dans `OrderService` ; verrouiller
+`product_prices` ou le catalogue entier ; traiter tout `23505` comme un rejeu ;
+un seam de test dans le service pour les tests de concurrence.
+
+---
+
+### D-032 — Expiration des commandes `pending` ✅
+**Date** : 2026-07-21. **Statut** : appliquée sur `p3-d2-checkout-order-transaction`
+(P3-D2 toujours **EN ATTENTE DE MERGE**). **Aucune migration.**
+
+**CONTEXTE** : la revue pré-publication de P3-D2 a relevé que
+`orders.expires_at` était calculé avec une constante `CART_TTL_MINUTES = 30`
+codée en dur dans `OrderService`. `orders.expires_at` est `NOT NULL` **sans
+DEFAULT** (aucune politique commerciale en base, D-029.1-B) et D-024 ne
+mentionne les 30 minutes que comme **recommandation non figée** : la constante
+était donc une décision commerciale implicite. Toute mention antérieure
+laissant croire que ces 30 minutes étaient déjà arbitrées est **corrigée par la
+présente décision**.
+
+**CHOIX** : `expires_at = placed_at + durée configurée`. Défaut **30 minutes**,
+**configurable sans modification du code** via `config/checkout.php`
+(`pending_ttl_minutes`, alimenté par `CHECKOUT_PENDING_TTL_MINUTES`). Unité :
+**minutes entières**, minimum `1`, plafond `525 600` (une année — borne de
+sûreté Carbon/PHP). Une valeur absente retombe sur `30`. Une valeur configurée
+**invalide provoque un échec explicite AVANT toute écriture métier**, classé
+`IntegrityFailure` — c'est un incident serveur, **jamais une faute du client**.
+`OrderService` ne lit jamais `env()` directement et n'accepte aucune durée
+depuis la requête de checkout. **Le rejeu idempotent conserve l'`expires_at`
+d'origine** et ne recalcule rien. P3-D3 pourra exploiter cette échéance mais ne
+devra pas la redéfinir silencieusement.
+*Validation stricte* : `is_int` (booléen exclu) ou chaîne `/\A[1-9][0-9]*\z/`.
+Sont refusés `0`, négatif, décimal, `'1.5'`, `'abc'`, `''`, `'0'`, `' 30'`,
+`true`, `false`, `null`, tableau, `30.5` et toute valeur au-delà du plafond
+(13 cas couverts par test).
+
+**CORRECTIF ASSOCIÉ — retry `order_number` en transaction PostgreSQL avortée.**
+La même revue a demandé de vérifier empiriquement le retry de collision. **Le
+défaut était réel** : le retry se faisait par `try/catch` **sans savepoint**
+dans la transaction de checkout. Reproduction sous `digitrove_runtime` :
+`INSERT` → `23505 orders_order_number_unique` → toute commande suivante de la
+même transaction reçoit *« current transaction is aborted, commands ignored »*
+(**25P02**) — le retry était donc **non fonctionnel** et dégradait en
+`IntegrityFailure` avec un message trompeur. La même sonde avec
+`SAVEPOINT` / `ROLLBACK TO SAVEPOINT` réussit la seconde tentative et laisse la
+transaction utilisable (2 lignes visibles). **Correctif** : l'INSERT susceptible
+de collision est enveloppé dans une **transaction Laravel imbriquée**, qui émet
+un véritable `SAVEPOINT` PostgreSQL et y revient sur exception — le verrou du
+Cart et tout le travail antérieur sont préservés. Maximum **3 essais**, puis
+`IntegrityFailure`. Seule la contrainte `orders_order_number_unique` est
+retentée ; `orders_cart_id_unique` et
+`orders_checkout_idempotency_hash_unique` restent traduites distinctement.
+
+**Primitive extraite** : `App\Support\OrderNumberGenerator` (alphabet Crockford
+sans I/L/O/U, suffixe CSPRNG, format `DGT-YYYY-XXXXXXXXXX`). Résolue par le
+conteneur et **non `final`** : le numérotage est une vraie primitive métier
+qu'un gate ultérieur peut faire varier, et c'est ce qui permet d'exercer le
+chemin de collision **de bout en bout sans seam de test dans la signature
+publique de `checkout()`**. Elle vit sous `app/Support`, donc l'allowlist P4-B
+(`app/Services` uniquement) est inchangée.
+
+**Hachage d'idempotence — audité, inchangé** : clé brute jamais stockée, jamais
+loguée, jamais placée dans une exception (test dédié) ; digest exactement
+64 caractères hexadécimaux. SHA-256 est documenté comme **identifiant
+d'idempotence**, pas comme mécanisme d'authentification ; toute évolution de
+cette stratégie exigerait une décision séparée.
+
+**Validation** : P3-D2 **66 tests / 308 assertions** (était 47/171) ; suite
+complète **399 / 3584** (était 380/3446) ; Pint **138** ; `git diff --check`
+propre ; **29 migrations inchangées**, aucune `000014`. Non-régressions P3-D2
+confirmées : propriété User/Visitor, refus anti-énumération, idempotence et ses
+quatre variantes de conflit, bundle vide, composant soft-deleted, snapshot
+exhaustif, Cart converti, rollback vers Cart `active`, Order gratuite `pending`,
+aucune consommation de coupon, aucun Payment, aucun P4-C.
+
+**ALTERNATIVES REJETÉES** : laisser la constante en dur ; lire `env()` dans le
+service ; accepter la durée depuis la requête ; tolérer une valeur invalide en
+retombant silencieusement sur 30 ; recalculer `expires_at` au rejeu ; rollbacker
+toute la transaction pour retenter (perte du verrou du Cart) ; traiter tout
+`23505` comme une collision de numéro ; ajouter un callback de test au service.
+
+---
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]
