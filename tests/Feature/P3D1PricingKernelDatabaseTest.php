@@ -897,8 +897,17 @@ it('produces an identical quote when priced twice', function () {
         ['product' => p3d1PublishedProduct(2_667), 'quantity' => 7],
     ]);
 
-    $coupon = Coupon::factory()->percent(3_333)->create();
+    // Every temporal input must derive from the SAME explicit reference. The
+    // factory defaults build the window from the real clock, so pairing them
+    // with a frozen reference made this test rot the day the clock moved past
+    // it (starts_at > reference -> CouponNotStarted). This test is about
+    // pricing determinism, not about the factory's default window.
     $reference = CarbonImmutable::parse('2026-07-21 12:00:00');
+
+    $coupon = Coupon::factory()->percent(3_333)->create([
+        'starts_at' => $reference->subDay(),
+        'ends_at' => $reference->addDay(),
+    ]);
 
     $first = p3d1Service()->quote($cart->fresh(), 'XOF', $coupon, $reference);
     $second = p3d1Service()->quote($cart->fresh(), 'XOF', $coupon, $reference);
