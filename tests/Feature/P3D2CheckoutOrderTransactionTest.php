@@ -909,27 +909,61 @@ it('gives up cleanly after three order number collisions', function () {
  * pattern is a throwaway database seeded by a committed connection, then two
  * real PDO sessions — see P4A1BundlePurchaseSnapshotTest.
  *
+ * The two competing sessions MUST run under `digitrove_runtime`, exactly like
+ * OrderService in production. Building them from `pgsql_migration` would prove
+ * the lock discipline for the OWNER — a role that is not even the one the
+ * service uses — and would silently hide any ACL refusal behind the migrator's
+ * privileges. Only the seed keeps the migrator identity, to write fixtures.
+ *
  * @param  callable(PDO, PDO, PDO): void  $scenario  (seed, A, B)
  */
 function p3d2Concurrency(callable $scenario): void
 {
     $harness = new PhaseMigrationHarness('digitrove_p3d2_conc_'.strtolower(Str::random(10)));
-    $connection = config('database.connections.pgsql_migration');
-    $dsn = sprintf('pgsql:host=%s;port=%s;dbname=%s', $connection['host'], $connection['port'] ?? 5432, $harness->databaseName());
+    $migrator = config('database.connections.pgsql_migration');
+    $runtime = config('database.connections.pgsql');
     $options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION];
+
+    $dsn = static fn (array $connection): string => sprintf(
+        'pgsql:host=%s;port=%s;dbname=%s',
+        $connection['host'],
+        $connection['port'] ?? 5432,
+        $harness->databaseName(),
+    );
 
     try {
         $harness->create();
         $harness->applyMigrationsThrough('2026_07_14_000013_create_download_logs_table.php');
 
-        $scenario(
-            new PDO($dsn, $connection['username'], $connection['password'], $options),
-            new PDO($dsn, $connection['username'], $connection['password'], $options),
-            new PDO($dsn, $connection['username'], $connection['password'], $options),
-        );
+        $seed = new PDO($dsn($migrator), $migrator['username'], $migrator['password'], $options);
+        $a = new PDO($dsn($runtime), $runtime['username'], $runtime['password'], $options);
+        $b = new PDO($dsn($runtime), $runtime['username'], $runtime['password'], $options);
+
+        // Fail-closed: if A or B ever came back as the owner, every lock proof
+        // below would be worthless.
+        expect(p3d2RoleOf($seed))->toBe('digitrove')
+            ->and(p3d2RoleOf($a))->toBe('digitrove_runtime')
+            ->and(p3d2RoleOf($b))->toBe('digitrove_runtime')
+            // The P4-B0 boundary must still hold on the throwaway database.
+            ->and(p3d2HasTempPrivilege($a))->toBeFalse()
+            ->and(p3d2HasTempPrivilege($b))->toBeFalse();
+
+        $scenario($seed, $a, $b);
     } finally {
         $harness->drop();
     }
+}
+
+function p3d2RoleOf(PDO $pdo): string
+{
+    return (string) $pdo->query('SELECT current_user')->fetchColumn();
+}
+
+function p3d2HasTempPrivilege(PDO $pdo): bool
+{
+    return (bool) $pdo->query(
+        "SELECT has_database_privilege(current_user, current_database(), 'TEMP')"
+    )->fetchColumn();
 }
 
 it('blocks a concurrent soft delete of a bundle component behind the child row lock', function () {
