@@ -318,11 +318,24 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 Revue et merge de `P3-D2.1` — puis seulement `P3-D3`
+## 🎯 `P3-D3 — Payment Initiation` — autorisé, non commencé
 
-🚧 **`P3-D3` EST BLOQUÉ** jusqu'au merge et au CI vert de **`P3-D2.1 — PostgreSQL
-Constraint Classification Hardening`** (branche
-`p3-d2-1-postgresql-constraint-hardening`, **aucune migration**).
+**`P3-D2.1` EST TERMINÉ, MERGÉ ET VALIDÉ** —
+[PR #21](https://github.com/mysterus44/DigiTrove/pull/21), head `3adb2824`,
+merge `9b0aa92498a1eaa0dce220bb411df42a9c488e24`, **CI #24 verte**, 7 fichiers
+(+403/−9), **aucune migration**. Stable avant ce commit documentaire :
+`9b0aa92498a1eaa0dce220bb411df42a9c488e24`.
+
+⚠️ **`App\Support\PostgresConstraintViolation` doit être réutilisée en P3-D3**
+pour **toute** classification de contrainte PostgreSQL (`payments_idempotency_
+key_hash_unique`, `payments_order_id_attempt_number_unique`, les uniques
+partiels de `payment_webhook_events`…). Elle ne s'applique **que** lorsque le
+contrat exige une paire structurée SQLSTATE + nom de contrainte : **toute
+exception de paiement n'est pas une violation d'unicité** — un échec fournisseur,
+un timeout réseau ou une erreur de sérialisation `40001` relèvent d'autres
+branches et ne doivent jamais passer par cette primitive.
+
+### Historique : ce qu'a fermé P3-D2.1
 
 **P3-D2 reste fonctionnellement terminé** : aucune régression métier n'a été
 observée. Le défaut est **défensif** — `OrderService` classait certaines erreurs
