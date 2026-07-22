@@ -20,6 +20,7 @@ use App\Services\Pricing\PricingRefusalReason;
 use App\Services\Pricing\PricingService;
 use App\Support\Money;
 use App\Support\OrderNumberGenerator;
+use App\Support\PostgresConstraintViolation;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -354,10 +355,15 @@ final class OrderService
                     fn (): Order => Order::query()->create($attributes + ['order_number' => $this->orderNumbers->generate($now)]),
                 );
             } catch (Throwable $exception) {
-                // Only an order_number collision is retryable; every other
-                // unique violation is a distinct, non-idempotent failure.
-                if ($attempt === self::ORDER_NUMBER_ATTEMPTS
-                    || ! str_contains($exception->getMessage(), 'orders_order_number_unique')) {
+                // Only a GENUINE 23505 on exactly orders_order_number_unique is
+                // retryable (P3-D2.1). A message that merely contains the name
+                // proves nothing and must never spend an attempt.
+                $isCollision = PostgresConstraintViolation::isUniqueViolationOf(
+                    $exception,
+                    'orders_order_number_unique',
+                );
+
+                if ($attempt === self::ORDER_NUMBER_ATTEMPTS || ! $isCollision) {
                     throw $this->translateWriteFailure($exception);
                 }
             }
@@ -421,14 +427,18 @@ final class OrderService
 
     private function translateWriteFailure(Throwable $exception): CheckoutException
     {
-        if (str_contains($exception->getMessage(), 'orders_cart_id_unique')) {
+        // A business refusal requires a genuine PostgreSQL 23505 on the exact
+        // constraint — never a substring of some message (P3-D2.1).
+        $constraint = PostgresConstraintViolation::constraintName($exception);
+
+        if ($constraint === 'orders_cart_id_unique') {
             return CheckoutException::of(
                 CheckoutRefusalReason::CartAlreadyCheckedOut,
                 'This cart has already been checked out.',
             );
         }
 
-        if (str_contains($exception->getMessage(), 'orders_checkout_idempotency_hash_unique')) {
+        if ($constraint === 'orders_checkout_idempotency_hash_unique') {
             return CheckoutException::of(
                 CheckoutRefusalReason::IdempotencyConflict,
                 'This idempotency key was already used for a different checkout.',
