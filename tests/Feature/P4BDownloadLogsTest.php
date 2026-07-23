@@ -35,11 +35,22 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Checkout/CheckoutException.php',
     'Checkout/CheckoutRefusalReason.php',
     'Checkout/OrderService.php',
+    // P3-D4/P3-D5 (D-034) — server-side confirmation. Commerce only, no delivery.
+    'Payments/FreeOrderConfirmationService.php',
     // P3-D3 (D-033) — payment initiation. Commerce only, no delivery.
     'Payments/InitiatedPayment.php',
+    // P3-D4/P3-D5 (D-034) — server-side confirmation. Commerce only, no delivery.
+    'Payments/PaymentConfirmationException.php',
+    'Payments/PaymentConfirmationRefusalReason.php',
+    'Payments/PaymentConfirmationService.php',
+    // P3-D3 (D-033) — payment initiation. Commerce only, no delivery.
     'Payments/PaymentInitiationException.php',
     'Payments/PaymentInitiationRefusalReason.php',
     'Payments/PaymentInitiationService.php',
+    // P3-D4/P3-D5 (D-034) — server-side confirmation. Commerce only, no delivery.
+    'Payments/RecordedWebhook.php',
+    'Payments/WebhookOutcome.php',
+    'Payments/WebhookRecordingService.php',
     'Pricing/CouponSnapshot.php',
     'Pricing/DiscountAllocator.php',
     'Pricing/PricedLine.php',
