@@ -7,17 +7,22 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Claude Code
-- **Date** : 2026-07-22
-- **Branche git active** : `p3-d3-payment-initiation` (stable
-  `p0-foundations-laravel13` à `6e701a1e`)
-- **P3-D3 IMPLÉMENTÉ + DURCI — EN ATTENTE DE MERGE** (D-033, PR #22, branche
-  `p3-d3-payment-initiation` depuis `6e701a1e`) : initiation de paiement en deux
-  phases, port fournisseur abstrait, **aucune migration**, aucun adaptateur
-  réel. **Durcissement pré-merge (5 findings) fermés** : garde
-  `transactionLevel = 0`, horloge injectée unique, reprise de réponse perdue,
-  toute exception BDD inconnue ⇒ `IntegrityFailure` sanitizé, preuves C1–C4
-  **service-level**. 8 fichiers, **54/246**, Pint **149**. **P3-D4 bloqué**
-  jusqu'au merge.
+- **Date** : 2026-07-23
+- **Branche git active** : `p0-foundations-laravel13` (stable, à
+  `70379a02` — merge de P3-D3)
+- **P3-D3 TERMINÉ, MERGÉ ET VALIDÉ** via
+  [PR #22](https://github.com/mysterus44/DigiTrove/pull/22), head
+  `5188e6cc5c82358cdc1e72efe3e8e3345babf930`, merge
+  `70379a02e1f220e6dac4f53552b8a5712c6e4815` (parents `6e701a1e` + `5188e6cc`),
+  **CI #26 success** : initiation de paiement en deux phases, port fournisseur
+  abstrait, **aucune migration**, aucun adaptateur réel. **Durcissement
+  pré-merge (5 findings) fermés** : garde `transactionLevel = 0`, horloge
+  injectée unique, reprise de réponse perdue, toute exception BDD inconnue ⇒
+  `IntegrityFailure` sanitizé, preuves C1–C4 **service-level**. Périmètre exact
+  **14 fichiers (+2005/-7)**. Validation post-merge sur la stable `70379a0` :
+  P3-D3 **54/246**, P3-D2.1 **20/20**, P3-D2 **71/344**, P3C-A **16/219**, P4-B
+  **20/628**, suite complète **478/3894**, Pint **149**, **29 migrations**,
+  aucune `000014`. **P3-D4** est le **prochain gate autorisé, NON commencé**.
 - **P3-D2.1 TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #21](https://github.com/mysterus44/DigiTrove/pull/21), head `3adb2824`,
   merge `9b0aa92498a1eaa0dce220bb411df42a9c488e24`, **CI #24 verte** : `23505`
@@ -331,18 +336,25 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 Revue et merge de `P3-D3` — puis seulement `P3-D4`
+## 🎯 `P3-D4 — Server-side Payment Confirmation` (NON commencé)
 
-**`P3-D3 — Payment Initiation` EST IMPLÉMENTÉ** sur `p3-d3-payment-initiation`
-(depuis `6e701a1e`), **en attente de revue/merge**. **D-033** consignée.
-**Aucune migration**, aucun adaptateur PowerPay réel, aucun secret, aucun appel
-HTTP. Initiation en **deux phases** : réservation `payments` `pending` committée
-→ appel du port fournisseur **hors transaction** → finalisation de la référence
-en seconde transaction. 7 fichiers (`app/Contracts/Payments/*` +
-`app/Services/Payments/*`). Validation : **44/191** dont concurrence réelle
-(`55P03`, `23505` sur digest et sur référence), Pint **148**, 29 migrations.
+**`P3-D3 — Payment Initiation` EST TERMINÉ, MERGÉ ET VALIDÉ** —
+[PR #22](https://github.com/mysterus44/DigiTrove/pull/22), head `5188e6cc`,
+merge `70379a02e1f220e6dac4f53552b8a5712c6e4815` (parents `6e701a1e` +
+`5188e6cc`), **CI #26 success**, clôturé sur la stable `p0-foundations-laravel13`.
+**D-033** consignée et figée. **Aucune migration**, aucun adaptateur PowerPay
+réel, aucun secret, aucun appel HTTP. Initiation en **deux phases** : réservation
+`payments` `pending` committée → appel du port fournisseur **hors transaction** →
+finalisation de la référence en seconde transaction. Périmètre exact
+**14 fichiers (+2005/-7)** (`app/Contracts/Payments/*` + `app/Services/Payments/*`
++ concern + tests + docs). Validation post-merge : P3-D3 **54/246**, suite
+complète **478/3894**, Pint **149**, **29 migrations**, aucune `000014`.
 
-Invariants D-033 utiles à la revue et à P3-D4 :
+**`P3-D4 — Server-side Payment Confirmation` est le prochain gate autorisé — NON
+commencé.** Aucune architecture ni aucun code P3-D4 ne doit être écrit dans la
+clôture de P3-D3.
+
+Invariants D-033 hérités, utiles à P3-D4 :
 - `payment.public_id` est la **clé d'idempotence fournisseur** (publique,
   stable) ; la **clé brute appelant n'est jamais persistée, loguée ni envoyée**
   au fournisseur (digest SHA-256 seul) ;
@@ -356,7 +368,8 @@ Invariants D-033 utiles à la revue et à P3-D4 :
   refund ni DownloadGrant ;
 - classification des `23505` exclusivement via `PostgresConstraintViolation`.
 
-**P3-D4 reste bloqué** jusqu'au merge et au CI vert de P3-D3.
+**P3-D3 est mergé (CI #26 vert) et clôturé** ; **P3-D4 est désormais le prochain
+gate autorisé, NON commencé.**
 
 ### Historique : P3-D2.1
 

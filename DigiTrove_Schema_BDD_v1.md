@@ -1885,7 +1885,7 @@ Grant Revocation        ↓
 | **P3-D1** Pricing & Quote Kernel ✅ *mergé (PR #17 → `78f475e7`)* | `p3-d1-pricing-kernel` | non | *aucune écriture* — prépare `orders_total_formula_check`, `order_items_line_*_formula_check`, `validate_order_items_consistency` |
 | **P3-D1.1** Hardening post-merge ✅ *mergé (PR #18 → `0e18d69d`)* | `p3-d1-post-merge-hardening` | non | invariants DTO en miroir des CHECK `orders`/`order_items` ; allowlist fail-closed du garde-fou P4-B |
 | **P3-D2** Checkout Order Transaction ✅ *mergé (PR #19 → `4c691864`, D-031 + D-032)* | `p3-d2-checkout-order-transaction` | non | `orders_checkout_idempotency_hash_unique`, **`orders_cart_id_unique`**, `orders_coupon_snapshot_consistency_check`, `validate_order_items_consistency` (différé), `order_items_order_id_product_id_unique`, S1/S2/S3 |
-| **P3-D3** Payment Initiation | `p3-d3-payment-initiation` | non | `payments_idempotency_key_hash_unique`, `payments_order_id_attempt_number_unique`, transitions T (D-028.5) |
+| **P3-D3** Payment Initiation ✅ *mergé (PR #22 → `70379a02`, D-033)* | `p3-d3-payment-initiation` | non | `payments_idempotency_key_hash_unique`, `payments_order_id_attempt_number_unique`, transitions T (D-028.5) |
 | **P3-D4** Server-side Payment Confirmation | `p3-d4-payment-confirmation` | non | uniques de rejeu `payment_webhook_events`, `UNIQUE(order_id) WHERE status='succeeded'`, `coupon_redemptions_order_id_unique`, constraint triggers P3C différés |
 | **P3-D5** OrderPaid Domain Event | `p3-d5-order-paid-event` | non | — (dispatch `afterCommit` uniquement) |
 | **P4-C0** Queue & Mail Secret Safety | `p4-c0-queue-mail-secret-safety` | non | — (infrastructure) |

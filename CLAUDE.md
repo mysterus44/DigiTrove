@@ -260,24 +260,31 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   exige une paire structurée SQLSTATE + nom exact : un échec fournisseur, un
   timeout ou un `40001` ne sont pas des violations d'unicité.
 
-- **`P3-D3 — Payment Initiation` ✅ IMPLÉMENTÉ — EN ATTENTE DE REVUE/MERGE**
-  (branche `p3-d3-payment-initiation`, **D-033**, aucune migration, aucun
-  adaptateur réel) : port fournisseur abstrait `App\Contracts\Payments\*` +
-  `App\Services\Payments\*`. Initiation en **deux phases** — réservation
-  `payments` `pending` committée, appel du port **hors transaction**,
-  finalisation de la référence en seconde transaction. `payment.public_id` =
-  clé d'idempotence fournisseur ; **clé brute jamais persistée, loguée ni
-  envoyée** ; une seule tentative vivante par Order ; timeout ambigu ⇒ tentative
-  laissée `pending` ; **aucune confirmation** (Order reste `pending`, aucun
-  `succeeded`, aucun coupon consommé, aucun webhook/`OrderPaid`/grant) ;
-  classification des `23505` via `PostgresConstraintViolation`. **Durci en revue
-  pré-merge (5 findings)** : garde `transactionLevel = 0`, horloge injectée unique
-  (`isExpired` `>=`), reprise de réponse perdue (rappel fournisseur idempotent),
-  toute exception BDD inconnue ⇒ `IntegrityFailure` sanitizé, preuves C1–C4
-  service-level. Suite non transactionnelle dédiée. **54/246**, Pint **149**.
+- **`P3-D3 — Payment Initiation` ✅ TERMINÉ, MERGÉ ET VALIDÉ** via
+  [PR #22](https://github.com/mysterus44/DigiTrove/pull/22), head
+  `5188e6cc5c82358cdc1e72efe3e8e3345babf930`, merge
+  `70379a02e1f220e6dac4f53552b8a5712c6e4815` (parents `6e701a1` + `5188e6cc`),
+  **CI #26 success**, 14 fichiers exactement (+2005/-7 ; **D-033**, aucune
+  migration, aucun adaptateur réel) : port fournisseur abstrait
+  `App\Contracts\Payments\*` + `App\Services\Payments\*`. Initiation en **deux
+  phases** — réservation `payments` `pending` committée, appel du port **hors
+  transaction**, finalisation de la référence en seconde transaction.
+  `payment.public_id` = clé d'idempotence fournisseur ; **clé brute jamais
+  persistée, loguée ni envoyée** ; une seule tentative vivante par Order ;
+  timeout ambigu ⇒ tentative laissée `pending` ; **aucune confirmation** (Order
+  reste `pending`, aucun `succeeded`, aucun coupon consommé, aucun
+  webhook/`OrderPaid`/grant) ; classification des `23505` via
+  `PostgresConstraintViolation`. **Durci en revue pré-merge (5 findings)** :
+  garde `transactionLevel = 0`, horloge injectée unique (`isExpired` `>=`),
+  reprise de réponse perdue (rappel fournisseur idempotent), toute exception BDD
+  inconnue ⇒ `IntegrityFailure` sanitizé, preuves C1–C4 service-level. Suite non
+  transactionnelle dédiée. Validation post-merge sur la stable `70379a0` : P3-D3
+  **54/246**, P3-D2.1 **20/20**, P3-D2 **71/344**, P3C-A **16/219**, P4-B
+  **20/628**, suite complète **478/3894**, Pint **149**, **29 migrations**,
+  aucune `000014`, `git diff --check` propre.
 
-**PROCHAINE TÂCHE : revue et merge de la PR `P3-D3` (#22). `P3-D4 — Server-side
-Payment Confirmation` est BLOQUÉ** jusqu'à ce merge — non commencé. Invariants hérités : l'Order et
+**PROCHAINE TÂCHE : `P3-D4 — Server-side Payment Confirmation` (prochain gate
+autorisé, NON commencé).** Invariants hérités : l'Order et
 ses `order_items` sont la **source autoritative** (le panier est `converted` et
 peut avoir changé) ; aucune donnée tarifaire client n'est acceptée ; une commande
 gratuite reste `pending` ; **aucun coupon n'est consommé au checkout** —

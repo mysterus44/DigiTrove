@@ -2393,10 +2393,14 @@ toute la transaction pour retenter (perte du verrou du Cart) ; traiter tout
 ---
 
 ### D-033 — Initiation de paiement en deux phases (P3-D3) ✅
-**Date** : 2026-07-22. **Statut** : **P3-D3 IMPLÉMENTÉ — EN ATTENTE DE
-REVUE/MERGE** (branche `p3-d3-payment-initiation`, depuis `6e701a1e`). **Aucune
+**Date** : 2026-07-22 (implémentation) · **clôturée le 2026-07-23**. **Statut** :
+**P3-D3 TERMINÉ, MERGÉ ET VALIDÉ** —
+[PR #22](https://github.com/mysterus44/DigiTrove/pull/22), head
+`5188e6cc5c82358cdc1e72efe3e8e3345babf930`, merge
+`70379a02e1f220e6dac4f53552b8a5712c6e4815` (parents `6e701a1e` + `5188e6cc`),
+**CI #26 success**, périmètre exact **14 fichiers (+2005/-7)**. **Aucune
 migration** (29 inchangées). **Aucun adaptateur fournisseur réel, aucun secret,
-aucun appel HTTP.**
+aucun appel HTTP.** Les décisions de durcissement ci-dessous sont **figées**.
 
 **CONTEXTE** : le schéma P3C-A `payments` (`000004`) est mergé — uniques
 `payments_idempotency_key_hash_unique`, `payments_order_id_attempt_number_unique`,
@@ -2483,6 +2487,15 @@ sérialisation + `PaymentAlreadyInProgress`, `IdempotencyConflict` + backstop
 `23505 / payments_idempotency_key_hash_unique`, collision de référence via
 finalisation ⇒ `IntegrityFailure` (backstop index `23505 /
 payments_provider_reference_unique`).
+
+**VALIDATION POST-MERGE (clôture 2026-07-23, stable `70379a0`)** : synchronisation
+fast-forward de la stable sur le merge `70379a02`, deux parents prouvés
+(`6e701a1e` + `5188e6cc`), quatre commits de la PR présents (`cb2313d`, `59313c2`,
+`6554af1`, `5188e6c`), périmètre exact **14 fichiers (+2005/-7)** sans migration,
+route, contrôleur, webhook, adaptateur réel ni secret. Suites rejouées
+séquentiellement sous les vraies identités : P3-D3 **54/246**, P3-D2.1 **20/20**,
+P3-D2 **71/344**, P3C-A **16/219**, P4-B **20/628**, **suite complète 478/3894**,
+Pint **149**, `git diff --check` propre, **29 migrations** (aucune `000014`).
 
 **DURCISSEMENT PRÉ-MERGE (revue contradictoire, 5 findings fermés)** :
 1. **`initiate()` refuse tout contexte transactionnel ambiant** — la toute
