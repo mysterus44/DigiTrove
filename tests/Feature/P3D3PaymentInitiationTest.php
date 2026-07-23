@@ -15,12 +15,12 @@ use App\Services\Payments\InitiatedPayment;
 use App\Services\Payments\PaymentInitiationException;
 use App\Services\Payments\PaymentInitiationRefusalReason as Reason;
 use App\Services\Payments\PaymentInitiationService;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Tests\Concerns\RefreshesDatabaseAsMigrator as RefreshDatabase;
-use Tests\Support\PhaseMigrationHarness;
+use Tests\Concerns\InteractsWithPaymentsDatabase;
 
-uses(RefreshDatabase::class);
+uses(InteractsWithPaymentsDatabase::class);
 
 /*
 |--------------------------------------------------------------------------
@@ -31,6 +31,10 @@ uses(RefreshDatabase::class);
 |   1. reserve a `pending` payment attempt in a transaction, COMMIT;
 |   2. call the provider OUTSIDE any transaction;
 |   3. finalise the provider reference in a second transaction.
+|
+| These tests run WITHOUT a wrapping transaction (InteractsWithPaymentsDatabase),
+| because the service refuses to run inside an ambient transaction: the provider
+| must be reachable only at transaction level 0.
 |
 | No real adapter, no HTTP, no secret. The provider is a deterministic fake.
 | No confirmation: the order stays `pending`, nothing downstream is written.
@@ -104,20 +108,77 @@ function p3d3Key(string $seed = 'a'): string
 
 function p3d3Order(array $attributes = [], ?User $user = null, ?Visitor $visitor = null): Order
 {
-    // A pending, payable order created directly: P3-D3 is downstream of checkout
-    // and only ever reads `orders`, so the factory default is enough.
-    return Order::factory()->create(array_merge([
-        'status' => OrderStatus::Pending,
-        'total_minor' => 5_000,
-        'subtotal_minor' => 5_000,
-        'discount_minor' => 0,
-        'tax_minor' => 0,
-        'currency' => 'XOF',
-        'user_id' => $user?->id,
-        'visitor_id' => $visitor === null ? null : $visitor->id,
-        'expires_at' => now()->addMinutes(30),
-        'placed_at' => now(),
-    ], $attributes));
+    // These tests run WITHOUT a wrapping transaction, so an order is COMMITTED
+    // immediately and must satisfy the deferred consistency triggers on its own:
+    // it needs at least one matching order_item, and a non-pending, non-free
+    // order needs the payment its status implies. The setup is therefore wrapped
+    // in its own transaction (committed here, BEFORE the service runs at level 0).
+    return DB::transaction(function () use ($attributes, $user, $visitor): Order {
+        $order = Order::factory()->create(array_merge([
+            'status' => OrderStatus::Pending,
+            'total_minor' => 5_000,
+            'subtotal_minor' => 5_000,
+            'discount_minor' => 0,
+            'tax_minor' => 0,
+            'currency' => 'XOF',
+            'user_id' => $user?->id,
+            'visitor_id' => $visitor === null ? null : $visitor->id,
+            'expires_at' => now()->addMinutes(30),
+            'placed_at' => now(),
+        ], $attributes));
+
+        DB::table('order_items')->insert([
+            'order_id' => $order->id,
+            'product_id' => null,
+            'product_name_snapshot' => 'Pay Product',
+            'product_slug_snapshot' => 'pay-product',
+            'product_type_snapshot' => 'ebook',
+            'unit_price_minor' => $order->total_minor,
+            'quantity' => 1,
+            'line_subtotal_minor' => $order->total_minor,
+            'line_discount_minor' => 0,
+            'line_total_minor' => $order->total_minor,
+            'currency' => $order->currency,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Satisfy validate_payment_order_consistency for statuses that imply a
+        // captured or reviewed payment.
+        $captured = [OrderStatus::Paid, OrderStatus::PartiallyRefunded, OrderStatus::Refunded];
+
+        if (in_array($order->status, $captured, true)) {
+            p3d3InsertConsistencyPayment($order, 'succeeded');
+        } elseif ($order->status === OrderStatus::PaymentReview) {
+            p3d3InsertConsistencyPayment($order, 'requires_review');
+        }
+
+        return $order;
+    });
+}
+
+function p3d3InsertConsistencyPayment(Order $order, string $status): void
+{
+    $row = [
+        'public_id' => (string) Str::uuid(),
+        'order_id' => $order->id,
+        'provider' => 'seed-provider',
+        'idempotency_key_hash' => hash('sha256', 'seed-'.$order->id.'-'.$status),
+        'attempt_number' => 1,
+        'amount_minor' => $order->total_minor,
+        'currency' => $order->currency,
+        'status' => $status,
+        'initiated_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ];
+
+    // requires_review has no dedicated timestamp column; succeeded does.
+    if ($status === 'succeeded') {
+        $row['succeeded_at'] = now();
+    }
+
+    DB::table('payments')->insert($row);
 }
 
 function p3d3ExpectRefusal(Closure $callback, Reason $reason): void
@@ -282,14 +343,16 @@ it('refuses an order that is no longer payable', function (OrderStatus $status) 
         Reason::OrderNotPayable,
     );
 
-    expect(Payment::count())->toBe(0);
+    // The service created nothing; any seed payment carries a different provider.
+    expect(Payment::query()->where('provider', P3D3_PROVIDER)->count())->toBe(0);
 })->with([
+    // refunded / partially_refunded reach the same OrderNotPayable outcome but
+    // would additionally require seeded refund rows (out of P3-D3 scope); Paid
+    // already covers the captured-order refusal.
     [OrderStatus::Paid],
     [OrderStatus::PaymentReview],
     [OrderStatus::Cancelled],
     [OrderStatus::Expired],
-    [OrderStatus::Refunded],
-    [OrderStatus::PartiallyRefunded],
 ]);
 
 // ---------------------------------------------------------------------------
@@ -448,7 +511,7 @@ it('never allows a new attempt once the order left the pending state', function 
         Reason::OrderNotPayable,
     );
 
-    expect(Payment::count())->toBe(0);
+    expect(Payment::query()->where('provider', P3D3_PROVIDER)->count())->toBe(0);
 })->with([[OrderStatus::PaymentReview], [OrderStatus::Paid]]);
 
 // ---------------------------------------------------------------------------
@@ -602,143 +665,405 @@ it('keeps the order pending and writes nothing downstream on success', function 
 });
 
 // ---------------------------------------------------------------------------
-// Real concurrency (two runtime PostgreSQL connections)
+// FINDING A — an ambient transaction is refused before anything happens
 // ---------------------------------------------------------------------------
 
-/**
- * @param  callable(PDO, PDO, PDO): void  $scenario  (seed, A, B)
- */
-function p3d3Concurrency(callable $scenario): void
-{
-    $harness = new PhaseMigrationHarness('digitrove_p3d3_conc_'.strtolower(Str::random(10)));
-    $migrator = config('database.connections.pgsql_migration');
-    $runtime = config('database.connections.pgsql');
-    $options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION];
+it('refuses to run inside an ambient transaction, touching nothing', function () {
+    $user = User::factory()->create();
+    $order = p3d3Order(user: $user);
+    $provider = p3d3Provider();
 
-    $dsn = static fn (array $c): string => sprintf(
-        'pgsql:host=%s;port=%s;dbname=%s', $c['host'], $c['port'] ?? 5432, $harness->databaseName(),
+    DB::beginTransaction();
+    try {
+        p3d3ExpectRefusal(
+            fn () => p3d3Service($provider)->initiate($user, $order->public_id, p3d3Key('A1')),
+            Reason::IntegrityFailure,
+        );
+    } finally {
+        DB::rollBack();
+    }
+
+    expect($provider->calls)->toBe(0)
+        ->and(Payment::query()->where('order_id', $order->id)->count())->toBe(0)
+        ->and($order->fresh()->status)->toBe(OrderStatus::Pending);
+});
+
+// ---------------------------------------------------------------------------
+// FINDING B — eligibility uses the injected clock, never the wall clock
+// ---------------------------------------------------------------------------
+
+it('resumes a replay strictly before the injected expiry, ignoring the wall clock', function () {
+    $user = User::factory()->create();
+    $order = p3d3Order([
+        'placed_at' => CarbonImmutable::parse('2026-07-24 11:00:00Z'),
+        'expires_at' => CarbonImmutable::parse('2026-07-24 12:00:00Z'),
+    ], user: $user);
+    $key = p3d3Key('B1');
+
+    // First attempt at 11:55 fails at the provider, leaving a pending row.
+    p3d3ExpectRefusal(
+        fn () => p3d3Service(p3d3Provider(['throw' => true]))
+            ->initiate($user, $order->public_id, $key, CarbonImmutable::parse('2026-07-24 11:55:00Z')),
+        Reason::ProviderUnavailable,
     );
 
+    // Replay at 11:59 (injected) must resume even though the real clock is well
+    // past 2026-07-24 — the decision uses $at, not now().
+    $resume = p3d3Provider(['reference' => 'RESUMED-B1']);
+    p3d3Service($resume)->initiate($user, $order->public_id, $key, CarbonImmutable::parse('2026-07-24 11:59:00Z'));
+
+    expect($resume->calls)->toBe(1)
+        ->and(Payment::query()->where('order_id', $order->id)->sole()->provider_payment_reference)->toBe('RESUMED-B1');
+});
+
+it('does not resume a replay at the exact injected expiry instant', function () {
+    $user = User::factory()->create();
+    $order = p3d3Order([
+        'placed_at' => CarbonImmutable::parse('2026-07-24 11:00:00Z'),
+        'expires_at' => CarbonImmutable::parse('2026-07-24 12:00:00Z'),
+    ], user: $user);
+    $key = p3d3Key('B2');
+
+    p3d3ExpectRefusal(
+        fn () => p3d3Service(p3d3Provider(['throw' => true]))
+            ->initiate($user, $order->public_id, $key, CarbonImmutable::parse('2026-07-24 11:55:00Z')),
+        Reason::ProviderUnavailable,
+    );
+
+    // at == expires_at: the order is expired, so the provider is NOT re-called.
+    $noResume = p3d3Provider();
+    $result = p3d3Service($noResume)->initiate($user, $order->public_id, $key, CarbonImmutable::parse('2026-07-24 12:00:00Z'));
+
+    expect($noResume->calls)->toBe(0)
+        ->and($result->providerPaymentReference)->toBeNull();
+});
+
+it('refuses an initial call at the exact injected expiry instant', function () {
+    $user = User::factory()->create();
+    $order = p3d3Order([
+        'placed_at' => CarbonImmutable::parse('2026-07-24 11:00:00Z'),
+        'expires_at' => CarbonImmutable::parse('2026-07-24 12:00:00Z'),
+    ], user: $user);
+
+    p3d3ExpectRefusal(
+        fn () => p3d3Service()->initiate($user, $order->public_id, p3d3Key('B3'), CarbonImmutable::parse('2026-07-24 12:00:00Z')),
+        Reason::OrderExpired,
+    );
+
+    expect(Payment::count())->toBe(0);
+});
+
+// ---------------------------------------------------------------------------
+// FINDING C — a lost response is recovered by an idempotent re-call
+// ---------------------------------------------------------------------------
+
+it('re-calls the provider on replay to recover lost client instructions', function () {
+    $user = User::factory()->create();
+    $order = p3d3Order(user: $user);
+    $key = p3d3Key('C1');
+
+    // First call succeeds end to end: reference persisted, instructions returned
+    // but assumed lost before reaching the client.
+    $first = p3d3Provider(['reference' => 'REF-1']);
+    p3d3Service($first)->initiate($user, $order->public_id, $key);
+    $payment = Payment::query()->where('order_id', $order->id)->sole();
+
+    // Replay with the same key: the provider is re-called with the SAME public
+    // id, returns the SAME reference (idempotent), and the instructions are
+    // handed back — no second row, same attempt number.
+    $second = p3d3Provider(['reference' => 'REF-1']);
+    $result = p3d3Service($second)->initiate($user, $order->public_id, $key);
+
+    expect($second->calls)->toBe(1)
+        ->and($second->seenPublicIds)->toBe([$payment->public_id])
+        ->and($result->clientInstructions)->toBe(['ussd' => '*123#'])
+        ->and($result->providerPaymentReference)->toBe('REF-1')
+        ->and($result->attemptNumber)->toBe($payment->attempt_number)
+        ->and(Payment::query()->where('order_id', $order->id)->count())->toBe(1);
+});
+
+// ---------------------------------------------------------------------------
+// FINDING D — no raw database or provider exception escapes the public API
+// ---------------------------------------------------------------------------
+
+it('sanitises an unexpected database failure during finalisation', function () {
+    $user = User::factory()->create();
+    $order = p3d3Order(user: $user);
+
+    // A migrator-installed trigger raises a NON-23505 error on any payment
+    // update, forcing finalise() down its unexpected-exception path.
+    $migrator = DB::connection('pgsql_migration');
+    $migrator->unprepared(<<<'SQL'
+        CREATE OR REPLACE FUNCTION p3d3_block_update() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN RAISE EXCEPTION USING ERRCODE = '40001', MESSAGE = 'p3d3 injected serialization failure'; END; $$;
+        CREATE TRIGGER p3d3_block_update_trigger BEFORE UPDATE ON payments
+        FOR EACH ROW EXECUTE FUNCTION p3d3_block_update();
+        SQL);
+
     try {
-        $harness->create();
-        $harness->applyMigrationsThrough('2026_07_14_000013_create_download_logs_table.php');
-
-        $seed = new PDO($dsn($migrator), $migrator['username'], $migrator['password'], $options);
-        $a = new PDO($dsn($runtime), $runtime['username'], $runtime['password'], $options);
-        $b = new PDO($dsn($runtime), $runtime['username'], $runtime['password'], $options);
-
-        expect((string) $a->query('SELECT current_user')->fetchColumn())->toBe('digitrove_runtime')
-            ->and((string) $b->query('SELECT current_user')->fetchColumn())->toBe('digitrove_runtime')
-            ->and((bool) $a->query("SELECT has_database_privilege(current_user, current_database(), 'TEMP')")->fetchColumn())->toBeFalse();
-
-        $scenario($seed, $a, $b);
+        p3d3ExpectRefusal(
+            fn () => p3d3Service(p3d3Provider(['reference' => 'REF-D1']))->initiate($user, $order->public_id, p3d3Key('D1')),
+            Reason::IntegrityFailure,
+        );
     } finally {
-        $harness->drop();
+        $migrator->unprepared(
+            'DROP TRIGGER IF EXISTS p3d3_block_update_trigger ON payments; DROP FUNCTION IF EXISTS p3d3_block_update();'
+        );
     }
-}
-
-function p3d3SeedPendingOrder(PDO $seed, string $number = 'DGT-2026-PAYAAAAAAA'): void
-{
-    // A committed order must satisfy the deferred validate_order_items_consistency
-    // trigger, so it needs at least one order_item summing to its totals.
-    $seed->exec("INSERT INTO products (slug, name, type, status, created_at, updated_at)
-        VALUES ('pay-p', 'Pay Product', 'ebook', 'published', now(), now())");
-    $seed->beginTransaction();
-    $seed->exec("INSERT INTO orders (public_id, order_number, checkout_idempotency_hash, customer_email,
-        subtotal_minor, discount_minor, tax_minor, total_minor, currency, status, placed_at, expires_at, created_at, updated_at)
-        VALUES (gen_random_uuid(), '{$number}', '".hash('sha256', $number)."', 'pay@digitrove.test',
-        5000, 0, 0, 5000, 'XOF', 'pending', now(), now() + interval '30 minutes', now(), now())");
-    $seed->exec("INSERT INTO order_items (order_id, product_id, product_name_snapshot, product_slug_snapshot,
-        product_type_snapshot, unit_price_minor, quantity, line_subtotal_minor, line_discount_minor,
-        line_total_minor, currency, created_at, updated_at)
-        SELECT o.id, p.id, 'Pay Product', 'pay-p', 'ebook', 5000, 1, 5000, 0, 5000, 'XOF', now(), now()
-        FROM orders o, products p WHERE o.order_number = '{$number}' AND p.slug = 'pay-p'");
-    $seed->commit();
-}
-
-function p3d3InsertPayment(PDO $pdo, int $orderRef, string $keyHash, int $attempt): string
-{
-    // $orderRef selects the order by its ordinal; simplest is to use the sole order.
-    $pdo->exec("INSERT INTO payments (public_id, order_id, provider, idempotency_key_hash, attempt_number,
-        amount_minor, currency, status, initiated_at, created_at, updated_at)
-        SELECT gen_random_uuid(), o.id, '".P3D3_PROVIDER."', '{$keyHash}', {$attempt},
-        5000, 'XOF', 'pending', now(), now(), now() FROM orders o LIMIT 1");
-
-    return (string) $pdo->query("SELECT public_id FROM payments WHERE idempotency_key_hash = '{$keyHash}'")->fetchColumn();
-}
-
-it('serialises two attempts on the same order through the order row lock', function () {
-    p3d3Concurrency(function (PDO $seed, PDO $a, PDO $b): void {
-        p3d3SeedPendingOrder($seed);
-
-        $a->beginTransaction();
-        $a->exec('SELECT id FROM orders FOR UPDATE');
-
-        $b->exec("SET lock_timeout = '1000ms'");
-        $b->beginTransaction();
-
-        $blocked = null;
-        try {
-            $b->exec('SELECT id FROM orders FOR UPDATE');
-        } catch (PDOException $e) {
-            $blocked = $e;
-        }
-
-        expect($blocked)->not->toBeNull('Two attempts on one order were NOT serialised.')
-            ->and($blocked->getCode())->toBe('55P03');
-
-        $b->rollBack();
-        $a->rollBack();
-    });
 });
 
-it('lets PostgreSQL refuse a duplicate idempotency digest across orders', function () {
-    p3d3Concurrency(function (PDO $seed, PDO $a, PDO $b): void {
-        p3d3SeedPendingOrder($seed);
-        $digest = hash('sha256', 'shared-key-across-orders');
+it('never leaks sqlstate, sql or a constraint name in a sanitised failure', function () {
+    $user = User::factory()->create();
+    $order = p3d3Order(user: $user);
 
-        $a->beginTransaction();
-        p3d3InsertPayment($a, 1, $digest, 1);
-        $a->commit();
+    $migrator = DB::connection('pgsql_migration');
+    $migrator->unprepared(<<<'SQL'
+        CREATE OR REPLACE FUNCTION p3d3_block_update() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN RAISE EXCEPTION USING ERRCODE = '40001', MESSAGE = 'p3d3 injected serialization failure'; END; $$;
+        CREATE TRIGGER p3d3_block_update_trigger BEFORE UPDATE ON payments
+        FOR EACH ROW EXECUTE FUNCTION p3d3_block_update();
+        SQL);
 
-        $conflict = null;
-        try {
-            $b->beginTransaction();
-            // Same digest, second attempt number to dodge (order_id, attempt) —
-            // the idempotency unique is what must fire.
-            $b->exec("INSERT INTO payments (public_id, order_id, provider, idempotency_key_hash, attempt_number,
-                amount_minor, currency, status, initiated_at, created_at, updated_at)
-                SELECT gen_random_uuid(), o.id, '".P3D3_PROVIDER."', '{$digest}', 2,
-                5000, 'XOF', 'pending', now(), now(), now() FROM orders o LIMIT 1");
-            $b->commit();
-        } catch (PDOException $e) {
-            $conflict = $e;
-            $b->rollBack();
-        }
-
-        expect($conflict)->not->toBeNull()
-            ->and($conflict->getCode())->toBe('23505')
-            ->and($conflict->getMessage())->toContain('payments_idempotency_key_hash_unique');
-    });
+    try {
+        p3d3Service(p3d3Provider(['reference' => 'REF-D2']))->initiate($user, $order->public_id, p3d3Key('D2'));
+    } catch (PaymentInitiationException $e) {
+        expect($e->getMessage())->not->toContain('40001')
+            ->and($e->getMessage())->not->toContain('update')
+            ->and($e->getMessage())->not->toContain('p3d3_block_update')
+            ->and($e->getMessage())->not->toContain('SQLSTATE');
+    } finally {
+        $migrator->unprepared(
+            'DROP TRIGGER IF EXISTS p3d3_block_update_trigger ON payments; DROP FUNCTION IF EXISTS p3d3_block_update();'
+        );
+    }
 });
 
-it('lets PostgreSQL refuse a duplicate provider reference', function () {
-    p3d3Concurrency(function (PDO $seed, PDO $a, PDO $b): void {
-        p3d3SeedPendingOrder($seed);
-        $first = p3d3InsertPayment($a, 1, hash('sha256', 'ref-key-1'), 1);
-        $a->exec("UPDATE payments SET provider_payment_reference = 'DUP-REF' WHERE public_id = '{$first}'");
+it('sanitises a provider whose name accessor throws', function () {
+    $user = User::factory()->create();
+    $order = p3d3Order(user: $user);
 
-        $second = p3d3InsertPayment($b, 1, hash('sha256', 'ref-key-2'), 2);
-
-        $conflict = null;
-        try {
-            $b->exec("UPDATE payments SET provider_payment_reference = 'DUP-REF' WHERE public_id = '{$second}'");
-        } catch (PDOException $e) {
-            $conflict = $e;
+    $broken = new class implements PaymentProvider
+    {
+        public function name(): string
+        {
+            throw new RuntimeException('config exploded with secret inside');
         }
 
-        expect($conflict)->not->toBeNull()
-            ->and($conflict->getCode())->toBe('23505')
-            ->and($conflict->getMessage())->toContain('payments_provider_reference_unique');
-    });
+        public function initiate(ProviderInitiationRequest $request): ProviderInitiationResult
+        {
+            throw new RuntimeException('unreachable');
+        }
+    };
+
+    try {
+        p3d3Service($broken)->initiate($user, $order->public_id, p3d3Key('D4'));
+        throw new RuntimeException('Expected a refusal.');
+    } catch (PaymentInitiationException $e) {
+        expect($e->reason)->toBe(Reason::ProviderUnavailable)
+            ->and($e->getMessage())->not->toContain('secret');
+    }
+
+    expect(Payment::count())->toBe(0);
+});
+
+// ---------------------------------------------------------------------------
+// Defensive classification — a spoofed message is never a DB violation
+// ---------------------------------------------------------------------------
+
+it('never treats a spoofed payments constraint message as a real violation', function (string $constraint) {
+    // A provider that throws an application exception whose message names a real
+    // payments constraint must be sanitised to ProviderUnavailable, never
+    // mistaken for a uniqueness violation.
+    $user = User::factory()->create();
+    $order = p3d3Order(user: $user);
+
+    $spoofing = new class($constraint) implements PaymentProvider
+    {
+        public function __construct(private string $constraint) {}
+
+        public function name(): string
+        {
+            return P3D3_PROVIDER;
+        }
+
+        public function initiate(ProviderInitiationRequest $request): ProviderInitiationResult
+        {
+            throw new RuntimeException("duplicate key value violates unique constraint \"{$this->constraint}\"");
+        }
+    };
+
+    p3d3ExpectRefusal(
+        fn () => p3d3Service($spoofing)->initiate($user, $order->public_id, p3d3Key('DC')),
+        Reason::ProviderUnavailable,
+    );
+
+    // The attempt stays pending (ambiguous), never mislabelled.
+    expect(Payment::query()->where('order_id', $order->id)->sole()->status)->toBe(PaymentStatus::Pending);
+})->with([
+    ['payments_idempotency_key_hash_unique'],
+    ['payments_order_id_attempt_number_unique'],
+    ['payments_provider_reference_unique'],
+]);
+
+// ---------------------------------------------------------------------------
+// FINDING E — service-level concurrency proofs on independent connections
+// ---------------------------------------------------------------------------
+
+/** An independent runtime connection to the same testing database. */
+function p3d3RuntimePdo(): PDO
+{
+    $c = config('database.connections.pgsql');
+
+    return new PDO(
+        sprintf('pgsql:host=%s;port=%s;dbname=%s', $c['host'], $c['port'] ?? 5432, $c['database']),
+        $c['username'],
+        $c['password'],
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
+    );
+}
+
+// E0 — the payment is committed and visible to an independent connection before
+// the provider ever runs.
+it('commits the payment before the provider call and exposes it to an independent connection', function () {
+    $user = User::factory()->create();
+    $order = p3d3Order(user: $user);
+
+    $probe = new class implements PaymentProvider
+    {
+        public int $transactionLevelDuringCall = -1;
+
+        public bool $visibleToIndependentConnection = false;
+
+        public string $independentRole = '';
+
+        public function name(): string
+        {
+            return P3D3_PROVIDER;
+        }
+
+        public function initiate(ProviderInitiationRequest $request): ProviderInitiationResult
+        {
+            $this->transactionLevelDuringCall = DB::transactionLevel();
+
+            $pdo = p3d3RuntimePdo();
+            $this->independentRole = (string) $pdo->query('SELECT current_user')->fetchColumn();
+            $stmt = $pdo->prepare('SELECT status FROM payments WHERE public_id = ?');
+            $stmt->execute([$request->paymentPublicId]);
+            $this->visibleToIndependentConnection = $stmt->fetchColumn() === 'pending';
+            $stmt = null;
+            $pdo = null; // release the connection immediately
+
+            return new ProviderInitiationResult(providerPaymentReference: 'E0-REF');
+        }
+    };
+
+    p3d3Service($probe)->initiate($user, $order->public_id, p3d3Key('E0'));
+
+    expect($probe->transactionLevelDuringCall)->toBe(0)
+        ->and($probe->independentRole)->toBe('digitrove_runtime')
+        ->and($probe->visibleToIndependentConnection)->toBeTrue();
+});
+
+// C1 — two keys, same order: the order lock serialises, and after it clears the
+// service refuses the second key.
+it('serialises attempts on one order and then refuses a second key at the service level', function () {
+    $user = User::factory()->create();
+    $order = p3d3Order(user: $user);
+
+    // The lock proof: an independent runtime connection holds the order lock;
+    // a second one times out with 55P03.
+    $a = p3d3RuntimePdo();
+    $b = p3d3RuntimePdo();
+    $a->beginTransaction();
+    $a->exec('SELECT id FROM orders FOR UPDATE');
+    $b->exec("SET lock_timeout = '1000ms'");
+    $b->beginTransaction();
+
+    $blocked = null;
+    try {
+        $b->exec('SELECT id FROM orders FOR UPDATE');
+    } catch (PDOException $e) {
+        $blocked = $e;
+    }
+    $b->rollBack();
+    $a->rollBack();
+    $a = null;
+    $b = null; // release both connections before the service calls
+
+    expect($blocked)->not->toBeNull('The order row lock did not serialise.')
+        ->and($blocked->getCode())->toBe('55P03');
+
+    // The service outcome once the lock is free: first key creates attempt 1,
+    // a second, different key is refused because that attempt is live.
+    p3d3Service()->initiate($user, $order->public_id, p3d3Key('C1a'));
+    p3d3ExpectRefusal(
+        fn () => p3d3Service()->initiate($user, $order->public_id, p3d3Key('C1b')),
+        Reason::PaymentAlreadyInProgress,
+    );
+
+    $payments = Payment::query()->where('order_id', $order->id)->get();
+    expect($payments)->toHaveCount(1)
+        ->and($payments->first()->attempt_number)->toBe(1);
+});
+
+// C3 — same key, two orders: the second call is translated by the service to
+// IdempotencyConflict, and the digest unique is proven as the DB backstop.
+it('refuses the same digest on a second order at the service level and at the index', function () {
+    $user = User::factory()->create();
+    $orderA = p3d3Order(user: $user);
+    $orderB = p3d3Order(user: $user);
+    $key = p3d3Key('C3');
+
+    p3d3Service()->initiate($user, $orderA->public_id, $key);
+
+    // Service translation (the committed first attempt is found on lookup).
+    p3d3ExpectRefusal(
+        fn () => p3d3Service()->initiate($user, $orderB->public_id, $key),
+        Reason::IdempotencyConflict,
+    );
+
+    // DB backstop: a raw insert of the same digest on order B is refused by the
+    // global unique with 23505 — the constraint the savepoint recovery relies on.
+    $digest = hash('sha256', $key);
+    $pdo = p3d3RuntimePdo();
+    $conflict = null;
+    try {
+        $pdo->exec("INSERT INTO payments (public_id, order_id, provider, idempotency_key_hash, attempt_number,
+            amount_minor, currency, status, initiated_at, created_at, updated_at)
+            SELECT gen_random_uuid(), id, '".P3D3_PROVIDER."', '{$digest}', 1, total_minor, currency,
+            'pending', now(), now(), now() FROM orders WHERE public_id = '{$orderB->public_id}'");
+    } catch (PDOException $e) {
+        $conflict = $e;
+    }
+    $pdo = null; // release the connection
+
+    expect($conflict)->not->toBeNull()
+        ->and($conflict->getCode())->toBe('23505')
+        ->and($conflict->getMessage())->toContain('payments_idempotency_key_hash_unique')
+        ->and(Payment::count())->toBe(1);
+});
+
+// C4 — a duplicate provider reference is refused by the real finalisation path.
+it('refuses a duplicate provider reference through the service finalisation path', function () {
+    $user = User::factory()->create();
+    $orderA = p3d3Order(user: $user);
+    $orderB = p3d3Order(user: $user);
+
+    // Both orders get the same reference from the provider: the first finalises,
+    // the second hits payments_provider_reference_unique and is sanitised to
+    // IntegrityFailure without leaking the constraint.
+    p3d3Service(p3d3Provider(['reference' => 'SHARED-REF']))->initiate($user, $orderA->public_id, p3d3Key('C4a'));
+
+    try {
+        p3d3Service(p3d3Provider(['reference' => 'SHARED-REF']))->initiate($user, $orderB->public_id, p3d3Key('C4b'));
+        throw new RuntimeException('Expected a refusal.');
+    } catch (PaymentInitiationException $e) {
+        expect($e->reason)->toBe(Reason::IntegrityFailure)
+            ->and($e->getMessage())->not->toContain('payments_provider_reference_unique')
+            ->and($e->getMessage())->not->toContain('23505');
+    }
+
+    // The winner keeps its reference; the loser stays pending with none.
+    expect(Payment::query()->where('order_id', $orderA->id)->sole()->provider_payment_reference)->toBe('SHARED-REF')
+        ->and(Payment::query()->where('order_id', $orderB->id)->sole()->provider_payment_reference)->toBeNull();
 });

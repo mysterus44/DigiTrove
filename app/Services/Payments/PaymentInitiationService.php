@@ -59,6 +59,16 @@ final class PaymentInitiationService
         #[SensitiveParameter] string $idempotencyKey,
         ?CarbonImmutable $at = null,
     ): InitiatedPayment {
+        // The provider MUST be reachable only at transaction level 0 (D-033): an
+        // ambient transaction would hold locks across the external latency, so
+        // it is refused before any read or write.
+        if (DB::transactionLevel() !== 0) {
+            throw PaymentInitiationException::of(
+                PaymentInitiationRefusalReason::IntegrityFailure,
+                'The payment could not be initiated.',
+            );
+        }
+
         if (preg_match(self::IDEMPOTENCY_KEY_PATTERN, $idempotencyKey) !== 1) {
             throw PaymentInitiationException::of(
                 PaymentInitiationRefusalReason::InvalidIdempotencyKey,
@@ -66,7 +76,60 @@ final class PaymentInitiationService
             );
         }
 
-        $providerName = $this->provider->name();
+        $providerName = $this->resolveProviderName();
+
+        // Only the digest ever leaves this method.
+        $digest = hash('sha256', $idempotencyKey);
+        $now = $at ?? CarbonImmutable::now();
+
+        try {
+            // Phase 1: reserve (or resolve a replay of) the attempt and COMMIT.
+            [$paymentId, $providerRequest] = $this->reserve($actor, $orderPublicId, $providerName, $digest, $now);
+
+            $payment = Payment::query()->findOrFail($paymentId);
+
+            // An attempt that must not be resumed (order no longer payable) is
+            // returned as-is: the provider is not called.
+            if ($providerRequest === null) {
+                return $this->toResult($payment, null);
+            }
+
+            // Phase 2: OUTSIDE any transaction.
+            $result = $this->callProvider($providerRequest);
+
+            // Phase 3: finalise the reference on the same row.
+            $this->finalise($payment, $result);
+
+            return $this->toResult($payment->fresh() ?? $payment, $result);
+        } catch (PaymentInitiationException $exception) {
+            // Business refusals and already-sanitised provider failures pass
+            // through unchanged.
+            throw $exception;
+        } catch (Throwable) {
+            // Any unexpected database or model error is sanitised: no SQLSTATE,
+            // SQL, constraint name or trigger message ever reaches the caller.
+            throw PaymentInitiationException::of(
+                PaymentInitiationRefusalReason::IntegrityFailure,
+                'The payment could not be initiated.',
+            );
+        }
+    }
+
+    /**
+     * @throws PaymentInitiationException
+     */
+    private function resolveProviderName(): string
+    {
+        try {
+            $providerName = $this->provider->name();
+        } catch (Throwable) {
+            // A misbehaving adapter (e.g. a name accessor that reads a broken
+            // config) is sanitised, never surfaced.
+            throw PaymentInitiationException::of(
+                PaymentInitiationRefusalReason::ProviderUnavailable,
+                'The payment provider is currently unavailable.',
+            );
+        }
 
         if (preg_match(self::PROVIDER_NAME_PATTERN, $providerName) !== 1) {
             throw PaymentInitiationException::of(
@@ -75,28 +138,7 @@ final class PaymentInitiationService
             );
         }
 
-        // Only the digest ever leaves this method.
-        $digest = hash('sha256', $idempotencyKey);
-        $now = $at ?? CarbonImmutable::now();
-
-        // Phase 1: reserve (or resolve a replay of) the attempt and COMMIT.
-        [$paymentId, $providerRequest] = $this->reserve($actor, $orderPublicId, $providerName, $digest, $now);
-
-        $payment = Payment::query()->findOrFail($paymentId);
-
-        // A payment that already carries a reference, or whose order is no
-        // longer payable, is returned as-is: the provider is not re-called.
-        if ($providerRequest === null) {
-            return $this->toResult($payment, null);
-        }
-
-        // Phase 2: OUTSIDE any transaction.
-        $result = $this->callProvider($providerRequest);
-
-        // Phase 3: finalise the reference on the same row.
-        $this->finalise($payment, $result);
-
-        return $this->toResult($payment->fresh() ?? $payment, $result);
+        return $providerName;
     }
 
     /**
@@ -127,7 +169,7 @@ final class PaymentInitiationService
                 ->first();
 
             if ($existing !== null) {
-                return $this->resolveReplay($existing, $order, $providerName);
+                return $this->resolveReplay($existing, $order, $providerName, $now);
             }
 
             $this->assertPayable($order, $now);
@@ -167,7 +209,7 @@ final class PaymentInitiationService
             );
         }
 
-        if ($order->expires_at !== null && $now->greaterThan($order->expires_at)) {
+        if ($this->isExpired($order, $now)) {
             throw PaymentInitiationException::of(
                 PaymentInitiationRefusalReason::OrderExpired,
                 'This order has expired.',
@@ -248,7 +290,7 @@ final class PaymentInitiationService
             $existing = Payment::query()->where('idempotency_key_hash', $digest)->first();
 
             if ($existing !== null) {
-                return $this->resolveReplay($existing, $order, $providerName);
+                return $this->resolveReplay($existing, $order, $providerName, $now);
             }
         }
 
@@ -266,7 +308,7 @@ final class PaymentInitiationService
      *
      * @throws PaymentInitiationException
      */
-    private function resolveReplay(Payment $existing, Order $order, string $providerName): array
+    private function resolveReplay(Payment $existing, Order $order, string $providerName, CarbonImmutable $now): array
     {
         if ($existing->order_id !== $order->id || $existing->provider !== $providerName) {
             throw PaymentInitiationException::of(
@@ -275,16 +317,25 @@ final class PaymentInitiationService
             );
         }
 
-        // Resume only a live attempt with no reference yet, and only while the
-        // order is still payable. Otherwise the stored attempt is authoritative
-        // and is returned untouched.
-        $resumable = $existing->provider_payment_reference === null
-            && in_array($existing->status->value, self::LIVE_STATUSES, true)
+        // Resume a live attempt whenever the order is still payable, EVEN IF a
+        // reference is already stored: re-calling the provider with the same
+        // public id (idempotent by contract) is how a client recovers ephemeral
+        // instructions lost to a crash after finalisation (D-033). Finalise then
+        // stays idempotent on an identical reference and refuses a different one.
+        // Expiry uses the injected instant only: expired iff now >= expires_at.
+        $resumable = in_array($existing->status->value, self::LIVE_STATUSES, true)
             && $order->status === OrderStatus::Pending
             && $order->total_minor > 0
-            && ($order->expires_at === null || $order->expires_at->isFuture());
+            && ! $this->isExpired($order, $now);
 
         return [$existing->id, $resumable ? $this->buildProviderRequest($existing, $order) : null];
+    }
+
+    private function isExpired(Order $order, CarbonImmutable $now): bool
+    {
+        // Single expiry predicate, shared by the initial call and every replay:
+        // never reads the wall clock.
+        return $order->expires_at !== null && $now->greaterThanOrEqualTo($order->expires_at);
     }
 
     private function buildProviderRequest(Payment $payment, Order $order): ProviderInitiationRequest
@@ -381,24 +432,15 @@ final class PaymentInitiationService
                 return;
             }
 
-            try {
-                $fresh->forceFill([
-                    'provider_payment_reference' => $reference,
-                    'provider_status' => $result->providerStatus,
-                    'provider_method' => $result->providerMethod,
-                ])->save();
-            } catch (Throwable $exception) {
-                // A duplicate reference across payments is a generic integrity
-                // failure; the name is never surfaced.
-                if (PostgresConstraintViolation::isUniqueViolationOf($exception, 'payments_provider_reference_unique')) {
-                    throw PaymentInitiationException::of(
-                        PaymentInitiationRefusalReason::IntegrityFailure,
-                        'The payment could not be finalised.',
-                    );
-                }
-
-                throw $exception;
-            }
+            // A duplicate reference across payments (23505 on
+            // payments_provider_reference_unique) or any other database error is
+            // caught by initiate()'s outer handler and sanitised to
+            // IntegrityFailure — no constraint name or SQLSTATE is ever surfaced.
+            $fresh->forceFill([
+                'provider_payment_reference' => $reference,
+                'provider_status' => $result->providerStatus,
+                'provider_method' => $result->providerMethod,
+            ])->save();
         });
     }
 
