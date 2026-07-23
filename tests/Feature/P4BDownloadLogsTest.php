@@ -35,6 +35,11 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Checkout/CheckoutException.php',
     'Checkout/CheckoutRefusalReason.php',
     'Checkout/OrderService.php',
+    // P3-D3 (D-033) — payment initiation. Commerce only, no delivery.
+    'Payments/InitiatedPayment.php',
+    'Payments/PaymentInitiationException.php',
+    'Payments/PaymentInitiationRefusalReason.php',
+    'Payments/PaymentInitiationService.php',
     'Pricing/CouponSnapshot.php',
     'Pricing/DiscountAllocator.php',
     'Pricing/PricedLine.php',
