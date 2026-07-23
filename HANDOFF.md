@@ -8,8 +8,25 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-23
-- **Branche git active** : `p0-foundations-laravel13` (stable, à
-  `70379a02` — merge de P3-D3)
+- **Branche git active** : `p3-d4-d5-payment-confirmation` (macro-gate, sur la
+  stable `70379a02`)
+- **P3-D4 + P3-D5 IMPLÉMENTÉS — EN ATTENTE DE REVUE/MERGE** (macro-gate unique,
+  **D-034**, **aucune migration** — 29 inchangées) : webhook CinetPay signé
+  (HMAC `x-token`) + dédupliqué, **contre-appel fournisseur obligatoire** (le
+  corps du webhook n'est jamais autoritatif), confirmation atomique
+  `Payment pending→processing→succeeded` + `Order → paid` en une transaction,
+  argent comparé en entiers, **succès incohérent ⇒ `payment_review`** (jamais
+  faux `paid` ni `failed`), coupon consommé exactement une fois au `paid` (jamais
+  au checkout), branche gratuite `total_minor = 0` sans Payment
+  (`FreeOrderConfirmationService`), **`OrderPaid` (`order_id` seul) après
+  COMMIT**. **CinetPay désactivé par défaut** (`PAYMENT_DRIVER` vide, résolu
+  fail-closed) ; **PowerPay** = scaffold `docs/integrations/POWERPAY_SETUP.md`
+  sans endpoint inventé. Validation : 59 tests P3-D4/D5 (adapter 23, binding 5,
+  confirmation 16 dont C3/C4 réels, webhook HTTP 8 dont C1/C2, événement 7 dont
+  C5), suite complète **537/4083**, Pint **175**, **29 migrations**, aucune
+  `000014`. Fenêtre résiduelle COMMIT→dispatch assumée (pas d'outbox). **Aucune
+  livraison P4-C, aucun listener.** Prochaine macro-tâche après merge :
+  **P4-C0 + P4-C1 + P4-C2**.
 - **P3-D3 TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #22](https://github.com/mysterus44/DigiTrove/pull/22), head
   `5188e6cc5c82358cdc1e72efe3e8e3345babf930`, merge
@@ -336,25 +353,24 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 `P3-D4 — Server-side Payment Confirmation` (NON commencé)
+## 🎯 Après merge du macro-gate : `P4-C0 + P4-C1 + P4-C2` (NON commencé)
 
-**`P3-D3 — Payment Initiation` EST TERMINÉ, MERGÉ ET VALIDÉ** —
-[PR #22](https://github.com/mysterus44/DigiTrove/pull/22), head `5188e6cc`,
-merge `70379a02e1f220e6dac4f53552b8a5712c6e4815` (parents `6e701a1e` +
-`5188e6cc`), **CI #26 success**, clôturé sur la stable `p0-foundations-laravel13`.
-**D-033** consignée et figée. **Aucune migration**, aucun adaptateur PowerPay
-réel, aucun secret, aucun appel HTTP. Initiation en **deux phases** : réservation
-`payments` `pending` committée → appel du port fournisseur **hors transaction** →
-finalisation de la référence en seconde transaction. Périmètre exact
-**14 fichiers (+2005/-7)** (`app/Contracts/Payments/*` + `app/Services/Payments/*`
-+ concern + tests + docs). Validation post-merge : P3-D3 **54/246**, suite
-complète **478/3894**, Pint **149**, **29 migrations**, aucune `000014`.
+**`P3-D4 + P3-D5` SONT IMPLÉMENTÉS** sur `p3-d4-d5-payment-confirmation`
+(macro-gate unique, **D-034**), **en attente de revue/merge**. **Aucune
+migration.** Voir le bloc d'état en tête et D-034 pour le détail figé (webhook
+non autoritatif, contre-appel obligatoire, argent en entiers, ladder
+`pending→processing→succeeded`, `payment_review` sur succès incohérent, coupon au
+`paid` seulement, free order sans Payment, `OrderPaid` après COMMIT, CinetPay
+désactivé, PowerPay scaffold, fenêtre résiduelle sans outbox).
 
-**`P3-D4 — Server-side Payment Confirmation` est le prochain gate autorisé — NON
-commencé.** Aucune architecture ni aucun code P3-D4 ne doit être écrit dans la
-clôture de P3-D3.
+**La prochaine macro-tâche, après merge, est `P4-C0 + P4-C1 + P4-C2`** (Queue &
+Mail Secret Safety → Grant Issuance → Refund Grant Revocation, D-030). **NE PAS**
+commencer P4-C avant le merge de P3-D4/D5. `P4-C0` bloque tous les gates de
+livraison ; **`P4-C2` doit être mergé avant l'activation réelle de `P4-C3`**.
+⚠️ Réécrire `.context/skills/SECURITE_TELECHARGEMENT.md` (partiellement périmé)
+avant le gate `P4-C4`.
 
-Invariants D-033 hérités, utiles à P3-D4 :
+Invariants D-033/D-034 hérités, utiles à P4-C :
 - `payment.public_id` est la **clé d'idempotence fournisseur** (publique,
   stable) ; la **clé brute appelant n'est jamais persistée, loguée ni envoyée**
   au fournisseur (digest SHA-256 seul) ;

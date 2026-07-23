@@ -283,19 +283,40 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   **20/628**, suite complète **478/3894**, Pint **149**, **29 migrations**,
   aucune `000014`, `git diff --check` propre.
 
-**PROCHAINE TÂCHE : `P3-D4 — Server-side Payment Confirmation` (prochain gate
-autorisé, NON commencé).** Invariants hérités : l'Order et
-ses `order_items` sont la **source autoritative** (le panier est `converted` et
-peut avoir changé) ; aucune donnée tarifaire client n'est acceptée ; une commande
-gratuite reste `pending` ; **aucun coupon n'est consommé au checkout** —
+- **`P3-D4 + P3-D5 — Confirmation serveur + OrderPaid` 🔶 IMPLÉMENTÉS — EN
+  ATTENTE DE REVUE/MERGE** (macro-gate `p3-d4-d5-payment-confirmation`, **D-034**,
+  **aucune migration** — 29 inchangées) : webhook CinetPay signé (HMAC `x-token`,
+  `hash_equals`) + dédupliqué (`PostgresConstraintViolation`, jamais de
+  substring), **contre-appel fournisseur obligatoire hors transaction** (le corps
+  du webhook n'est jamais autoritatif), confirmation atomique
+  `Payment pending→processing→succeeded` + `Order → paid`, argent comparé en
+  entiers, **succès incohérent ⇒ `payment_review`** (jamais faux `paid` ni
+  `failed`, référence jamais écrasée), **coupon consommé exactement une fois au
+  `paid`** sous `coupons FOR UPDATE`, branche gratuite `total_minor = 0` sans
+  Payment (`FreeOrderConfirmationService`), **`OrderPaid` (`order_id` seul) après
+  COMMIT** (fenêtre résiduelle assumée, pas d'outbox). **CinetPay désactivé par
+  défaut** (`PAYMENT_DRIVER` vide, binding fail-closed, secrets en config
+  uniquement) ; **PowerPay** = scaffold `docs/integrations/POWERPAY_SETUP.md`
+  sans endpoint inventé. Aucune livraison, aucun listener P4-C. Validation : 59
+  tests P3-D4/D5 (adapter 23, binding 5, confirmation 16 dont C3/C4 réels,
+  webhook 8 dont C1/C2, événement 7 dont C5), suite complète **537/4083**, Pint
+  **175**, **29 migrations**, aucune `000014`.
+
+**PROCHAINE TÂCHE : revue et merge de la PR `P3-D4/D5`, puis macro-tâche
+`P4-C0 + P4-C1 + P4-C2`** (Queue/Mail Secret Safety → Grant Issuance → Refund
+Revocation, D-030). **NE PAS commencer P4-C avant le merge.** Invariants hérités :
+l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
+tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —
 `coupon_redemptions` et `redemptions_count` n'arrivent qu'à la confirmation
-serveur du paiement (P3-D4) ; le TTL `pending` est validé côté serveur (D-032) et
-un rejeu conserve l'expiration d'origine ; la clé d'idempotence brute n'est
-jamais persistée ; les collisions d'`order_number` passent par un **savepoint**
-PostgreSQL. Aucun Payment, aucun `OrderPaid`, aucun DownloadGrant n'existe encore.
-Deux jugements conservateurs hérités
-de P3-D1 restent en vigueur : seul `products.status = 'published'` est vendable ;
-`min_order_minor` est un plancher mesuré sur le panier entier. P5 non démarré.
+serveur (P3-D4) ; le webhook n'est jamais autoritatif, le contre-appel fournisseur
+l'est ; le TTL `pending` est validé côté serveur (D-032) ; la clé d'idempotence
+brute n'est jamais persistée ; les collisions d'`order_number` passent par un
+**savepoint** PostgreSQL. `P4-C0` bloque tous les gates de livraison ; **`P4-C2`
+avant l'activation réelle de `P4-C3`** ; réécrire
+`.context/skills/SECURITE_TELECHARGEMENT.md` avant `P4-C4`. Deux jugements
+conservateurs hérités de P3-D1 restent en vigueur : seul
+`products.status = 'published'` est vendable ; `min_order_minor` est un plancher
+mesuré sur le panier entier. P5 non démarré.
 
 ## 🔄 EN FIN DE TÂCHE
 

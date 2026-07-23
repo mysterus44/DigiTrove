@@ -2545,5 +2545,116 @@ existante ; persister `provider_metadata` ou les instructions client ; classer
 une exception fournisseur par texte ; adaptateur PowerPay réel ou secret dans ce
 gate ; preuves de concurrence purement SQL sans le chemin réel du service.
 
+### D-034 — Confirmation serveur atomique et événement OrderPaid (P3-D4 + P3-D5) ✅
+**Date** : 2026-07-23. **Statut** : **P3-D4 + P3-D5 IMPLÉMENTÉS — EN ATTENTE DE
+REVUE/MERGE** (branche `p3-d4-d5-payment-confirmation`, **macro-gate unique**,
+**aucune migration** — 29 inchangées). CinetPay est l'unique adaptateur réel,
+**désactivé par défaut** ; PowerPay reste un scaffold documentaire sans endpoint
+inventé.
+
+**DÉCISIONS FIGÉES**
+1. **Le corps du webhook n'est jamais autoritatif** — même signé, il ne sert
+   qu'à déclencher une contre-vérification serveur.
+2. **Signature HMAC obligatoire avant tout lien avec un Payment** : `x-token`
+   reconstruit dans l'ordre officiel des 16 champs, `hash_hmac('sha256', …)`,
+   comparaison `hash_equals()` uniquement. La connaissance CinetPay (endpoints,
+   libellés de statut, ordre HMAC) est **isolée dans l'adaptateur**.
+3. **Contre-appel fournisseur obligatoire** (`/v2/payment/check`), même quand le
+   webhook annonce `ACCEPTED`/`REFUSED`/`CANCELLED`. Le résultat normalisé est la
+   **seule autorité externe**.
+4. **Aucun appel réseau sous transaction** : `DB::transactionLevel() === 0` exigé
+   avant le contre-appel ; réservation/enregistrement committé, appel hors
+   transaction, confirmation en transaction séparée.
+5. **Argent comparé en entiers** : `provider.amount_minor === payment.amount_minor
+   === order.total_minor` et devises strictes. Le montant fournisseur est parsé
+   en **digit-string** (`^[0-9]{1,18}$`) — aucun float, arrondi ou notation
+   scientifique.
+6. **Ordre de verrouillage global** : `Order → Payment → Coupon → CouponRedemption
+   → WebhookEvent`. Le Payment est localisé sans verrou pour trouver `order_id`,
+   puis Order est verrouillé avant Payment.
+7. **Ladder Payment respectée** : le trigger interdit `pending → succeeded`
+   direct ; la confirmation monte `pending → processing → succeeded` dans la même
+   transaction, `succeeded_at`/`processing_at`/`last_verified_at` renseignés.
+8. **Payment et Order changent dans une seule transaction** ; le trigger différé
+   `validate_payment_order_consistency` impose leur cohérence au COMMIT.
+9. **Succès externe incohérent ⇒ revue manuelle** (montant/devise/référence
+   divergents, coupon inconsommable, état local contradictoire) : `Payment →
+   requires_review`, `Order → payment_review`, **aucun coupon consommé, aucun
+   OrderPaid**. Un succès incohérent **ne devient jamais `failed`** ; une
+   référence stockée **n'est jamais écrasée**.
+10. **Coupon consommé exclusivement à la transition `paid`**, sous verrou
+    `coupons FOR UPDATE` : `max_redemptions` (et par client) vérifié, une seule
+    `CouponRedemption` (backstop `coupon_redemptions_order_id_unique`), un seul
+    incrément de `redemptions_count` (compteur **100 % applicatif**). La remise
+    n'est **jamais recalculée** — seul le snapshot figé de l'Order est copié.
+    `customer_key_hash` = `sha256(user:… | visitor:… | email:…)`, version 1
+    (primitive `App\Support\CustomerRedemptionKey`).
+11. **Rejeu entièrement idempotent** : dédup webhook par `23505 + nom de
+    contrainte exact` (`PostgresConstraintViolation`, jamais de substring) — signé
+    par `provider_external_event_unique`, invalide par `provider_payload_hash_
+    unique` ; un rejeu terminal ne retraite jamais l'argent ni ne redispatche.
+12. **Aucune livraison** dans ce gate : ni DownloadGrant, ni job, ni mail, ni
+    endpoint de téléchargement, ni listener P4-C.
+13. **Commande gratuite** (`FreeOrderConfirmationService`) : `total_minor = 0`,
+    **aucune ligne Payment**, verrou Order puis Coupon, coupon consommé dans la
+    même transaction si applicable, `Order → paid`, OrderPaid après COMMIT ;
+    ownership anti-énumération uniforme ; coupon indisponible ⇒ rollback complet
+    (pas de chemin de revue sans Payment).
+14. **`OrderPaid` (P3-D5) ne porte que `order_id`** (entier), dispatché via
+    `DB::afterCommit` **uniquement sur une transition réelle `pending → paid`**,
+    jamais avant COMMIT, jamais en rollback/rejeu, jamais pour `payment_review`
+    ni pour processing/failed/cancelled/unknown. **Aucun listener** n'existe dans
+    ce gate.
+15. **Fenêtre résiduelle assumée** : le dispatch est *au-moins-une-fois* par
+    transition locale ; une panne du processus entre COMMIT et dispatch reste une
+    fenêtre résiduelle — la réconciliation durable appartient au futur P4-C/Ops.
+    **Aucune table outbox** n'est créée ici.
+16. **CinetPay désactivé par défaut** (`PAYMENT_DRIVER` vide) ; résolu uniquement
+    avec `PAYMENT_DRIVER=cinetpay` et configuration complète, sinon
+    `ProviderConfigurationFailure` **avant tout HTTP** (binding lazy dans
+    `AppServiceProvider`). HTTPS obligatoire hors `local`/`testing`, TLS jamais
+    désactivé, secrets lus **uniquement depuis `config/payments.php`** (jamais
+    `env()` dans l'adaptateur), jamais logués ni exposés.
+
+**IDENTIFIANT D'ÉVÉNEMENT CINETPAY** : CinetPay ne fournit pas d'ID d'événement
+autonome, donc dérivation bornée `derived:` + `sha256("cinetpay\n" +
+transaction_id + "\n" + payload_hash)` (72 caractères). Même notification exacte
+⇒ même ID ; toute variation ⇒ événement distinct. Le `payload_hash` canonique
+(clés triées, JSON stable) couvre une **allowlist non-PII** — téléphone
+(`cel_phone_num`, `cpm_phone_prefixe`) et `cpm_custom` exclus du hash **et** du
+`filtered_payload` ; `x-token`/secret jamais persistés.
+
+**RÉPONSES HTTP** (jamais révélatrices de l'existence d'un Order/Payment) :
+health `200` · traité/rejoué `200` · signature invalide `401` · payload invalide
+`422` · fournisseur indisponible/protocole/config `503` · erreur interne `500`.
+Route API stateless dédiée (`routes/api.php`), sans session ni CSRF web, pas de
+route PowerPay.
+
+**PÉRIMÈTRE** : `app/Contracts/Payments/*` (NormalizedPaymentStatus,
+ProviderWebhookEnvelope, ProviderPaymentVerificationRequest/Result,
+PaymentConfirmationProvider), `app/Payments/*` (CinetPayProvider, CinetPayWebhook,
+PaymentProviderFactory), `app/Services/Payments/*` (WebhookRecordingService,
+PaymentConfirmationService, FreeOrderConfirmationService, WebhookOutcome,
+RecordedWebhook, PaymentConfirmationException/RefusalReason),
+`app/Events/OrderPaid.php`, `app/Support/CustomerRedemptionKey.php`,
+`app/Http/{Controllers/Api,Requests}/CinetPay*`, `config/payments.php`,
+`routes/api.php`, `docs/integrations/POWERPAY_SETUP.md`, `.env.example`,
+`bootstrap/app.php` (routing API), `AppServiceProvider` (binding).
+
+**VALIDATION** : nouvelles suites P3-D4/D5 **59 tests** (adapter 23, binding 5,
+confirmation 16 dont C3/C4 sur connexions runtime réelles, webhook HTTP 8 dont
+C1/C2, événement/free-order 7 dont C5). Suite complète **537/4083** (était
+478/3894), Pint **175 fichiers**, **29 migrations**, aucune `000014`,
+`git diff --check` propre. Concurrence prouvée : verrous `coupons`/`orders`
+sérialisent (`55P03`), dernière place coupon ⇒ perdante en `payment_review` sans
+dépasser le compteur, aucun `25P02`/`42501`.
+
+**ALTERNATIVES REJETÉES** : faire confiance au statut du webhook ; contre-appel
+sous transaction ; comparaison monétaire flottante ; classement de contrainte par
+substring ; dispatch d'OrderPaid avant COMMIT ou au rejeu ; consommation de
+coupon au checkout ; recalcul de la remise ; endpoint/statut/secret PowerPay
+inventé ; adaptateur CinetPay actif par défaut ; table outbox dans ce gate ;
+livraison ou listener P4-C.
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]
