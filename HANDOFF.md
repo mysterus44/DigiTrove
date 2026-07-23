@@ -8,9 +8,12 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-07-23
-- **Branche git active** : `p3-d4-d5-payment-confirmation` (macro-gate, sur la
-  stable `70379a02`)
-- **P3-D4 + P3-D5 IMPLÉMENTÉS — EN ATTENTE DE REVUE/MERGE** (macro-gate unique,
+- **Branche git active** : `p0-foundations-laravel13` (stable, à `a62563fd` —
+  merge de P3-D4/D5)
+- **P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS** via
+  [PR #23](https://github.com/mysterus44/DigiTrove/pull/23), head `8aad4fc`,
+  merge `a62563fdb8aad86bef5cf1ac27b4bebcb5259342` (parents `0b9e7ac` +
+  `8aad4fc`), **CI #27 success** (macro-gate unique,
   **D-034**, **aucune migration** — 29 inchangées) : webhook CinetPay signé
   (HMAC `x-token`) + dédupliqué, **contre-appel fournisseur obligatoire** (le
   corps du webhook n'est jamais autoritatif), confirmation atomique

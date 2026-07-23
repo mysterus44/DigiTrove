@@ -283,8 +283,11 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   **20/628**, suite complète **478/3894**, Pint **149**, **29 migrations**,
   aucune `000014`, `git diff --check` propre.
 
-- **`P3-D4 + P3-D5 — Confirmation serveur + OrderPaid` 🔶 IMPLÉMENTÉS — EN
-  ATTENTE DE REVUE/MERGE** (macro-gate `p3-d4-d5-payment-confirmation`, **D-034**,
+- **`P3-D4 + P3-D5 — Confirmation serveur + OrderPaid` ✅ TERMINÉS, MERGÉS ET
+  VALIDÉS** via [PR #23](https://github.com/mysterus44/DigiTrove/pull/23), head
+  `8aad4fc`, merge `a62563fdb8aad86bef5cf1ac27b4bebcb5259342`
+  (parents `0b9e7ac` + `8aad4fc`), **CI #27 success**
+  (macro-gate `p3-d4-d5-payment-confirmation`, **D-034**,
   **aucune migration** — 29 inchangées) : webhook CinetPay signé (HMAC `x-token`,
   `hash_equals`) + dédupliqué (`PostgresConstraintViolation`, jamais de
   substring), **contre-appel fournisseur obligatoire hors transaction** (le corps

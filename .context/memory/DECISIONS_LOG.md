@@ -2546,11 +2546,15 @@ une exception fournisseur par texte ; adaptateur PowerPay réel ou secret dans c
 gate ; preuves de concurrence purement SQL sans le chemin réel du service.
 
 ### D-034 — Confirmation serveur atomique et événement OrderPaid (P3-D4 + P3-D5) ✅
-**Date** : 2026-07-23. **Statut** : **P3-D4 + P3-D5 IMPLÉMENTÉS — EN ATTENTE DE
-REVUE/MERGE** (branche `p3-d4-d5-payment-confirmation`, **macro-gate unique**,
-**aucune migration** — 29 inchangées). CinetPay est l'unique adaptateur réel,
-**désactivé par défaut** ; PowerPay reste un scaffold documentaire sans endpoint
-inventé.
+**Date** : 2026-07-23. **Statut** : **P3-D4 + P3-D5 TERMINÉS, MERGÉS ET
+VALIDÉS** — [PR #23](https://github.com/mysterus44/DigiTrove/pull/23), head
+`8aad4fc`, merge `a62563fdb8aad86bef5cf1ac27b4bebcb5259342` (parents `0b9e7ac` +
+`8aad4fc`), **CI #27 success** (branche `p3-d4-d5-payment-confirmation`,
+**macro-gate unique**, **aucune migration** — 29 inchangées). Validation
+post-merge sur la stable `a62563f` : P3D4 **52**, P3D5 **7**, P4-B **20/649**,
+Pint **175**, 29 migrations, aucune `000014`. CinetPay est l'unique adaptateur
+réel, **désactivé par défaut** ; PowerPay reste un scaffold documentaire sans
+endpoint inventé. Décisions ci-dessous **figées**.
 
 **DÉCISIONS FIGÉES**
 1. **Le corps du webhook n'est jamais autoritatif** — même signé, il ne sert
