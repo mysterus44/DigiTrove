@@ -10,11 +10,14 @@
 - **Date** : 2026-07-22
 - **Branche git active** : `p3-d3-payment-initiation` (stable
   `p0-foundations-laravel13` à `6e701a1e`)
-- **P3-D3 IMPLÉMENTÉ — EN ATTENTE DE REVUE/MERGE** (D-033, branche
+- **P3-D3 IMPLÉMENTÉ + DURCI — EN ATTENTE DE MERGE** (D-033, PR #22, branche
   `p3-d3-payment-initiation` depuis `6e701a1e`) : initiation de paiement en deux
   phases, port fournisseur abstrait, **aucune migration**, aucun adaptateur
-  réel. 7 fichiers, **44/191** dont concurrence réelle, Pint **148**. **P3-D4
-  bloqué** jusqu'au merge.
+  réel. **Durcissement pré-merge (5 findings) fermés** : garde
+  `transactionLevel = 0`, horloge injectée unique, reprise de réponse perdue,
+  toute exception BDD inconnue ⇒ `IntegrityFailure` sanitizé, preuves C1–C4
+  **service-level**. 8 fichiers, **54/246**, Pint **149**. **P3-D4 bloqué**
+  jusqu'au merge.
 - **P3-D2.1 TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #21](https://github.com/mysterus44/DigiTrove/pull/21), head `3adb2824`,
   merge `9b0aa92498a1eaa0dce220bb411df42a9c488e24`, **CI #24 verte** : `23505`
@@ -391,6 +394,21 @@ exacte**. Aucun `str_contains()` ne classe plus une erreur BDD en production.
 
 Compteurs : Unit P3-D2.1 **20/20**, P3-D2 **71/344** (était 66/323), suite
 complète **424/3641** (était 399/3599), Pint **140**, **29 migrations**.
+
+### Détail du durcissement P3-D3 (revue pré-merge)
+
+Cinq findings de revue fermés sur la même branche/PR #22 : (A) `initiate()`
+refuse tout `transactionLevel > 0` ; (B) `$now` injecté unique, `isExpired()`
+partagé (`>= expires_at`), plus aucun `isFuture()` ; (C) un rejeu payable
+**rappelle le fournisseur** avec le même `payment.public_id` même si une
+référence existe, pour récupérer les instructions perdues ; (D) toute exception
+BDD inconnue ⇒ `IntegrityFailure` sanitizé, `name()` qui lève ⇒
+`ProviderUnavailable`, plus de `throw $exception` brut ; (E) preuves C1–C4
+service-level sur connexions runtime indépendantes. La suite P3-D3 tourne
+**sans transaction enveloppante** (concern `InteractsWithPaymentsDatabase`),
+condition nécessaire pour prouver la garde (A). ⚠️ **Pour P3-D4**, tout gate
+touchant le paiement doit rester compatible avec cette garde et réutiliser
+`PostgresConstraintViolation` (23505 + nom exact) sans classer par texte.
 
 ---
 

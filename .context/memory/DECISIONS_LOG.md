@@ -2472,21 +2472,65 @@ PaymentInitiationRefusalReason, InitiatedPayment}`. `app/Contracts` n'est pas
 scanné par le garde-fou P4-B ; l'allowlist est élargie de **exactement** les
 4 fichiers `Services/Payments/*`.
 
-**VALIDATION** : P3-D3 **44 tests / 191 assertions** (dont concurrence réelle sur
-base jetable + deux connexions `digitrove_runtime`, `TEMP` refusé) ; audit
-statique vide (`str_contains` sur `payments_*_unique`, `Http::`, `POWERPAY`,
-`coupon_redemptions`/`DownloadGrant`/`OrderPaid` sous `Services/Payments`) ;
-Pint **148** ; 29 migrations inchangées. Concurrence prouvée : deux tentatives du
-même Order sérialisées (`55P03`), digest dupliqué refusé (`23505 /
-payments_idempotency_key_hash_unique`), référence dupliquée refusée (`23505 /
+**VALIDATION (après durcissement)** : P3-D3 **54 tests / 246 assertions** (suite
+non transactionnelle, requêtes sous `digitrove_runtime`, connexions
+indépendantes réelles) ; audit statique propre — plus aucun `isFuture` ni
+classification par substring sous `Services/Payments`, les deux seules
+occurrences résiduelles (`$now = $at ?? now()` unique, `throw $exception`
+re-lançant une `PaymentInitiationException`) sont légitimes ; Pint **149** ;
+29 migrations inchangées. Concurrence service-level prouvée : `55P03`
+sérialisation + `PaymentAlreadyInProgress`, `IdempotencyConflict` + backstop
+`23505 / payments_idempotency_key_hash_unique`, collision de référence via
+finalisation ⇒ `IntegrityFailure` (backstop index `23505 /
 payments_provider_reference_unique`).
 
+**DURCISSEMENT PRÉ-MERGE (revue contradictoire, 5 findings fermés)** :
+1. **`initiate()` refuse tout contexte transactionnel ambiant** — la toute
+   première vérification exige `DB::transactionLevel() === 0` (sinon
+   `IntegrityFailure`, aucune lecture/écriture, aucun appel fournisseur). La
+   phase fournisseur ne peut donc s'exécuter que hors de toute transaction. La
+   suite P3-D3 tourne désormais **sans transaction enveloppante** (concern dédié
+   `InteractsWithPaymentsDatabase` : migration sous le migrateur, TRUNCATE par le
+   migrateur seul, requêtes métier sous `digitrove_runtime`, déconnexion en
+   teardown pour ne pas épuiser le pool) — aucune garde contournée en test,
+   `RefreshesDatabaseAsMigrator` et `PhaseMigrationHarness` inchangés.
+2. **Éligibilité sur horloge injectée unique** : `$now` est résolu une seule fois
+   (`$at ?? now()`) et passé explicitement à `resolveReplay()` ; l'ancien
+   `expires_at->isFuture()` (qui relisait l'horloge réelle) est supprimé. Prédicat
+   unique partagé `isExpired()` : **expirée ssi `$now >= expires_at`** — même
+   frontière pour l'appel initial, le rejeu et la décision de rappel fournisseur.
+3. **Reprise d'une réponse perdue** : un rejeu payable (même clé, même Order,
+   même fournisseur, Payment `pending|processing`, Order `pending` non expirée)
+   **rappelle le fournisseur avec le même `payment.public_id` MÊME si une
+   référence est déjà enregistrée**, afin de récupérer les instructions client
+   éphémères perdues après un crash post-finalisation. La phase 3 reste
+   idempotente : référence identique ⇒ succès sans écrasement, différente ⇒
+   `ProviderReferenceConflict`.
+4. **Aucune exception BDD/Eloquent brute** : `initiate()` enveloppe tout le
+   flux ; une `PaymentInitiationException` est relancée telle quelle, **toute
+   autre `Throwable` (QueryException, PDOException, ModelNotFound, message de
+   trigger, SQLSTATE `23514`/`40001`/`55P03`…) devient `IntegrityFailure`
+   sanitizé**. `name()` du port qui lève ⇒ `ProviderUnavailable`. `finalise()`
+   ne relance plus d'exception brute. `PostgresConstraintViolation` reste
+   cantonné à `23505` + nom exact (recouvrement du digest).
+5. **Preuves C1–C4 service-level** : E0 prouve `transactionLevel = 0` au moment
+   de l'appel fournisseur + visibilité du Payment `pending` depuis une
+   **connexion `digitrove_runtime` indépendante** ; C1 verrou `55P03` puis
+   `PaymentAlreadyInProgress` du service ; C3 `IdempotencyConflict` du service +
+   backstop d'index `23505` ; C4 collision de référence via le **vrai chemin de
+   finalisation** ⇒ `IntegrityFailure` sans fuite. Tests de classification
+   défensive ajoutés (message usurpant un nom de contrainte ⇒ jamais classé sans
+   `23505`). Helper `$orderRef` mort supprimé.
+
 **ALTERNATIVES REJETÉES** : appel fournisseur sous transaction (verrou tenu
-pendant la latence) ; envoyer la clé brute ou le digest au fournisseur ;
-plusieurs tentatives vivantes simultanées ; marquer `failed` sur timeout
-ambigu ; écraser une référence existante ; persister `provider_metadata` ou les
-instructions client ; classer une exception fournisseur par texte ;
-adaptateur PowerPay réel ou secret dans ce gate.
+pendant la latence) ; laisser l'appelant enrober `initiate()` dans une
+transaction ; horloge réelle au rejeu ; ne pas rappeler le fournisseur au rejeu
+(instructions perdues irrécupérables) ; laisser sortir une exception BDD brute ;
+envoyer la clé brute ou le digest au fournisseur ; plusieurs tentatives vivantes
+simultanées ; marquer `failed` sur timeout ambigu ; écraser une référence
+existante ; persister `provider_metadata` ou les instructions client ; classer
+une exception fournisseur par texte ; adaptateur PowerPay réel ou secret dans ce
+gate ; preuves de concurrence purement SQL sans le chemin réel du service.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

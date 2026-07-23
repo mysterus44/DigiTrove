@@ -270,10 +270,13 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   envoyée** ; une seule tentative vivante par Order ; timeout ambigu ⇒ tentative
   laissée `pending` ; **aucune confirmation** (Order reste `pending`, aucun
   `succeeded`, aucun coupon consommé, aucun webhook/`OrderPaid`/grant) ;
-  classification des `23505` via `PostgresConstraintViolation`. **44/191** dont
-  concurrence réelle, Pint **148**.
+  classification des `23505` via `PostgresConstraintViolation`. **Durci en revue
+  pré-merge (5 findings)** : garde `transactionLevel = 0`, horloge injectée unique
+  (`isExpired` `>=`), reprise de réponse perdue (rappel fournisseur idempotent),
+  toute exception BDD inconnue ⇒ `IntegrityFailure` sanitizé, preuves C1–C4
+  service-level. Suite non transactionnelle dédiée. **54/246**, Pint **149**.
 
-**PROCHAINE TÂCHE : revue et merge de la PR `P3-D3`. `P3-D4 — Server-side
+**PROCHAINE TÂCHE : revue et merge de la PR `P3-D3` (#22). `P3-D4 — Server-side
 Payment Confirmation` est BLOQUÉ** jusqu'à ce merge — non commencé. Invariants hérités : l'Order et
 ses `order_items` sont la **source autoritative** (le panier est `converted` et
 peut avoir changé) ; aucune donnée tarifaire client n'est acceptée ; une commande
