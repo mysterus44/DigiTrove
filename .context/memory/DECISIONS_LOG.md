@@ -2392,5 +2392,101 @@ toute la transaction pour retenter (perte du verrou du Cart) ; traiter tout
 
 ---
 
+### D-033 — Initiation de paiement en deux phases (P3-D3) ✅
+**Date** : 2026-07-22. **Statut** : **P3-D3 IMPLÉMENTÉ — EN ATTENTE DE
+REVUE/MERGE** (branche `p3-d3-payment-initiation`, depuis `6e701a1e`). **Aucune
+migration** (29 inchangées). **Aucun adaptateur fournisseur réel, aucun secret,
+aucun appel HTTP.**
+
+**CONTEXTE** : le schéma P3C-A `payments` (`000004`) est mergé — uniques
+`payments_idempotency_key_hash_unique`, `payments_order_id_attempt_number_unique`,
+`payments_provider_reference_unique` (partiel), `one_succeeded_per_order`,
+`one_requires_review_per_order` ; trigger BEFORE INSERT
+`validate_payment_order_amount` (montant = `orders.total_minor`, devise =
+`orders.currency`, refus d'une commande gratuite en `23514`) ; trigger
+d'immutabilité (identité commerciale figée, `provider_payment_reference`
+NULL→valeur une seule fois puis figée, dates de cycle figées, machine à états
+T5A) ; constraint trigger différé bidirectionnel de cohérence. P3-D2.1 impose
+`App\Support\PostgresConstraintViolation` pour toute classification de
+contrainte. Ces uniques protègent le digest et le numéro de tentative ; la
+règle « une seule tentative vivante » est **applicative**, sérialisée par le
+verrou Order — jamais présentée comme un invariant PostgreSQL.
+
+**CHOIX** :
+1. **Deux phases.** Le Payment `pending` est créé et **committé avant** l'appel
+   externe ; le fournisseur est appelé **hors de toute transaction** ; la
+   référence est finalisée dans une **seconde transaction**. Aucun verrou Order
+   n'est conservé pendant la latence réseau.
+2. **Aucun appel réseau sous transaction** — invariant dur du gate.
+3. **`payments.public_id` = clé d'idempotence fournisseur** : publique, non
+   secrète, **stable pour tous les rejeux** de la même tentative. Le contrat du
+   port exige qu'une réinvocation avec le même `public_id` soit idempotente
+   côté adaptateur.
+4. **Clé brute appelant hachée uniquement** (`hash('sha256', clé)` →
+   `idempotency_key_hash`), `#[SensitiveParameter]`, **jamais** persistée,
+   loguée, mise dans une exception ni **envoyée au fournisseur** (ni la clé, ni
+   le digest).
+5. **Reprise ambiguë sur la même ligne et la même clé** : après un timeout, le
+   Payment reste `pending`, `provider_payment_reference` NULL, aucune tentative
+   compensatoire ; le rejeu de la même clé reprend la même ligne et renvoie le
+   même `public_id` au fournisseur.
+6. **Une seule tentative `pending|processing` vivante par Order** : une nouvelle
+   clé est refusée (`PaymentAlreadyInProgress`) tant qu'une tentative est vivante ;
+   le client doit rejouer la clé d'origine.
+7. **Nouvelles tentatives uniquement après `failed|cancelled|expired`** ;
+   `requires_review` et `succeeded` sortent l'Order de `pending` et bloquent
+   toute nouvelle initiation (`OrderNotPayable`). `attempt_number` = MAX + 1 sous
+   verrou Order.
+8. **Timeout ambigu ⇒ tentative laissée `pending`** : P3-D3 ne marque jamais
+   `failed` automatiquement (le fournisseur a pu accepter la requête) — la
+   qualification est P3-D4.
+9. **Référence fournisseur finalisée en seconde transaction** (Order FOR UPDATE
+   puis Payment FOR UPDATE) : NULL→valeur enregistrée ; valeur identique ⇒ rejeu
+   idempotent ; valeur différente ⇒ `ProviderReferenceConflict`, l'existant
+   **jamais écrasé** ; collision inter-Payments `23505 /
+   payments_provider_reference_unique` ⇒ `IntegrityFailure` générique via
+   `PostgresConstraintViolation`.
+10. **Aucune confirmation** : aucun `succeeded`, aucun `orders.status = paid`,
+    aucun `coupon_redemptions`, aucun incrément de `redemptions_count`, aucun
+    `payment_webhook_events`, aucun refund, aucun `OrderPaid`, aucun
+    DownloadGrant. L'Order reste `pending`.
+11. **Aucun adaptateur réel dans ce gate** : port `PaymentProvider` abstrait
+    (`app/Contracts/Payments`), fournisseur factice déterministe dans les tests.
+
+**AUTORITÉ ET SÉCURITÉ** : source unique `orders`, jamais `carts`/`cart_items`/
+`product_prices`. Montant, devise et e-mail viennent de l'Order sous verrou ; la
+signature `initiate(User|Visitor, orderPublicId, idempotencyKey, ?at)`
+**n'expose** aucun montant/devise/e-mail client. Refus **uniforme**
+`OrderUnavailable` pour une Order inexistante comme pour celle d'autrui
+(anti-énumération de `orders.public_id`). Création encapsulée dans une
+transaction Laravel imbriquée (vrai `SAVEPOINT`) : un `23505 /
+payments_idempotency_key_hash_unique` concurrent est rattrapé et rejoué,
+`payments_order_id_attempt_number_unique` et tout le reste → `IntegrityFailure`.
+`provider_metadata` **n'est jamais persisté** ; les instructions client
+éphémères ne vivent qu'en mémoire dans le DTO de retour.
+
+**FICHIERS LIVRÉS (7)** : `App\Contracts\Payments\{PaymentProvider,
+ProviderInitiationRequest, ProviderInitiationResult}` et
+`App\Services\Payments\{PaymentInitiationService, PaymentInitiationException,
+PaymentInitiationRefusalReason, InitiatedPayment}`. `app/Contracts` n'est pas
+scanné par le garde-fou P4-B ; l'allowlist est élargie de **exactement** les
+4 fichiers `Services/Payments/*`.
+
+**VALIDATION** : P3-D3 **44 tests / 191 assertions** (dont concurrence réelle sur
+base jetable + deux connexions `digitrove_runtime`, `TEMP` refusé) ; audit
+statique vide (`str_contains` sur `payments_*_unique`, `Http::`, `POWERPAY`,
+`coupon_redemptions`/`DownloadGrant`/`OrderPaid` sous `Services/Payments`) ;
+Pint **148** ; 29 migrations inchangées. Concurrence prouvée : deux tentatives du
+même Order sérialisées (`55P03`), digest dupliqué refusé (`23505 /
+payments_idempotency_key_hash_unique`), référence dupliquée refusée (`23505 /
+payments_provider_reference_unique`).
+
+**ALTERNATIVES REJETÉES** : appel fournisseur sous transaction (verrou tenu
+pendant la latence) ; envoyer la clé brute ou le digest au fournisseur ;
+plusieurs tentatives vivantes simultanées ; marquer `failed` sur timeout
+ambigu ; écraser une référence existante ; persister `provider_metadata` ou les
+instructions client ; classer une exception fournisseur par texte ;
+adaptateur PowerPay réel ou secret dans ce gate.
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

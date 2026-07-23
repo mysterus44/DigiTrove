@@ -260,8 +260,21 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   exige une paire structurée SQLSTATE + nom exact : un échec fournisseur, un
   timeout ou un `40001` ne sont pas des violations d'unicité.
 
-**PROCHAINE TÂCHE : `P3-D3 — Payment Initiation`** (branche future
-`p3-d3-payment-initiation`) — **autorisé, non commencé**. Invariants hérités : l'Order et
+- **`P3-D3 — Payment Initiation` ✅ IMPLÉMENTÉ — EN ATTENTE DE REVUE/MERGE**
+  (branche `p3-d3-payment-initiation`, **D-033**, aucune migration, aucun
+  adaptateur réel) : port fournisseur abstrait `App\Contracts\Payments\*` +
+  `App\Services\Payments\*`. Initiation en **deux phases** — réservation
+  `payments` `pending` committée, appel du port **hors transaction**,
+  finalisation de la référence en seconde transaction. `payment.public_id` =
+  clé d'idempotence fournisseur ; **clé brute jamais persistée, loguée ni
+  envoyée** ; une seule tentative vivante par Order ; timeout ambigu ⇒ tentative
+  laissée `pending` ; **aucune confirmation** (Order reste `pending`, aucun
+  `succeeded`, aucun coupon consommé, aucun webhook/`OrderPaid`/grant) ;
+  classification des `23505` via `PostgresConstraintViolation`. **44/191** dont
+  concurrence réelle, Pint **148**.
+
+**PROCHAINE TÂCHE : revue et merge de la PR `P3-D3`. `P3-D4 — Server-side
+Payment Confirmation` est BLOQUÉ** jusqu'à ce merge — non commencé. Invariants hérités : l'Order et
 ses `order_items` sont la **source autoritative** (le panier est `converted` et
 peut avoir changé) ; aucune donnée tarifaire client n'est acceptée ; une commande
 gratuite reste `pending` ; **aucun coupon n'est consommé au checkout** —

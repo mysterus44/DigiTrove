@@ -7,8 +7,18 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Claude Code
-- **Date** : 2026-07-21
-- **Branche git active** : `p0-foundations-laravel13` (stable à `0854a393`)
+- **Date** : 2026-07-22
+- **Branche git active** : `p3-d3-payment-initiation` (stable
+  `p0-foundations-laravel13` à `6e701a1e`)
+- **P3-D3 IMPLÉMENTÉ — EN ATTENTE DE REVUE/MERGE** (D-033, branche
+  `p3-d3-payment-initiation` depuis `6e701a1e`) : initiation de paiement en deux
+  phases, port fournisseur abstrait, **aucune migration**, aucun adaptateur
+  réel. 7 fichiers, **44/191** dont concurrence réelle, Pint **148**. **P3-D4
+  bloqué** jusqu'au merge.
+- **P3-D2.1 TERMINÉ, MERGÉ ET VALIDÉ** via
+  [PR #21](https://github.com/mysterus44/DigiTrove/pull/21), head `3adb2824`,
+  merge `9b0aa92498a1eaa0dce220bb411df42a9c488e24`, **CI #24 verte** : `23505`
+  + nom de contrainte exact, primitive `PostgresConstraintViolation`.
 - **P3-D2 TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #19](https://github.com/mysterus44/DigiTrove/pull/19), head `ef758bbb`,
   merge `4c691864bb2c87d97fbed0091fd9974a259a97b8` (parents `5d07abad` +
@@ -318,7 +328,34 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 `P3-D3 — Payment Initiation` — autorisé, non commencé
+## 🎯 Revue et merge de `P3-D3` — puis seulement `P3-D4`
+
+**`P3-D3 — Payment Initiation` EST IMPLÉMENTÉ** sur `p3-d3-payment-initiation`
+(depuis `6e701a1e`), **en attente de revue/merge**. **D-033** consignée.
+**Aucune migration**, aucun adaptateur PowerPay réel, aucun secret, aucun appel
+HTTP. Initiation en **deux phases** : réservation `payments` `pending` committée
+→ appel du port fournisseur **hors transaction** → finalisation de la référence
+en seconde transaction. 7 fichiers (`app/Contracts/Payments/*` +
+`app/Services/Payments/*`). Validation : **44/191** dont concurrence réelle
+(`55P03`, `23505` sur digest et sur référence), Pint **148**, 29 migrations.
+
+Invariants D-033 utiles à la revue et à P3-D4 :
+- `payment.public_id` est la **clé d'idempotence fournisseur** (publique,
+  stable) ; la **clé brute appelant n'est jamais persistée, loguée ni envoyée**
+  au fournisseur (digest SHA-256 seul) ;
+- **une seule tentative `pending|processing` vivante par Order** (règle
+  applicative, sérialisée par le verrou Order) ; nouvelles tentatives seulement
+  après `failed|cancelled|expired` ;
+- **timeout fournisseur ambigu ⇒ tentative laissée `pending`**, jamais `failed` —
+  la qualification est P3-D4 ;
+- **aucune confirmation** : Order reste `pending`, aucun `succeeded`, aucun
+  `orders.status = paid`, aucun coupon consommé, aucun webhook, `OrderPaid`,
+  refund ni DownloadGrant ;
+- classification des `23505` exclusivement via `PostgresConstraintViolation`.
+
+**P3-D4 reste bloqué** jusqu'au merge et au CI vert de P3-D3.
+
+### Historique : P3-D2.1
 
 **`P3-D2.1` EST TERMINÉ, MERGÉ ET VALIDÉ** —
 [PR #21](https://github.com/mysterus44/DigiTrove/pull/21), head `3adb2824`,
