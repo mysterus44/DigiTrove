@@ -1,7 +1,7 @@
 -- =============================================================================
 -- P4-B0 — Cluster-level role provisioning for the PostgreSQL privilege boundary
--- (D-029.6). Idempotent. Creates ONLY the two cluster roles and the single
--- membership path; it never touches business objects or object ACLs — those live
+-- (D-029.6, D-038). Idempotent. Creates ONLY the cluster identities and their
+-- SET-only membership paths; it never touches business objects or object ACLs — those live
 -- in the Laravel migration 000012_harden_database_runtime_privileges.php so that
 -- migrate:fresh reproduces them in every database.
 --
@@ -38,6 +38,21 @@ $$;
 ALTER ROLE digitrove_download_executor
     NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
 
+-- --- digitrove_analytics_executor ------------------------------------------------
+-- NOLOGIN owner of the audited P5-A1 SECURITY DEFINER ingestion function. It is
+-- never assumed by the application runtime and receives only the analytics ACLs
+-- installed by migration 000017.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'digitrove_analytics_executor') THEN
+        CREATE ROLE digitrove_analytics_executor
+            NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+    END IF;
+END
+$$;
+ALTER ROLE digitrove_analytics_executor
+    NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+
 -- --- digitrove_runtime -----------------------------------------------------------
 -- Restricted LOGIN identity for the application, workers and business tests. No
 -- superuser, no DDL, no ability to become another role.
@@ -71,6 +86,7 @@ $$;
 -- SET ROLE (no inherited privileges, no admin option). This is what lets a
 -- non-superuser migrator create/own G5 during the migration, and nothing else.
 GRANT digitrove_download_executor TO digitrove WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
+GRANT digitrove_analytics_executor TO digitrove WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 
 -- --- Fail-closed guardrails ------------------------------------------------------
 DO $$
@@ -83,6 +99,10 @@ BEGIN
         RAISE EXCEPTION 'P4-B0 provisioning: digitrove_download_executor must be NOLOGIN';
     END IF;
 
+    IF (SELECT rolcanlogin FROM pg_roles WHERE rolname = 'digitrove_analytics_executor') THEN
+        RAISE EXCEPTION 'P5-A1 provisioning: digitrove_analytics_executor must be NOLOGIN';
+    END IF;
+
     -- The runtime must never be able to become the migrator or the executor.
     IF EXISTS (
         SELECT 1
@@ -90,7 +110,7 @@ BEGIN
         JOIN pg_roles member ON member.oid = m.member
         JOIN pg_roles granted ON granted.oid = m.roleid
         WHERE member.rolname = 'digitrove_runtime'
-          AND granted.rolname IN ('digitrove', 'digitrove_download_executor')
+          AND granted.rolname IN ('digitrove', 'digitrove_download_executor', 'digitrove_analytics_executor')
     ) THEN
         RAISE EXCEPTION 'P4-B0 provisioning: digitrove_runtime must not be a member of the migrator or executor role';
     END IF;
