@@ -8,11 +8,12 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-24
-- **Branche git active** : `p4-c4-c6-download-delivery-operations` ; base stable
-  incluant la clôture P4-C0/C3 `f8cfd8f`, commits feature `de0fbe4` +
-  `fefb28e` + `671669b`, hardening stockage `5bd86d3`.
-- **P4-C4 → P4-C6 IMPLÉMENTÉS — EN ATTENTE DE REVUE/MERGE** (D-036,
-  **aucune migration** — 29 inchangées). Surface :
+- **Branche git active** : `p0-foundations-laravel13`, synchronisée au merge
+  P4-C4/C6 `109fde4c6c0b401f4a8252fad780d1368711b161`.
+- **P4-C4 → P4-C6 TERMINÉS, MERGÉS ET VALIDÉS** via
+  [PR #25](https://github.com/mysterus44/DigiTrove/pull/25), head
+  `07d566fb4016a805fc007f4210bf122ac2fd9bed`, merge `109fde4c`, **CI #31
+  success** (D-036, **aucune migration** — 29 inchangées). Surface :
   `GET /downloads/{grantPublicId}` (page d'échange DB-free, fragment retiré),
   `POST /api/downloads/{grantPublicId}/authorize` (Bearer grant, refus uniforme,
   G5 atomique, cookie de tentative `HttpOnly/SameSite=Strict`) et
@@ -393,16 +394,15 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 Review et merge de P4-C4 + P4-C5 + P4-C6
+## 🎯 P5-A0 — Analytics Schema Foundation
 
-Le macro-gate applicatif final P4-C est implémenté et durci sur
-`p4-c4-c6-download-delivery-operations`. La branche doit contenir cinq commits
-non squashés : `de0fbe4` (autorisation), `fefb28e` (streaming/opérations),
-`671669b` (documentation initiale), `5bd86d3` (I/O stockage hors transaction) et
-le commit documentaire de hardening. Auditer la PR #25 contre
-`p0-foundations-laravel13`, ne pas la merger automatiquement. Après merge et
-clôture séparée, prochaine phase : **P5 — Analytics**. Ne pas commencer P5 dans
-la review P4-C.
+P4-C0→C6 sont terminés, mergés et validés. La couche applicative Commerce →
+Paiement → Livraison est complète ; le pipeline reste désactivé par défaut tant
+que la configuration opérationnelle de production n'est pas renseignée.
+Construire maintenant uniquement la fondation PostgreSQL analytique P5-A0 :
+`events` partitionnée + DEFAULT, `analytics_sessions`, rollups journaliers
+currency-safe, ACL sans droit runtime, append-only et rollbacks isolés. Ne pas
+commencer l'ingestion P5-A1, P6 ou P7.
 
 ## 🗃️ Archive de passation P3-D4/D5 (supersédée par l'état en tête)
 

@@ -1888,9 +1888,9 @@ Grant Revocation        ↓
 | **P3-D3** Payment Initiation ✅ *mergé (PR #22 → `70379a02`, D-033)* | `p3-d3-payment-initiation` | non | `payments_idempotency_key_hash_unique`, `payments_order_id_attempt_number_unique`, transitions T (D-028.5) |
 | **P3-D4 + P3-D5** Server-side Confirmation + OrderPaid ✅ *mergé (PR #23 → `a62563fd`, D-034)* | `p3-d4-d5-payment-confirmation` | non | uniques de rejeu `payment_webhook_events` (`provider_external_event_unique`, `provider_payload_hash_unique`), ladder `payments` `pending→processing→succeeded`, `payments_one_succeeded_per_order` / `_one_requires_review_per_order`, `payments_provider_reference_unique`, `coupon_redemptions_order_id_unique`, constraint triggers `validate_payment_order_consistency` / `validate_coupon_redemption_consistency` (différés), free order `total_minor = 0` sans `payments`. **Aucune table nouvelle** ; usage applicatif des tables P3C existantes. `OrderPaid` = événement `afterCommit` portant `order_id` seul. |
 | **P4-C0→C3** Secure Delivery Pipeline ✅ *terminé, mergé et validé (PR #24 → `701cfa4f`, D-035)* | `p4-c0-c3-secure-delivery-pipeline` | non | Job unique `order_id` seul ; tokens CSPRNG mémoire + SHA-256 persistant ; Mailable synchrone non sérialisable, transport `log` refusé ; **G3** (`orders FOR UPDATE`, statut livrable, fichier actif, lignée snapshot bundle, bénéficiaire null-safe), `download_grants_active_pair_unique`, `download_grants_token_hash_unique`, no-upgrade au retry ; **G4** différé bidirectionnel (`download_grants` + `orders`) pour la révocation totale, ladder refunds `pending→processing→succeeded`, cap cumulé refunds ≤ paiement, `refunds_validate_order_consistency` différé. Lien provisoire fragment-only, aucune route. **Aucune table nouvelle** ; usage applicatif. |
-| **P4-C4** Download Authorization ✅ *implémenté, en attente de review/merge (D-036)* | `p4-c4-c6-download-delivery-operations` | non | Page d'échange DB-free, fragment retiré, Bearer POST seulement, secret de tentative dédié (SHA-256 seul), cookie HttpOnly, refus uniforme ; **G5** (`SECURITY DEFINER`, unique mutante), **G2** (`current_user = digitrove_download_executor`), unique partiel `attempt_token_hash` |
-| **P4-C5** HTTP File Delivery ✅ *implémenté, en attente de review/merge (D-036)* | `p4-c4-c6-download-delivery-operations` | non | GET/HEAD/Range sur la même tentative ; HEAD inerte ; stream privé borné, X-Accel local opt-in fail-closed ; `storage_path` jamais exposé, aucune URL objet |
-| **P4-C6** Delivery Operations ✅ *implémenté, en attente de review/merge (D-036)* | `p4-c4-c6-download-delivery-operations` | non | Réconciliation sans restitution de quota, abus par HMAC IP, révocation support set-once, métriques ; **G6** (terminal + rétention échue), G1 prevent-delete des grants |
+| **P4-C4** Download Authorization ✅ *terminé, mergé et validé (PR #25 → `109fde4c`, D-036)* | `p4-c4-c6-download-delivery-operations` | non | Page d'échange DB-free, fragment retiré, Bearer POST seulement, secret de tentative dédié (SHA-256 seul), cookie HttpOnly, refus uniforme ; **G5** (`SECURITY DEFINER`, unique mutante), **G2** (`current_user = digitrove_download_executor`), unique partiel `attempt_token_hash` |
+| **P4-C5** HTTP File Delivery ✅ *terminé, mergé et validé (PR #25 → `109fde4c`, D-036)* | `p4-c4-c6-download-delivery-operations` | non | GET/HEAD/Range sur la même tentative ; HEAD inerte ; stream privé borné, X-Accel local opt-in fail-closed ; `storage_path` jamais exposé, aucune URL objet |
+| **P4-C6** Delivery Operations ✅ *terminé, mergé et validé (PR #25 → `109fde4c`, D-036)* | `p4-c4-c6-download-delivery-operations` | non | Réconciliation sans restitution de quota, abus par HMAC IP, révocation support set-once, métriques ; **G6** (terminal + rétention échue), G1 prevent-delete des grants |
 
 ### Contrat applicatif final de livraison (D-036)
 
@@ -1934,8 +1934,9 @@ E-mail : /downloads/{grantPublicId}#token=<grant-secret>
   sur un attempt, purge contre lecture et double réconciliation restent
   sérialisés et idempotents.
 * **Aucune migration `000014`** : les 29 migrations existantes suffisent.
-  Validation : P4-C4 **6/67**, P4-C5 **7/120**, P4-C6 **5/41**, P4C456
-  **9/62**, suite **614/4437**, Pint **216**.
+  Validation finale : P4-C4 **18/152**, P4-C5 **13/202**, P4-C6 **5/41**,
+  P4C456 **10/72**, suite **623/4542**, Pint **217**. PR #25 mergée au
+  `109fde4c`, CI #31 success.
 
 ### Premier gate — `P3-D1 — Pricing & Quote Kernel`
 

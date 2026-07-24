@@ -2748,11 +2748,14 @@ macro-gate est désormais **terminé, mergé et validé** via
 tâche : macro-gate P4-C4/P4-C5/P4-C6.
 
 ### D-036 — Download Authorization, File Delivery and Operations ✅
-**Date** : 2026-07-24. **Statut** : **P4-C4 + P4-C5 + P4-C6 IMPLÉMENTÉS — EN
-ATTENTE DE REVUE/MERGE** sur `p4-c4-c6-download-delivery-operations` (commits
-`de0fbe4` + `fefb28e` + `671669b` + hardening `5bd86d3`, **aucune migration** —
-29 inchangées). Le pipeline reste **désactivé par défaut** jusqu'à sa clôture et
-son activation opérationnelle.
+**Date** : 2026-07-24. **Statut** : **P4-C4 + P4-C5 + P4-C6 TERMINÉS, MERGÉS ET
+VALIDÉS** via [PR #25](https://github.com/mysterus44/DigiTrove/pull/25), head
+`07d566fb4016a805fc007f4210bf122ac2fd9bed`, merge
+`109fde4c6c0b401f4a8252fad780d1368711b161`, **CI #31 success** (commits
+`de0fbe4` + `fefb28e` + `671669b` + hardening `5bd86d3` + `07d566f`,
+**aucune migration** — 29 inchangées). Le pipeline reste **désactivé par
+défaut** tant que la configuration opérationnelle de production n'est pas
+renseignée.
 
 **DÉCISIONS FIGÉES**
 1. Le secret brut du grant ne passe jamais en query string. Le lien e-mail le
@@ -2862,6 +2865,14 @@ nouvelle ligne par Range ; quota rendu après interruption ; fichier public ;
 `Storage::url()`/`temporaryUrl()` permanent ; lecture entière en mémoire ;
 multi-range ; X-Accel implicite ; provider objet activé sans audit ; révocation
 automatique sur métrique ; purge de grant ou log actif ; migration inutile.
+
+**CLÔTURE POST-MERGE** : les cinq commits de la branche sont intégrés par le
+merge `109fde4c`. Les validations post-merge ciblées confirment P4-C4 **18/152**,
+P4-C5 **13/202**, P4-C6 **5/41**, P4C456 **10/72**, P4-C3 **9/29**, P4-B
+**20/561** et P3-B **18/357** ; Pint **217**, `git diff --check` propre, 29
+migrations jusqu'à `000013`, aucune `000014`. **P4-C0 → P4-C6 sont terminés** :
+la couche applicative Commerce → Paiement → Livraison est complète. Prochaine
+tâche : **P5-A0 — Analytics Schema Foundation**.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

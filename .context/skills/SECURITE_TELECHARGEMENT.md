@@ -1,7 +1,9 @@
 # SECURITE_TELECHARGEMENT.md — Coeur de livraison DigiTrove
 
 Contrat actif : D-029.4 à D-029.6, D-035 et D-036. Ce document décrit le code
-réel P4-C0 à P4-C6. Il ne doit jamais servir à contourner G1-G6.
+réel P4-C0 à P4-C6, intégralement mergé et validé via PR #24 et PR #25
+(`109fde4c`, CI #31). Il ne doit jamais servir à contourner G1-G6. Le pipeline
+reste désactivé par défaut jusqu'à configuration opérationnelle.
 
 ---
 

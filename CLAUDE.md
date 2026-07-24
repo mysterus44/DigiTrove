@@ -118,14 +118,14 @@ Pint 121, provisioning idempotent, identités migration/runtime prouvées,
 6 fonctions / 7 triggers P4, G4 différé, zéro résidu.
 
 **Le schéma P4 Livraison est COMPLET** (29 migrations). La couche applicative
-P4-C0→C3 est mergée via PR #24 ; P4-C4→C6 est implémentée sur
-`p4-c4-c6-download-delivery-operations` et attend review/merge (D-036). Aucune
-migration `000014` : autorisation, fichier HTTP et opérations utilisent
-exclusivement `download_grants`, `download_logs`, G1→G6 et le disque privé
-existants. Le hardening `5bd86d3` garantit qu'aucun I/O stockage privé ni
-callback stream ne s'exécute sous transaction PostgreSQL ; la livraison suit
-transaction DB courte → I/O hors transaction → finalisation DB courte. Le
-pipeline reste désactivé par défaut et son kill switch coupe aussi les
+P4-C0→C6 est terminée, mergée et validée via PR #24 et
+[PR #25](https://github.com/mysterus44/DigiTrove/pull/25), merge `109fde4c`,
+CI #31 success (D-036). Aucune migration `000014` : autorisation, fichier HTTP
+et opérations utilisent exclusivement `download_grants`, `download_logs`,
+G1→G6 et le disque privé existants. Le hardening `5bd86d3` garantit qu'aucun I/O
+stockage privé ni callback stream ne s'exécute sous transaction PostgreSQL ; la
+livraison suit transaction DB courte → I/O hors transaction → finalisation DB
+courte. Le pipeline reste désactivé par défaut et son kill switch coupe aussi les
 tentatives déjà émises.
 
 - **Couche applicative planifiée** ✅ **D-030 FINALISÉE ET VALIDÉE**
@@ -325,8 +325,8 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   de concurrence PostgreSQL), suite **587/4259**, Pint **191**, 29 migrations.
 
 - **`P4-C4 + P4-C5 + P4-C6 — Authorization, HTTP Delivery & Operations`
-  ✅ IMPLÉMENTÉS, EN ATTENTE DE REVUE/MERGE** sur
-  `p4-c4-c6-download-delivery-operations` (**D-036**, aucune migration) :
+  ✅ TERMINÉS, MERGÉS ET VALIDÉS** via PR #25, head `07d566f`, merge
+  `109fde4c`, CI #31 success (**D-036**, aucune migration) :
   fragment e-mail retiré par page DB-free → Bearer sur POST seulement → secret
   de tentative distinct en cookie `HttpOnly/SameSite=Strict`; G5 crée une ligne
   `started` et consomme exactement une unité. GET/HEAD/Range réutilisent cette
@@ -340,8 +340,8 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   **12/109**), P4-C5 **13/202**, P4-C6 **5/41**, P4C456 **10/72**, suite
   complète **623/4542**, Pint **217**, 29 migrations, aucune `000014`.
 
-**PROCHAINE TÂCHE : review/merge du macro-gate P4-C4→C6. Après clôture séparée,
-P5 — Analytics.** Invariants hérités :
+**PROCHAINE TÂCHE : P5-A0 — Analytics Schema Foundation.** P4-C0→C6 sont
+terminés ; ne pas commencer l'ingestion P5-A1, P6 ou P7. Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —
 `coupon_redemptions` et `redemptions_count` n'arrivent qu'à la confirmation
@@ -354,7 +354,7 @@ avant l'activation réelle de `P4-C3`**. Le guide
 D-035/D-036. Deux jugements
 conservateurs hérités de P3-D1 restent en vigueur : seul
 `products.status = 'published'` est vendable ; `min_order_minor` est un plancher
-mesuré sur le panier entier. P5 non démarré.
+mesuré sur le panier entier. P5-A0 est la prochaine fondation BDD.
 
 ## 🔄 EN FIN DE TÂCHE
 
