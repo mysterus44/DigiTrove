@@ -36,7 +36,12 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Checkout/CheckoutRefusalReason.php',
     'Checkout/OrderService.php',
     // P4-C1/P4-C2 (D-035) — grant issuance and refund revocation.
+    'Delivery/ByteRangeParser.php',
+    'Delivery/DownloadAuthorizationService.php',
+    'Delivery/DownloadFileService.php',
+    'Delivery/DownloadOperationsService.php',
     'Delivery/GrantIssuanceService.php',
+    'Delivery/PrivateFileLocator.php',
     'Delivery/RefundCompletionService.php',
     // P3-D4/P3-D5 (D-034) — server-side confirmation. Commerce only, no delivery.
     'Payments/FreeOrderConfirmationService.php',
@@ -980,7 +985,7 @@ it('binds Range and retries to one immutable attempt row without any new consump
 
 // ── 21.8 — HEAD and HTTP perimeter ───────────────────────────────────────────
 
-it('keeps the gate purely relational: no HTTP surface, no HEAD artefact, no P5 object', function () {
+it('keeps HEAD commercially inert and allows only the explicitly reviewed download HTTP surface', function () {
     // No HEAD column, status or counter exists (R2A: HEAD never reaches the table).
     foreach (['http_method', 'head_count', 'is_head', 'method'] as $column) {
         expect(Schema::hasColumn('download_logs', $column))->toBeFalse("Unexpected HEAD artefact: {$column}");
@@ -991,23 +996,39 @@ it('keeps the gate purely relational: no HTTP surface, no HEAD artefact, no P5 o
         'download_logs_stat',
     );
 
-    // No APPLICATION download route exists. Filament and Livewire register
-    // their own internal admin routes; they predate this gate and stay out of
-    // its perimeter.
+    // P4-C4 widens the historical boundary by exactly two reviewed routes.
+    $downloadRoutes = [];
     foreach (Route::getRoutes() as $route) {
         $uri = mb_strtolower($route->uri());
 
-        if (str_starts_with($uri, 'filament/') || str_starts_with($uri, 'livewire/')) {
-            continue;
+        if (str_contains($uri, 'download')
+            && ! str_starts_with($uri, 'filament/')
+            && ! str_starts_with($uri, 'livewire/')) {
+            $downloadRoutes[] = implode('|', $route->methods()).' '.$uri;
         }
-
-        expect($uri)->not->toContain('download');
     }
+    sort($downloadRoutes);
+    expect($downloadRoutes)->toBe([
+        'GET|HEAD downloads/{grantpublicid}',
+        'GET|HEAD downloads/{grantpublicid}/file',
+        'POST api/downloads/{grantpublicid}/authorize',
+    ]);
 
     $appFiles = collect(File::allFiles(app_path()))->map(fn ($file) => $file->getRelativePathname());
-    foreach ($appFiles as $file) {
-        expect((string) $file)->not->toMatch('/DownloadController|DownloadService|IssueDownloadGrants|Stream|RateLimit/i');
-    }
+    $downloadHttpFiles = $appFiles
+        ->filter(fn ($file): bool => preg_match('/Download.*Controller|Download.*Service|IssueDownloadGrants|Stream|RateLimit/i', (string) $file) === 1)
+        ->map(fn ($file): string => str_replace('\\', '/', (string) $file))
+        ->sort()
+        ->values()
+        ->all();
+    expect($downloadHttpFiles)->toBe([
+        'Http/Controllers/Api/DownloadAuthorizationController.php',
+        'Http/Controllers/DownloadFileController.php',
+        'Http/Controllers/DownloadLandingController.php',
+        'Services/Delivery/DownloadAuthorizationService.php',
+        'Services/Delivery/DownloadFileService.php',
+        'Services/Delivery/DownloadOperationsService.php',
+    ]);
     // P4-C0/P4-C3 (D-035) legitimately introduces the queued delivery layer.
     // The boundary stays FAIL-CLOSED: each directory may contain EXACTLY its
     // allowlisted P4-C file and nothing else — a smuggled download controller,

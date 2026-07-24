@@ -347,7 +347,7 @@ it('soft deletes products without physical deletion', function () {
     expect(Product::withTrashed()->whereKey($product->id)->exists())->toBeTrue();
 });
 
-it('does not expose digital files or download routes publicly in P2', function () {
+it('keeps digital files private and exposes only the reviewed delivery routes', function () {
     $forbiddenExtensions = ['zip', 'pdf', 'rar', '7z', 'tar', 'gz'];
     $publicFiles = collect(File::allFiles(public_path()))
         ->map(fn (SplFileInfo $file) => strtolower($file->getExtension()))
@@ -363,7 +363,18 @@ it('does not expose digital files or download routes publicly in P2', function (
         ->all();
 
     foreach ($uris as $uri) {
-        expect($uri)->not->toContain('download')
-            ->and($uri)->not->toContain('checkout');
+        expect($uri)->not->toContain('checkout');
     }
+
+    $downloadUris = collect($uris)
+        ->filter(fn (string $uri): bool => str_contains($uri, 'download'))
+        ->sort()
+        ->values()
+        ->all();
+
+    expect($downloadUris)->toBe([
+        'api/downloads/{grantPublicId}/authorize',
+        'downloads/{grantPublicId}',
+        'downloads/{grantPublicId}/file',
+    ]);
 });

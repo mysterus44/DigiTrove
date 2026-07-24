@@ -1991,15 +1991,16 @@ colonne `grant_id` inexistante (la colonne réelle est `download_grant_id`) ;
 colonnes P4-B obligatoires absentes (`public_id`, `quota_consumed`,
 `retention_until`, tous NOT NULL sans DEFAULT) ; absence de la notion de tentative
 authentifiée ; absence de G5 ; absence de la frontière PostgreSQL runtime.
-**Action obligatoire consignée : réécrire `SECURITE_TELECHARGEMENT.md` avant le
-gate P4-C4**, réaligné sur D-029.5 et D-029.6.
+**Action obligatoire consignée à l'époque : réécrire
+`SECURITE_TELECHARGEMENT.md` avant le gate P4-C4**, réaligné sur D-029.5 et
+D-029.6. **Action fermée par D-036 le 2026-07-24.**
 
 **11. DETTES RECONNUES ET LEUR GATE.** Consignées sans correction dans cette
 mission :
 
 | # | Dette mesurée | Gate responsable |
 |---|---|---|
-| 1 | `DOWNLOAD_LINK_TTL_HOURS` / `DOWNLOAD_MAX_PER_GRANT` présents dans `.env.example` mais **lus par aucun fichier `config/`** | **P4-C1** |
+| 1 | `DOWNLOAD_LINK_TTL_HOURS` / `DOWNLOAD_MAX_PER_GRANT` présents dans `.env.example` mais **lus par aucun fichier `config/`** | ✅ fermée par D-036 : retirés ; valeurs `DELIVERY_*` bornées |
 | 2 | queue par défaut `database` **sans table `jobs`/`job_batches`** | **P4-C0** |
 | 3 | failed jobs par défaut `database-uuids` **sans table `failed_jobs`** | **P4-C0** (sous-point ouvert) |
 | 4 | `after_commit = false` sur toutes les connexions de queue | **P4-C0** |
@@ -2661,9 +2662,12 @@ inventé ; adaptateur CinetPay actif par défaut ; table outbox dans ce gate ;
 livraison ou listener P4-C.
 
 ### D-035 — Pipeline de livraison sécurisé (P4-C0 → P4-C3) ✅
-**Date** : 2026-07-24. **Statut** : **P4-C0 à P4-C3 IMPLÉMENTÉS — EN ATTENTE DE
-REVUE/MERGE** (macro-gate unique `p4-c0-c3-secure-delivery-pipeline`, **aucune
-migration** — 29 inchangées). Pipeline **désactivé par défaut**.
+**Date** : 2026-07-24. **Statut** : **P4-C0 à P4-C3 TERMINÉS, MERGÉS ET
+VALIDÉS** via [PR #24](https://github.com/mysterus44/DigiTrove/pull/24), head
+`1492cd137a904c6025504fc5fd0cf0d51bd92db9`, merge
+`701cfa4f95700b61d70f242e15feef264adffa8b`, CI #29 success. Macro-gate
+`p4-c0-c3-secure-delivery-pipeline`, **aucune migration** — 29 inchangées.
+Pipeline **désactivé par défaut**.
 
 **DÉCISIONS FIGÉES**
 1. `OrderPaid` ne transporte que `order_id` (P3-D5, hérité).
@@ -2742,6 +2746,122 @@ macro-gate est désormais **terminé, mergé et validé** via
 `1492cd137a904c6025504fc5fd0cf0d51bd92db9`, merge
 `701cfa4f95700b61d70f242e15feef264adffa8b`, **CI #29 success**. Prochaine
 tâche : macro-gate P4-C4/P4-C5/P4-C6.
+
+### D-036 — Download Authorization, File Delivery and Operations ✅
+**Date** : 2026-07-24. **Statut** : **P4-C4 + P4-C5 + P4-C6 IMPLÉMENTÉS — EN
+ATTENTE DE REVUE/MERGE** sur `p4-c4-c6-download-delivery-operations` (commits
+`de0fbe4` + `fefb28e` + `671669b` + hardening `5bd86d3`, **aucune migration** —
+29 inchangées). Le pipeline reste **désactivé par défaut** jusqu'à sa clôture et
+son activation opérationnelle.
+
+**DÉCISIONS FIGÉES**
+1. Le secret brut du grant ne passe jamais en query string. Le lien e-mail le
+   place uniquement dans le fragment URI ; la page d'échange retire
+   immédiatement ce fragment via `history.replaceState()`.
+2. La page d'échange est uniforme et sans accès BDD, ressource tierce, analytics
+   ou stockage navigateur. Elle transmet le secret du grant uniquement dans
+   `Authorization: Bearer …` sur le POST d'autorisation.
+3. L'autorisation génère un secret de tentative distinct avec
+   `random_bytes(32)` encodé base64url sans padding. Seul son SHA-256 est
+   persisté ; le brut reste en mémoire puis dans le cookie `dl_attempt`
+   `HttpOnly`, `SameSite=Strict`, `Secure` hors local/testing, chemin borné au
+   fichier et durée courte.
+4. Le POST effectue un préflight du fichier privé **hors transaction**, puis
+   verrouille **Order → DownloadGrant** dans une transaction courte sans I/O
+   filesystem. Il revalide grant, Order et métadonnées ProductFile, puis laisse
+   **G5** créer exactement un `download_logs.started` et incrémenter
+   `downloads_count` de `+1` atomiquement. Une tentative encore réutilisable
+   bloque le rejeu ; le dernier quota produit une seule consommation et un refus
+   uniforme non consommant.
+5. Grant inconnu, identifiant malformé, token faux, grant expiré/révoqué/épuisé,
+   Order non livrable et fichier indisponible exposent la même réponse publique.
+   Aucun token, digest, disque, `storage_path` ou détail SQL/stack ne sort.
+6. GET, HEAD et Range utilisent exclusivement le cookie de tentative et la même
+   ligne `download_logs`. Aucun secret de grant n'est accepté sur la route
+   fichier ; `?token`, `?attempt` et `?grant` sont refusés.
+7. HEAD valide les mêmes invariants et renvoie les métadonnées sans corps,
+   nouvelle ligne, incrément ou transition de statut.
+8. Un seul Range `bytes` strict est accepté (`start-end`, `start-`, `-suffix`).
+   Multi-range, unité différente, syntaxe ambiguë, overflow et hors-limite
+   retournent `416`. Les retries réutilisent le même attempt sans quota.
+9. Le mode par défaut est un `readStream()` privé, ouvert **hors transaction
+   PostgreSQL**, lu par chunks bornés et fermé en `finally`.
+   `X-Accel-Redirect` est préparé lui aussi hors transaction, opt-in, réservé au
+   disque local privé et fail-closed si préfixe, chemin ou taille minimale sont
+   invalides. Aucune URL objet publique, permanente ou pré-signée n'est générée.
+10. `completed` signifie remise réussie au mécanisme de livraison, jamais preuve
+    de réception intégrale par le navigateur (R3A). Une erreur avant ouverture
+    du flux devient `denied/storage_failure` ; une interruption ultérieure relève
+    de la sémantique at-least-once et de la réconciliation.
+11. Les logs `started` anciens passent une seule fois à
+    `denied/delivery_interrupted`. Le quota consommé n'est jamais rendu et
+    `downloads_count` n'est jamais décrémenté.
+12. L'abus se mesure par nombre distinct de `ip_hash` HMAC versionnés sur une
+    fenêtre bornée. Aucune IP brute, adresse e-mail ou token n'est produit par les
+    commandes ou métriques ; aucune révocation automatique n'est déclenchée.
+13. La révocation support accepte uniquement
+    `manual_security_reissue`, verrouille Order puis Grant, est set-once et
+    idempotente pour la même raison. Une raison différente ne réécrit jamais
+    l'historique.
+14. La purge supprime par batch uniquement les logs `completed|denied` après
+    `retention_until`, sous l'autorité de **G6**. Aucun grant, Order, OrderItem ou
+    ProductFile n'est supprimé ; un log `started` n'est jamais purgé.
+15. Les commandes `downloads:reconcile`, `downloads:detect-abuse`,
+    `downloads:purge`, `downloads:metrics` et `downloads:revoke` sont
+    non-interactives et sans secret. Réconciliation toutes les 10 minutes,
+    détection/métriques horaires et purge quotidienne utilisent
+    `withoutOverlapping`; `onOneServer` n'est activé qu'avec un cache distribué
+    à verrou atomique.
+16. Les limiters `download-authorize` et `download-file` utilisent un HMAC de
+    l'IP et un hash du public ID du grant, jamais un token. Limites, TTL, chunks,
+    rétention, seuils et batches sont configurables mais bornés fail-closed.
+17. Les preuves PostgreSQL C1–C6 utilisent des processus runtime indépendants :
+    double autorisation et dernière unité ne consomment qu'une fois ;
+    autorisation/révocation restent sérialisées ; deux Range partagent une ligne ;
+    la purge ne retire pas un log actif ; la double réconciliation ne réalise
+    qu'une transition. Aucun `25P02`, `42501` ou deadlock.
+18. Le schéma P4-B existant suffit. **Aucune migration `000014`** ni nouvelle
+    table n'est créée.
+19. Aucun I/O filesystem ou objet n'est autorisé sous transaction PostgreSQL.
+    `PrivateFileLocator` refuse en production `diskFor`, `assertResolvable`,
+    `size`, `readStream` et `xAccelPath` lorsque
+    `DB::transactionLevel() !== 0`. Les services d'autorisation et de livraison
+    refusent également toute transaction ambiante avant lecture BDD ou stockage.
+20. La livraison suit trois phases explicites : transaction DB courte
+    **Order → Grant → Log** et snapshot scalaire immuable ; I/O stockage,
+    Range, stream ou X-Accel hors transaction ; puis transaction DB courte de
+    revalidation/finalisation. Le callback HTTP s'exécute au niveau de
+    transaction zéro.
+21. Une erreur stockage ferme tout stream ouvert puis finalise séparément le log
+    encore `started` en `denied/storage_failure`, sans restitution de quota.
+    Une revalidation finale refusée ferme immédiatement le stream et ne retourne
+    aucun fichier.
+22. `DELIVERY_PIPELINE_ENABLED=false` coupe au niveau service les nouvelles
+    autorisations **et les tentatives déjà émises** (GET, HEAD, Range et appel
+    direct), sans accès stockage ni mutation de log/compteur.
+23. Les paramètres transportant les secrets bruts grant/attempt sont marqués
+    `#[SensitiveParameter]`. La persistance reste exclusivement SHA-256.
+
+**SURFACE HTTP** :
+`GET /downloads/{grantPublicId}` ·
+`POST /api/downloads/{grantPublicId}/authorize` ·
+`GET|HEAD /downloads/{grantPublicId}/file`.
+Headers fichier : `Accept-Ranges`, `Content-Length`, `Content-Disposition`
+nettoyé, `ETag`, `Content-Range` pour 206/416, `Cache-Control: private, no-store`,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`.
+
+**VALIDATION APRÈS HARDENING** : filtre P4-C4 **18/152** (inclut P4C456 ;
+autorisation + contrat exacts **12/109**), P4-C5 **13/202**, P4-C6 **5/41**,
+contrat et concurrence P4-C456 **10/72**. Les niveaux maximum observés sont
+`exists=0`, `size=0`, `readStream=0`, `xAccelPath=0` et callback stream `=0`.
+Suite complète **623 tests / 4542 assertions**, Pint **217 fichiers**,
+`git diff --check` propre, **29 migrations** jusqu'à `000013`, aucune `000014`.
+
+**ALTERNATIVES REJETÉES** : token en query/cookie de grant/localStorage/log ;
+nouvelle ligne par Range ; quota rendu après interruption ; fichier public ;
+`Storage::url()`/`temporaryUrl()` permanent ; lecture entière en mémoire ;
+multi-range ; X-Accel implicite ; provider objet activé sans audit ; révocation
+automatique sur métrique ; purge de grant ou log actif ; migration inutile.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

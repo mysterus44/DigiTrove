@@ -1888,9 +1888,54 @@ Grant Revocation        ↓
 | **P3-D3** Payment Initiation ✅ *mergé (PR #22 → `70379a02`, D-033)* | `p3-d3-payment-initiation` | non | `payments_idempotency_key_hash_unique`, `payments_order_id_attempt_number_unique`, transitions T (D-028.5) |
 | **P3-D4 + P3-D5** Server-side Confirmation + OrderPaid ✅ *mergé (PR #23 → `a62563fd`, D-034)* | `p3-d4-d5-payment-confirmation` | non | uniques de rejeu `payment_webhook_events` (`provider_external_event_unique`, `provider_payload_hash_unique`), ladder `payments` `pending→processing→succeeded`, `payments_one_succeeded_per_order` / `_one_requires_review_per_order`, `payments_provider_reference_unique`, `coupon_redemptions_order_id_unique`, constraint triggers `validate_payment_order_consistency` / `validate_coupon_redemption_consistency` (différés), free order `total_minor = 0` sans `payments`. **Aucune table nouvelle** ; usage applicatif des tables P3C existantes. `OrderPaid` = événement `afterCommit` portant `order_id` seul. |
 | **P4-C0→C3** Secure Delivery Pipeline ✅ *terminé, mergé et validé (PR #24 → `701cfa4f`, D-035)* | `p4-c0-c3-secure-delivery-pipeline` | non | Job unique `order_id` seul ; tokens CSPRNG mémoire + SHA-256 persistant ; Mailable synchrone non sérialisable, transport `log` refusé ; **G3** (`orders FOR UPDATE`, statut livrable, fichier actif, lignée snapshot bundle, bénéficiaire null-safe), `download_grants_active_pair_unique`, `download_grants_token_hash_unique`, no-upgrade au retry ; **G4** différé bidirectionnel (`download_grants` + `orders`) pour la révocation totale, ladder refunds `pending→processing→succeeded`, cap cumulé refunds ≤ paiement, `refunds_validate_order_consistency` différé. Lien provisoire fragment-only, aucune route. **Aucune table nouvelle** ; usage applicatif. |
-| **P4-C4** Download Authorization | `p4-c4-download-authorization` | non | **G5** (`SECURITY DEFINER`, unique mutante), **G2** (`current_user = digitrove_download_executor`), unique partiel `attempt_token_hash` |
-| **P4-C5** HTTP File Delivery | `p4-c5-http-file-delivery` | non | — (transport ; `storage_path` jamais exposé) |
-| **P4-C6** Delivery Operations | `p4-c6-delivery-operations` | non | **G6** (terminal + rétention échue), G1 prevent-delete des grants |
+| **P4-C4** Download Authorization ✅ *implémenté, en attente de review/merge (D-036)* | `p4-c4-c6-download-delivery-operations` | non | Page d'échange DB-free, fragment retiré, Bearer POST seulement, secret de tentative dédié (SHA-256 seul), cookie HttpOnly, refus uniforme ; **G5** (`SECURITY DEFINER`, unique mutante), **G2** (`current_user = digitrove_download_executor`), unique partiel `attempt_token_hash` |
+| **P4-C5** HTTP File Delivery ✅ *implémenté, en attente de review/merge (D-036)* | `p4-c4-c6-download-delivery-operations` | non | GET/HEAD/Range sur la même tentative ; HEAD inerte ; stream privé borné, X-Accel local opt-in fail-closed ; `storage_path` jamais exposé, aucune URL objet |
+| **P4-C6** Delivery Operations ✅ *implémenté, en attente de review/merge (D-036)* | `p4-c4-c6-download-delivery-operations` | non | Réconciliation sans restitution de quota, abus par HMAC IP, révocation support set-once, métriques ; **G6** (terminal + rétention échue), G1 prevent-delete des grants |
+
+### Contrat applicatif final de livraison (D-036)
+
+```text
+E-mail : /downloads/{grantPublicId}#token=<grant-secret>
+  -> page uniforme sans BDD ni ressource externe
+  -> history.replaceState() retire le fragment
+  -> POST /api/downloads/{grantPublicId}/authorize
+       Authorization: Bearer <grant-secret>
+  -> G5 : download_log started + downloads_count +1 atomiques
+  -> cookie dl_attempt : secret distinct, HttpOnly, SameSite=Strict, TTL court
+  -> GET|HEAD /downloads/{grantPublicId}/file
+       même attempt, même log, aucun quota supplémentaire
+```
+
+* Le grant secret n'apparaît jamais en query string, cookie, HTML serveur, log,
+  exception ou stockage navigateur. Seul `download_grants.token_hash` existe en
+  base.
+* Le secret de tentative est un CSPRNG distinct ; seul
+  `download_logs.attempt_token_hash` est persisté. Grant invalide, inconnu,
+  expiré, révoqué ou épuisé expose la même réponse.
+* Les verrous applicatifs suivent **Order → DownloadGrant → DownloadLog**. GET,
+  Range et retries ne créent aucune ligne et ne modifient jamais le quota. HEAD
+  ne change ni statut ni compteur.
+* Un Range `bytes` unique (`start-end`, `start-`, `-suffix`) est supporté ; tout
+  multi-range, overflow, syntaxe ambiguë ou plage hors fichier est refusé en
+  `416`.
+* Le mode par défaut ouvre `readStream()` sur un disque allowlisté privé, lit par
+  chunks bornés et ferme en `finally`. X-Accel n'est possible que pour un disque
+  local privé et une configuration interne valide. Aucun `Storage::url()` ou
+  `temporaryUrl()` n'est généré.
+* `completed` signifie remise au mécanisme, pas réception intégrale. Un
+  `started` ancien devient `denied/delivery_interrupted` sans restituer le quota.
+  La purge passe exclusivement par G6 et ne concerne que les logs terminaux dont
+  la rétention est échue.
+* Détection d'abus : `COUNT(DISTINCT ip_hash)` sur fenêtre bornée, jamais IP
+  brute. La révocation support est explicite, allowlistée, set-once et non
+  automatique.
+* Les preuves C1→C6 utilisent des processus PostgreSQL runtime indépendants :
+  double autorisation/dernière unité, autorisation contre révocation, deux Range
+  sur un attempt, purge contre lecture et double réconciliation restent
+  sérialisés et idempotents.
+* **Aucune migration `000014`** : les 29 migrations existantes suffisent.
+  Validation : P4-C4 **6/67**, P4-C5 **7/120**, P4-C6 **5/41**, P4C456
+  **9/62**, suite **614/4437**, Pint **216**.
 
 ### Premier gate — `P3-D1 — Pricing & Quote Kernel`
 
@@ -2032,7 +2077,7 @@ SAVEPOINT` préserve le verrou du Cart. 3 essais maximum, puis
 * **Révocation** : G4 étant différé et monté sur `orders`, un remboursement total
   devient **impossible** si les grants actifs ne sont pas révoqués dans la même
   transaction. D'où P4-C2 avant l'activation de P4-C3.
-* **`SECURITE_TELECHARGEMENT.md` est partiellement périmé** (UPDATE direct du
-  compteur, colonne `grant_id` inexistante, colonnes P4-B obligatoires absentes,
-  ni tentative authentifiée ni G5 ni frontière runtime). **À réécrire avant le
-  gate P4-C4** ; il ne doit plus servir de modèle de code d'ici là.
+* **`SECURITE_TELECHARGEMENT.md` a été réécrit par P4-C4/C6** : fragment e-mail,
+  Bearer POST, cookie de tentative, G5, Range/HEAD, stockage privé,
+  réconciliation et observabilité sans secret sont désormais alignés sur
+  D-035/D-036.

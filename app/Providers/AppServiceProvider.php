@@ -7,7 +7,11 @@ use App\Contracts\Payments\PaymentProvider;
 use App\Events\OrderPaid;
 use App\Listeners\QueueSecureDelivery;
 use App\Payments\PaymentProviderFactory;
+use App\Support\DeliveryConfig;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -45,8 +49,40 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        RateLimiter::for('download-authorize', function (Request $request): Limit {
+            $key = $this->downloadRateLimitKey($request);
+
+            return Limit::perMinute(DeliveryConfig::authorizeRateLimit())
+                ->by($key)
+                ->response(fn () => response()->json(['message' => 'Download unavailable.'], 429));
+        });
+
+        RateLimiter::for('download-file', function (Request $request): Limit {
+            $key = $this->downloadRateLimitKey($request);
+
+            return Limit::perMinute(DeliveryConfig::fileRateLimit())
+                ->by($key)
+                ->response(fn () => response('Download unavailable.', 429, [
+                    'Cache-Control' => 'private, no-store',
+                    'Referrer-Policy' => 'no-referrer',
+                    'X-Content-Type-Options' => 'nosniff',
+                ]));
+        });
+
         // Secure delivery pipeline (P4-C0, D-035): a paid order queues an
         // order-id-only delivery job, and only when the pipeline is enabled.
         Event::listen(OrderPaid::class, QueueSecureDelivery::class);
+    }
+
+    private function downloadRateLimitKey(Request $request): string
+    {
+        $secret = config('delivery.audit.ip_hash_key');
+        $ip = $request->ip() ?? '';
+        $ipHash = is_string($secret) && strlen($secret) >= 32
+            ? hash_hmac('sha256', $ip, $secret)
+            : hash('sha256', 'delivery-disabled');
+        $grantHash = hash('sha256', (string) $request->route('grantPublicId'));
+
+        return $ipHash.':'.$grantHash;
     }
 }

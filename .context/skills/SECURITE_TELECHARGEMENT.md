@@ -1,182 +1,294 @@
-# SECURITE_TELECHARGEMENT.md — 🔴 LE CŒUR DE DIGITROVE
-# Livraison automatisée et sécurisée des produits digitaux après paiement.
-# Une faille ici = ton catalogue entier circule gratuitement. Tolérance zéro.
+# SECURITE_TELECHARGEMENT.md — Coeur de livraison DigiTrove
+
+Contrat actif : D-029.4 à D-029.6, D-035 et D-036. Ce document décrit le code
+réel P4-C0 à P4-C6. Il ne doit jamais servir à contourner G1-G6.
 
 ---
 
-## 🧨 LES 5 FAÇONS DE TOUT PERDRE
+## Invariants absolus
 
-1. Mettre les fichiers dans `public/` → Google les indexe. C'est arrivé à des milliers de boutiques.
-2. Servir une URL devinable (`/download/produit-42.zip`) → énumération triviale.
-3. Stocker le token en clair en base → une fuite SQL = tout le catalogue.
-4. Lien sans expiration ni quota → il finit sur un forum de partage.
-5. Livrer avant confirmation **serveur** du paiement → Wi-Fi… pardon, produits gratuits.
-
----
-
-## ✅ L'ARCHITECTURE CORRECTE
-
-```
-Paiement confirmé (côté SERVEUR)
-   └─> Event OrderPaid
-        └─> Listener IssueDownloadGrants
-             ├─ pour chaque order_item × product_file :
-             │    token clair  = random_bytes(32)        ← envoyé UNE fois au client
-             │    token_hash   = hash('sha256', token)   ← seul stocké en base
-             │    expires_at   = now + DOWNLOAD_LINK_TTL_HOURS
-             │    max_downloads = DOWNLOAD_MAX_PER_GRANT
-             └─ e-mail avec les liens contenant le token CLAIR
-```
-
-Le token clair n'existe que dans l'e-mail du client. La base ne contient que son
-empreinte. **Exactement comme un mot de passe.**
+1. Les fichiers digitaux restent sur un disque privé. Rien dans `public/`.
+2. Aucun token brut, chemin privé, secret HMAC ou IP brute en base ou dans les
+   logs.
+3. Le grant secret est un CSPRNG de 32 octets. Seul son SHA-256 est persisté.
+4. Le secret de tentative est un autre CSPRNG. Seul son SHA-256 est persisté.
+5. Aucun secret en query string, URL de redirection, HTML serveur,
+   localStorage, sessionStorage, console ou exception.
+6. G5 est l'unique chemin qui couple `download_logs.started` et
+   `downloads_count + 1`.
+7. Un Range ou retry réutilise la même tentative. Il ne consomme jamais une
+   nouvelle unité.
+8. HEAD ne crée pas de log, ne consomme pas et ne change aucun statut.
+9. Une interruption ne rend jamais le quota. La réconciliation clôt l'audit.
+10. Seuls les logs terminaux après rétention sont supprimables par G6.
+11. Aucun I/O filesystem ou objet, aucune ouverture de stream et aucun callback
+    HTTP de streaming ne s'exécute sous transaction PostgreSQL.
+12. `DELIVERY_PIPELINE_ENABLED=false` coupe aussi les tentatives déjà émises.
+13. Tout paramètre transportant un secret brut est marqué `SensitiveParameter`.
 
 ---
 
-## 🔐 LE CONTRÔLEUR DE TÉLÉCHARGEMENT
+## Parcours du secret
 
-```php
-// routes/web.php
-Route::get('/download/{token}', DownloadController::class)
-    ->middleware('throttle:10,1')          // 10 tentatives / minute / IP
-    ->name('download');
-
-final class DownloadController
-{
-    public function __invoke(string $token, DownloadService $service): StreamedResponse
-    {
-        $grant = $service->resolveValidGrant($token);   // lève 404 si invalide
-
-        return $service->stream($grant, request());
-    }
-}
+```text
+SecureDeliveryJob
+  -> grant token brut en mémoire du worker
+  -> e-mail : /downloads/{publicId}#token=<grant-token>
+  -> navigateur lit location.hash
+  -> history.replaceState() retire immédiatement le fragment
+  -> POST /api/downloads/{publicId}/authorize
+       Authorization: Bearer <grant-token>
+  -> transaction Order FOR UPDATE -> Grant FOR UPDATE
+  -> G5 : log started + compteur +1
+  -> secret de tentative distinct
+  -> cookie dl_attempt HttpOnly, SameSite=Strict, Secure hors local/testing
+  -> GET|HEAD /downloads/{publicId}/file
 ```
 
-```php
-// app/Services/DownloadService.php
-final class DownloadService
-{
-    public function resolveValidGrant(string $token): DownloadGrant
-    {
-        $hash = hash('sha256', $token);
+La page d'échange :
 
-        $grant = DownloadGrant::where('token_hash', $hash)->first();
+* ne consulte pas la BDD ;
+* est identique pour un public ID connu ou inconnu ;
+* ne charge aucun script, style, analytics ou ressource externe ;
+* applique une CSP stricte ;
+* ne conserve rien dans un stockage navigateur ;
+* n'envoie le grant token qu'au POST dans le header Bearer.
 
-        // Réponse identique dans tous les cas d'échec : pas de fuite d'information
-        abort_if($grant === null,                 404);
-        abort_if($grant->revoked_at !== null,     404);
-        abort_if($grant->expires_at->isPast(),    404);
-        abort_if($grant->downloads_count >= $grant->max_downloads, 404);
-
-        return $grant;
-    }
-
-    public function stream(DownloadGrant $grant, Request $request): StreamedResponse
-    {
-        $file = $grant->productFile;
-
-        // 🔴 Le disque est PRIVÉ. Aucune URL publique n'existe pour ce fichier.
-        abort_unless(Storage::disk($file->storage_disk)->exists($file->storage_path), 404);
-
-        // Incrément atomique : deux requêtes simultanées ne peuvent pas dépasser le quota
-        $updated = DownloadGrant::where('id', $grant->id)
-            ->where('downloads_count', '<', $grant->max_downloads)
-            ->increment('downloads_count');
-
-        abort_if($updated === 0, 404);   // quota atteint entre-temps
-
-        DownloadLog::create([
-            'grant_id'   => $grant->id,
-            'ip_hash'    => hash_hmac('sha256', $request->ip(), config('app.key')),
-            'user_agent' => substr((string) $request->userAgent(), 0, 500),
-            'status'     => 'started',
-        ]);
-
-        return Storage::disk($file->storage_disk)->download(
-            $file->storage_path,
-            $file->original_name,          // le vrai nom, jamais le chemin interne
-        );
-    }
-}
-```
+Le cookie contient le **secret de tentative**, jamais le grant token. Son chemin
+est limité à `/downloads/{publicId}/file` et sa durée est bornée.
 
 ---
 
-## 📦 GROS FICHIERS — ne fais pas passer 4 Go par PHP
+## Autorisation non énumérable
 
-Trois stratégies, par ordre de préférence :
+`DownloadAuthorizationService` refuse une transaction ambiante, valide la forme
+du public ID et du token, calcule le digest en mémoire et effectue le préflight
+du ProductFile/disque privé **hors transaction**. Il verrouille ensuite dans une
+transaction courte, sans aucun I/O stockage, selon l'ordre global :
 
-| Volume | Stratégie |
-|--------|-----------|
-| < 100 Mo | `Storage::download()` (streamé par Laravel) |
-| 100 Mo – 2 Go | **X-Sendfile / X-Accel-Redirect** : PHP vérifie le grant, Nginx sert le fichier |
-| > 2 Go, ou S3 | **URL pré-signée S3 courte** (5 min), générée après validation du grant |
-
-```php
-// Nginx X-Accel-Redirect : PHP autorise, Nginx livre. Zéro mémoire PHP.
-return response('', 200, [
-    'X-Accel-Redirect'    => '/protected/' . $file->storage_path,
-    'Content-Disposition' => 'attachment; filename="' . $file->original_name . '"',
-]);
+```text
+Order -> DownloadGrant
 ```
 
-⚠️ Même avec S3 : **l'URL pré-signée est générée après vérification du grant**, elle
-est courte (5 min), et elle n'est jamais stockée.
+Sous verrou, il revalide :
+
+* grant non révoqué et non expiré ;
+* quota disponible ;
+* Order `paid` ou `partially_refunded` ;
+* ProductFile toujours présent et actif selon les métadonnées revalidées ;
+* absence d'une tentative consommante encore réutilisable.
+
+Inconnu, faux, expiré, révoqué, épuisé, non livrable et fichier indisponible
+produisent la même réponse publique. Les raisons internes restent des codes
+fermés et sanitizés.
+
+Une autorisation réussie produit exactement :
+
+```text
+1 download_logs.started
+1 downloads_count + 1
+1 secret de tentative brut en mémoire/cookie
+1 SHA-256 de tentative en base
+```
+
+Le dernier quota peut aussi produire un log direct `denied` non consommant pour
+la seconde requête concurrente. Il ne produit jamais une seconde consommation.
 
 ---
 
-## 🕵️ DÉTECTION D'ABUS (partage de lien)
+## Livraison HTTP
 
-`download_logs` existe pour ça. Alerte quand :
+`DownloadFileService` résout le digest du cookie puis verrouille :
 
-```sql
--- Un même grant téléchargé depuis > 3 IP distinctes en 24h = lien partagé
-SELECT grant_id, COUNT(DISTINCT ip_hash) AS ips
-FROM download_logs
-WHERE created_at > now() - interval '24 hours'
-GROUP BY grant_id
-HAVING COUNT(DISTINCT ip_hash) > 3;
+```text
+Order -> DownloadGrant -> DownloadLog
 ```
 
-Réaction : révoquer le grant (`revoked_at = now()`), notifier l'admin, éventuellement
-réémettre un grant frais pour le client légitime.
+La préparation refuse toute transaction ambiante. Elle suit trois phases :
+
+1. transaction DB courte : revalidation de la tentative, du grant, de l'Order
+   et du ProductFile, puis snapshot scalaire immuable ;
+2. hors transaction : disque/chemin privé, existence, taille, Range,
+   `readStream()` ou X-Accel ;
+3. transaction DB courte : nouvelle revalidation et finalisation du log.
+
+Le contrôleur reste mince. `PrivateFileLocator` refuse chaque entrée filesystem
+si `DB::transactionLevel() !== 0`.
+
+### GET et Range
+
+Un seul Range est accepté :
+
+```text
+bytes=start-end
+bytes=start-
+bytes=-suffix
+```
+
+Sont refusés en `416` : multi-range, autre unité, nombres signés, syntaxe
+ambiguë, overflow et plage hors fichier.
+
+Headers minimaux :
+
+```text
+Accept-Ranges: bytes
+Content-Type
+Content-Length
+Content-Disposition
+ETag
+Content-Range (206/416)
+Cache-Control: private, no-store
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+```
+
+Le nom de fichier est nettoyé, sans CRLF. Aucun `storage_path`, nom de disque ou
+chemin absolu n'est exposé.
+
+### HEAD
+
+HEAD effectue les validations mais n'ouvre pas le flux et ne modifie pas le
+`DownloadLog`. Il retourne les mêmes métadonnées sans corps.
+
+### Streaming
+
+Mode par défaut : `readStream()` sur disque privé, chunks bornés, positionnement
+Range par seek ou discard borné, fermeture du flux dans `finally`. Jamais de
+lecture entière, `Storage::url()`, `temporaryUrl()` ou URL permanente.
+
+X-Accel est opt-in. Il exige :
+
+* un disque local privé ;
+* un préfixe interne explicitement configuré ;
+* un chemin relatif normalisé sans traversée ;
+* une taille minimale valide.
+
+Configuration incomplète ou non locale : refus fail-closed. DigiTrove ne
+configure jamais Nginx automatiquement.
+
+`completed` signifie que le fichier a été remis au mécanisme de livraison, pas
+que le navigateur a reçu chaque octet. Une panne avant ouverture devient
+`denied/storage_failure` dans une transaction de finalisation séparée, sans
+restitution de quota. Un stream ouvert est fermé si la revalidation finale
+refuse la livraison. Une panne après engagement relève du modèle at-least-once
+et de la réconciliation.
 
 ---
 
-## 🔄 RÉVOCATION
+## Rate limiting et pseudonymisation
 
-Un grant se révoque, jamais ne se supprime (on garde la trace) :
-- Remboursement → révoquer tous les grants de la commande
-- Fraude détectée → révoquer + bloquer le compte
-- Fichier remplacé (nouvelle version) → révoquer les anciens, réémettre
+Deux limiters nommés existent :
 
-```php
-$order->items->each(fn ($item) => $item->downloadGrants()
-    ->whereNull('revoked_at')
-    ->update(['revoked_at' => now()]));
+```text
+download-authorize
+download-file
 ```
+
+La clé combine :
+
+* HMAC-SHA-256 de l'IP avec secret externe et version ;
+* SHA-256 du public ID du grant.
+
+Jamais le token. En absence de clé HMAC valide, le fallback est volontairement
+plus restrictif, jamais plus permissif.
+
+`download_logs.ip_hash` stocke seulement le pseudonyme HMAC versionné. Le
+`user_agent` est borné. Les commandes et métriques n'affichent ni hash, ni IP,
+ni e-mail, ni token.
 
 ---
 
-## 🔑 LICENCES LOGICIELLES (si applicable)
+## Opérations
 
-Même principe que les tokens : on stocke `license_key_hash`, pas la clé.
-La clé est affichée une fois au client. Vérification par comparaison de hash.
-`activation_limit` + `activations_count` limitent la réutilisation.
+### Réconciliation
+
+Un `started` plus ancien que le seuil devient une seule fois :
+
+```text
+denied + delivery_interrupted + terminal_at
+```
+
+La transaction reprend l'ordre Order -> Grant -> Log. Le quota n'est jamais
+décrémenté, aucune nouvelle tentative n'est créée et le rejeu est idempotent.
+
+### Détection d'abus
+
+Signal :
+
+```text
+COUNT(DISTINCT ip_hash) > seuil
+pour un grant et une fenêtre bornée
+```
+
+Le résultat est agrégé. Il n'entraîne aucune révocation automatique.
+
+### Révocation support
+
+Seule la raison `manual_security_reissue` est admise. Order puis Grant sont
+verrouillés. `revoked_at` et la raison sont set-once ; le même rejeu est
+idempotent, une autre raison ne réécrit rien.
+
+### Purge
+
+Seuls les logs `completed|denied` avec `retention_until <= now()` sont candidats.
+G6 reste l'autorité. Aucun grant, Order, OrderItem ou ProductFile n'est supprimé.
+Un `started` n'est jamais purgé.
+
+Commandes :
+
+```text
+downloads:reconcile
+downloads:detect-abuse --dry-run
+downloads:purge --dry-run
+downloads:metrics
+downloads:revoke <id> --dry-run
+```
+
+Le scheduler utilise `withoutOverlapping`. `onOneServer` n'est ajouté qu'avec un
+cache distribué supportant les verrous atomiques.
 
 ---
 
-## ✅ CHECKLIST — à repasser à chaque déploiement
+## Concurrence et incidents
 
-```
-[ ] Aucun fichier digital dans public/ ni accessible par URL directe
-[ ] storage_path n'est jamais exposé au client (ni en HTML, ni en JSON, ni en erreur)
-[ ] token_hash en base ; le token clair n'existe que dans l'e-mail
-[ ] expires_at, max_downloads, revoked_at vérifiés à CHAQUE requête
-[ ] Incrément du compteur atomique (pas de race condition)
-[ ] Rate limiting sur la route de téléchargement
-[ ] IP hachée dans les logs (jamais l'IP brute) — RGPD
-[ ] Échec = 404 générique (jamais « lien expiré » vs « lien inexistant »)
-[ ] checksum_sha256 vérifié à l'upload (intégrité du fichier)
-[ ] Grants révoqués automatiquement en cas de remboursement
+Les preuves C1-C6 utilisent des processus Laravel et connexions
+`digitrove_runtime` indépendants :
+
+* double autorisation : une consommation maximum ;
+* révocation contre autorisation : sérialisation Order/Grant ;
+* deux Range : une ligne, une unité ;
+* dernière unité : jamais de dépassement ;
+* purge contre lecture : aucun log actif supprimé ;
+* double réconciliation : une transition.
+
+En incident :
+
+1. ne jamais réactiver un grant ;
+2. ne jamais rendre le quota ;
+3. révoquer explicitement avec une raison allowlistée ;
+4. réémettre par le service d'émission historique ;
+5. conserver les logs jusqu'à leur rétention ;
+6. rechercher uniquement par IDs internes et métriques agrégées ;
+7. ne jamais coller un token, digest, IP ou chemin privé dans un ticket/log.
+
+---
+
+## Checklist
+
+```text
+[ ] DELIVERY_PIPELINE_ENABLED reste false avant validation opérationnelle
+[ ] kill switch vérifié sur autorisation, GET, HEAD, Range et appels directs
+[ ] aucun fichier digital sous public/
+[ ] aucun secret en query string ou logs
+[ ] paramètres de secrets bruts marqués SensitiveParameter
+[ ] grant token dans fragment puis Bearer POST seulement
+[ ] attempt token dans cookie HttpOnly/Strict seulement
+[ ] G5 et G6 présents et ACL runtime intactes
+[ ] disque privé allowlisté ; aucune URL objet publique
+[ ] transactionLevel = 0 pour exists/size/readStream/X-Accel/callback stream
+[ ] HEAD inerte ; Range unique ; retries sans quota
+[ ] rate limits et TTL/batches dans leurs bornes
+[ ] réconciliation, purge et métriques sans PII
+[ ] X-Accel activé seulement après revue Nginx
+[ ] tests C1-C6 PostgreSQL verts
 ```

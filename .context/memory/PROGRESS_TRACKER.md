@@ -14,7 +14,7 @@ P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
-P4-C APPLICATIF     : ██████░░░░  P4-C0→C3 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 (head `1492cd13`, merge `701cfa4f`, CI #29 success, D-035) : Queue/Mail safety + Grant Issuance + Refund Revocation + Secure Delivery Job, pipeline désactivé par défaut, aucune migration ; P4-C4/C5/C6 prochaine macro-tâche
+P4-C APPLICATIF     : ██████████  P4-C0→C3 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 ; P4-C4→C6 IMPLÉMENTÉS et durcis sur `p4-c4-c6-download-delivery-operations`, en attente de review/merge (D-036, aucune migration). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
@@ -430,8 +430,10 @@ coupon, dans la même transaction que la transition vers `paid`.
 | **P3-D3** Payment Initiation ✅ *TERMINÉ, MERGÉ ET VALIDÉ (D-033)* | `p3-d3-payment-initiation` | Port fournisseur abstrait + ligne `payments` `pending` en deux phases (réservation committée → appel fournisseur **hors transaction** → finalisation de la référence) ; `payment.public_id` comme clé fournisseur, clé brute jamais persistée ni envoyée ; une seule tentative vivante par Order ; classification exacte via `PostgresConstraintViolation` ; aucun webhook, aucune confirmation, aucune livraison. | ✅ **TERMINÉ, MERGÉ ET VALIDÉ** — [PR #22](https://github.com/mysterus44/DigiTrove/pull/22), head `5188e6cc`, merge `70379a02` (parents `6e701a1e` + `5188e6cc`), **CI #26 success** ; périmètre exact **14 fichiers (+2005/-7)**, **aucune migration**. Durcissement pré-merge (5 findings) : garde `transactionLevel = 0`, horloge injectée unique (`isExpired` `>=`), reprise de réponse perdue (rappel fournisseur idempotent même si référence posée), toute exception BDD inconnue ⇒ `IntegrityFailure` sanitizé, preuves C1–C4 **service-level** (connexions runtime indépendantes). Suite non transactionnelle dédiée. Validation post-merge sur la stable `70379a0` : P3-D3 **54/246**, P3-D2.1 **20/20**, P3-D2 **71/344**, P3C-A **16/219**, P4-B **20/628**, suite complète **478/3894**, Pint **149**, **29 migrations**, aucune `000014`. **P3-D4 est le prochain gate autorisé, NON commencé** |
 | **P3-D4 + P3-D5** Server-side Confirmation + OrderPaid *(macro-gate, D-034)* | `p3-d4-d5-payment-confirmation` | Webhook CinetPay signé + dédupliqué + **contre-appel fournisseur obligatoire** + montant/devise revérifiés en entiers ; ladder `pending→processing→succeeded` · `Order → paid` · `coupon_redemptions` une fois ; succès incohérent ⇒ `payment_review` ; branche gratuite `total_minor = 0` sans `payments` ; **OrderPaid** (`order_id` seul) après COMMIT ; CinetPay désactivé par défaut, PowerPay scaffold ; rejeu idempotent. | ✅ **TERMINÉ, MERGÉ ET VALIDÉ** — [PR #23](https://github.com/mysterus44/DigiTrove/pull/23), head `8aad4fc`, merge `a62563fd`, **CI #27 success** ; **aucune migration** ; 59 tests (adapter 23, binding 5, confirmation 16 dont C3/C4, webhook 8 dont C1/C2, événement 7 dont C5) ; suite complète **537/4083**, Pint **175**, 29 migrations |
 
-## P4-C — COUCHE APPLICATIVE LIVRAISON (D-030)
-Statut : **planifiée, non démarrée**. Aucune migration. Décisions figées :
+## P4-C — COUCHE APPLICATIVE LIVRAISON (D-030, D-035, D-036)
+Statut : **P4-C0→C3 mergés ; P4-C4→C6 implémentés, en attente de
+review/merge**. Aucune migration. Le pipeline reste désactivé par défaut jusqu'à
+la clôture et l'activation opérationnelle. Décisions figées :
 **Q1 = A renforcée** (token CSPRNG en mémoire vive, SHA-256 en base, jamais
 reconstructible ; reprise = **révoquer puis réémettre**, jamais « réessayer avec
 l'ancien token » ; sémantique **at-least-once** assumée pour l'e-mail) et
@@ -447,15 +449,24 @@ ou un log).
 | **P4-C1** Download Grant Issuance | `GrantIssuanceService` | CSPRNG, hash seul, `orders FOR UPDATE`, G3, unique partiel du couple actif, snapshot bundle, no implicit upgrade. | ✅ inclus dans `p4-c0-c3-secure-delivery-pipeline` |
 | **P4-C2** Refund Grant Revocation | `RefundCompletionService` | verrou Payment→Order → révocation de tous les grants actifs → `orders.status = refunded`, **même transaction** (G4 différé). Refund partiel : **aucune** révocation. | ✅ inclus dans `p4-c0-c3-secure-delivery-pipeline` |
 | **P4-C3** Secure Secret Delivery Job | `SecureDeliveryJob` | Job queued `order_id` seul, tokens en mémoire, émission ou révocation/réémission au retry, envoi synchrone. | ✅ inclus dans `p4-c0-c3-secure-delivery-pipeline` |
-| **P4-C4** Download Authorization | `p4-c4-download-authorization` | Résolution uniforme non énumérable, tentative authentifiée (secret CSPRNG dédié), log `started` + `+1` atomique via **G5**, Range/retry sur une seule ligne, HEAD sans effet. **Prérequis : réécrire `SECURITE_TELECHARGEMENT.md`.** | ⬜ TODO |
-| **P4-C5** HTTP File Delivery | `p4-c5-http-file-delivery` | Route + contrôleur mince + rate limiting + transport du secret (header/cookie, **jamais** en query string) + mécanisme de remise choisi selon `size_bytes`. **Aucun téléchargement public n'existe avant ce gate.** | ⬜ TODO |
-| **P4-C6** Delivery Operations | `p4-c6-delivery-operations` | Purge via G6, réconciliation des `started` anciens, détection d'abus (> 3 IP / 24 h), révocation support, métriques. | ⬜ TODO |
+| **P4-C4** Download Authorization | `p4-c4-c6-download-delivery-operations` | Échange fragment → header Bearer ; page DB-free ; préflight stockage hors transaction puis transaction G5 courte ; tentative CSPRNG dédiée, hash seul ; cookie `HttpOnly/SameSite=Strict` ; refus uniforme ; limiter HMAC-IP + public ID hashé. | ✅ IMPLÉMENTÉ + DURCI — `de0fbe4` + `5bd86d3`, filtre **18/152** (autorisation + contrat exacts 12/109), en attente de review/merge |
+| **P4-C5** HTTP File Delivery | `p4-c4-c6-download-delivery-operations` | Transaction DB courte → I/O privé hors transaction → finalisation DB courte ; GET/HEAD ; Range strict ; stream borné et fermé ; X-Accel local opt-in fail-closed ; aucune URL objet publique. | ✅ IMPLÉMENTÉ + DURCI — `fefb28e` + `5bd86d3`, **13/202**, en attente de review/merge |
+| **P4-C6** Delivery Operations | `p4-c4-c6-download-delivery-operations` | Réconciliation sans restitution de quota ; détection d'abus pseudonymisée ; révocation support set-once ; purge G6 ; métriques/commandes/scheduler sans secret. | ✅ IMPLÉMENTÉ — `fefb28e`, **5/41** + P4C456 **10/72**, en attente de review/merge |
+
+Validation macro-gate après hardening : suite complète **623/4542**, Pint **217
+fichiers**, `git diff --check` propre, **29 migrations** jusqu'à `000013`,
+aucune `000014`. Niveaux maximum observés : `exists=0`, `size=0`,
+`readStream=0`, `xAccelPath=0`, callback stream `=0`. Le kill switch service
+coupe aussi les tentatives existantes et les secrets bruts sont marqués
+`SensitiveParameter`. Les tests dédiés C1→C6 utilisent des processus et
+connexions PostgreSQL runtime indépendants. Prochaine phase après review/merge :
+**P5 — Analytics**.
 
 ### Dettes reconnues par D-030 et leur gate
 
 | Dette mesurée | Gate |
 |---|---|
-| `DOWNLOAD_LINK_TTL_HOURS` / `DOWNLOAD_MAX_PER_GRANT` hérités dans `.env.example` ne sont pas autoritatifs ; P4-C lit et borne exclusivement `DELIVERY_GRANT_TTL_MINUTES` / `DELIVERY_GRANT_MAX_DOWNLOADS` via `config/delivery.php` | dette de nettoyage P4-C4 |
+| `DOWNLOAD_LINK_TTL_HOURS` / `DOWNLOAD_MAX_PER_GRANT` hérités dans `.env.example` ne sont pas autoritatifs | ✅ fermée P4-C4 : variables retirées ; `DELIVERY_GRANT_TTL_MINUTES` / `DELIVERY_GRANT_MAX_DOWNLOADS` bornés via `DeliveryConfig` |
 | queue par défaut `database` sans table `jobs` / `job_batches` | P4-C0 |
 | failed jobs par défaut **`database-uuids`** sans table `failed_jobs` (sous-point **ouvert**, à trancher au gate) | P4-C0 |
 | `after_commit = false` sur toutes les connexions de queue | P4-C0 |
@@ -465,7 +476,7 @@ ou un log).
 | `coupons.redemptions_count` et plafonds coupon entièrement applicatifs (aucun trigger) | P3-D4 |
 | aucun `Money` value object malgré `LARAVEL_PATTERNS.md` | P3-D1 |
 | G4 rend la révocation obligatoire au remboursement total | P4-C2 |
-| `SECURITE_TELECHARGEMENT.md` périmé (UPDATE direct du compteur, `grant_id` inexistante, colonnes P4-B absentes, ni tentative ni G5 ni frontière runtime) | à réécrire **avant P4-C4** |
+| `SECURITE_TELECHARGEMENT.md` périmé (UPDATE direct du compteur, `grant_id` inexistante, colonnes P4-B absentes, ni tentative ni G5 ni frontière runtime) | ✅ fermé P4-C4/C6 : guide réécrit selon D-035/D-036 |
 
 ## P5 — ANALYTIQUE
 | Tâche | Statut |

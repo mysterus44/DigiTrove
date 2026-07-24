@@ -8,8 +8,28 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-24
-- **Branche git active** : `p0-foundations-laravel13` à
-  `701cfa4f95700b61d70f242e15feef264adffa8b`
+- **Branche git active** : `p4-c4-c6-download-delivery-operations` ; base stable
+  incluant la clôture P4-C0/C3 `f8cfd8f`, commits feature `de0fbe4` +
+  `fefb28e` + `671669b`, hardening stockage `5bd86d3`.
+- **P4-C4 → P4-C6 IMPLÉMENTÉS — EN ATTENTE DE REVUE/MERGE** (D-036,
+  **aucune migration** — 29 inchangées). Surface :
+  `GET /downloads/{grantPublicId}` (page d'échange DB-free, fragment retiré),
+  `POST /api/downloads/{grantPublicId}/authorize` (Bearer grant, refus uniforme,
+  G5 atomique, cookie de tentative `HttpOnly/SameSite=Strict`) et
+  `GET|HEAD /downloads/{grantPublicId}/file` (attempt cookie seulement).
+  Le hardening `5bd86d3` impose : préflight fichier hors transaction puis
+  transaction G5 courte ; livraison en transaction DB courte → I/O stockage
+  hors transaction → finalisation DB courte ; stream et X-Accel préparés au
+  niveau zéro ; garde runtime du locator et refus des transactions ambiantes.
+  Une erreur stockage est finalisée séparément en `denied/storage_failure`,
+  sans rendre le quota ; tout stream rejeté par la revalidation finale est
+  fermé. `DELIVERY_PIPELINE_ENABLED=false` coupe aussi les tentatives existantes
+  au niveau service. Les secrets bruts sont `SensitiveParameter`. Validation :
+  filtre P4-C4 **18/152** (autorisation + contrat exacts **12/109**), P4-C5
+  **13/202**, P4-C6 **5/41**, P4C456 **10/72**, suite complète **623/4542**,
+  Pint **217**, `git diff --check` propre, 29 migrations, aucune `000014`.
+  Maximum observé : `exists/size/readStream/xAccelPath/callback = 0`.
+  Pipeline toujours **désactivé par défaut**.
 - **P4-C0 → P4-C3 TERMINÉS, MERGÉS ET VALIDÉS** via
   [PR #24](https://github.com/mysterus44/DigiTrove/pull/24), head
   `1492cd137a904c6025504fc5fd0cf0d51bd92db9`, merge
@@ -25,13 +45,8 @@
   `RefundCompletionService` : partial ⇒ `partially_refunded` (grants gardés),
   full ⇒ `refunded` + révocation de tous les grants actifs **dans la même
   transaction** (G4). CinetPay/refund/e-mail : adaptateurs réels non inventés
-  (scaffolds `MAIL_PROVIDER_SETUP.md` / `REFUND_PROVIDER_SETUP.md`). **Aucun
-  endpoint de téléchargement, aucun `download_logs`, aucun `downloads_count`.**
-  Validation : P4-C **50 tests / 165 assertions** (C0 16/42, C1 14/36, C2
-  7/29, C3 9/30, concurrence 4/28), suite complète **587/4259**, Pint **191**,
-  **29 migrations**. **Prochaine macro-tâche : `P4-C4 + P4-C5 + P4-C6`** (Download
-  Authorization + HTTP File Delivery + Operations) — réécrire d'abord
-  `.context/skills/SECURITE_TELECHARGEMENT.md`.
+  (scaffolds `MAIL_PROVIDER_SETUP.md` / `REFUND_PROVIDER_SETUP.md`). Validation
+  historique : P4-C **50/165**, suite **587/4259**, Pint **191**, 29 migrations.
 - **P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS** via
   [PR #23](https://github.com/mysterus44/DigiTrove/pull/23), head `8aad4fc`,
   merge `a62563fdb8aad86bef5cf1ac27b4bebcb5259342` (parents `0b9e7ac` +
@@ -378,12 +393,16 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 P4-C4 + P4-C5 + P4-C6
+## 🎯 Review et merge de P4-C4 + P4-C5 + P4-C6
 
-Le macro-gate P4-C0→C3 est mergé et validé. Traiter maintenant Download
-Authorization, HTTP File Delivery et Operations & Reconciliation dans le
-macro-gate unique `p4-c4-c6-download-delivery-operations`. Réécrire
-`.context/skills/SECURITE_TELECHARGEMENT.md` avant de finaliser le gate.
+Le macro-gate applicatif final P4-C est implémenté et durci sur
+`p4-c4-c6-download-delivery-operations`. La branche doit contenir cinq commits
+non squashés : `de0fbe4` (autorisation), `fefb28e` (streaming/opérations),
+`671669b` (documentation initiale), `5bd86d3` (I/O stockage hors transaction) et
+le commit documentaire de hardening. Auditer la PR #25 contre
+`p0-foundations-laravel13`, ne pas la merger automatiquement. Après merge et
+clôture séparée, prochaine phase : **P5 — Analytics**. Ne pas commencer P5 dans
+la review P4-C.
 
 ## 🗃️ Archive de passation P3-D4/D5 (supersédée par l'état en tête)
 
@@ -656,14 +675,11 @@ aucun push direct sur `main`.
 
 ## ⚠️ POINTS D'ATTENTION
 
-- 🚨 **`.context/skills/SECURITE_TELECHARGEMENT.md` est PARTIELLEMENT PÉRIMÉ et ne
-  doit plus servir de modèle de code.** Son `DownloadService` fait un `increment
-  ('downloads_count')` depuis PHP — refusé `42501` pour `digitrove_runtime` et
-  `23514` par G2 même pour le propriétaire depuis D-029.6 ; son `DownloadLog::
-  create` utilise une colonne `grant_id` inexistante (la vraie est
-  `download_grant_id`) et omet `public_id`, `quota_consumed`, `retention_until`
-  (tous NOT NULL sans DEFAULT) ; ni tentative authentifiée, ni G5, ni frontière
-  runtime. **À réécrire avant le gate P4-C4** (action obligatoire de D-030).
+- ✅ **`.context/skills/SECURITE_TELECHARGEMENT.md` est réaligné sur D-035/D-036.**
+  L'ancien UPDATE direct du compteur, `grant_id` inexistant et exemple
+  `Storage::download()` ont été retirés. Le guide décrit désormais fragment →
+  Bearer POST → cookie de tentative, G5/G6, HEAD/Range, stream privé,
+  réconciliation, rate limiting et observabilité sans secret.
 - ✅ **P4-C0 ferme la frontière queue/mail** : Redis et failed jobs fichier dans
   `.env.example`, job explicitement `afterCommit`, payload Laravel réel
   introspecté (`order_id` seul), Mailable non-queueable/non-sérialisable et
@@ -673,10 +689,10 @@ aucun push direct sur `main`.
   conserve.
 - ⚠️ `coupons.redemptions_count` n'est maintenu par **aucun trigger** : plafond
   global et plafond client sont 100 % applicatifs, sous `FOR UPDATE` (gate P3-D4).
-- ⚠️ Les anciens `DOWNLOAD_LINK_TTL_HOURS` / `DOWNLOAD_MAX_PER_GRANT` restent
-  hérités mais non autoritatifs ; P4-C utilise exclusivement les valeurs bornées
-  `DELIVERY_GRANT_TTL_MINUTES` / `DELIVERY_GRANT_MAX_DOWNLOADS` de
-  `config/delivery.php`. Leur nettoyage est reporté à P4-C4.
+- ✅ Les anciens `DOWNLOAD_LINK_TTL_HOURS` / `DOWNLOAD_MAX_PER_GRANT` non
+  autoritatifs ont été retirés de `.env.example`. P4-C utilise exclusivement les
+  valeurs bornées `DELIVERY_GRANT_TTL_MINUTES` /
+  `DELIVERY_GRANT_MAX_DOWNLOADS` via `DeliveryConfig`.
 - 🚨 **Legacy** : deux mots de passe en clair étaient dans l'historique git de l'ancien
   dépôt. Les scripts concernés sont neutralisés, mais les valeurs historiques doivent
   rester considérées compromises.
