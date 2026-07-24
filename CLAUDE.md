@@ -305,8 +305,11 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   webhook 8 dont C1/C2, événement 7 dont C5), suite complète **537/4083**, Pint
   **175**, **29 migrations**, aucune `000014`.
 
-- **`P4-C0 → P4-C3 — Secure Delivery Pipeline` 🔶 IMPLÉMENTÉS — EN ATTENTE DE
-  REVUE/MERGE** (macro-gate `p4-c0-c3-secure-delivery-pipeline`, **D-035**,
+- **`P4-C0 → P4-C3 — Secure Delivery Pipeline` ✅ TERMINÉS, MERGÉS ET VALIDÉS**
+  via [PR #24](https://github.com/mysterus44/DigiTrove/pull/24), head
+  `1492cd137a904c6025504fc5fd0cf0d51bd92db9`, merge
+  `701cfa4f95700b61d70f242e15feef264adffa8b`, **CI #29 success**
+  (macro-gate `p4-c0-c3-secure-delivery-pipeline`, **D-035**,
   **aucune migration** — 29 inchangées) : pipeline **désactivé par défaut**.
   `OrderPaid` → listener `QueueSecureDelivery` (si `DELIVERY_PIPELINE_ENABLED`) →
   job `SecureDeliveryJob` **unique, `order_id` seul** → `GrantIssuanceService`
@@ -318,8 +321,8 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   `downloads_count`.** P4-C **50 tests / 165 assertions** (dont quatre preuves
   de concurrence PostgreSQL), suite **587/4259**, Pint **191**, 29 migrations.
 
-**PROCHAINE TÂCHE : revue et merge de la PR `P4-C0/C3`, puis macro-tâche
-`P4-C4 + P4-C5 + P4-C6`** (Download Authorization → HTTP File Delivery →
+**PROCHAINE TÂCHE : macro-gate unique `P4-C4 + P4-C5 + P4-C6`**
+(Download Authorization → HTTP File Delivery →
 Operations, D-030) — **réécrire `.context/skills/SECURITE_TELECHARGEMENT.md`
 avant `P4-C4`**. Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée

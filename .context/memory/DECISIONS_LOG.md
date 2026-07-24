@@ -2736,5 +2736,12 @@ bundle pivot comme autorité ; upgrade implicite au retry ; suppression/réactiv
 de grant ; endpoint de téléchargement ; API refund/e-mail inventée ; migration
 outbox.
 
+**CLÔTURE POST-MERGE (2026-07-24)** : D-035 est intégralement conservée et son
+macro-gate est désormais **terminé, mergé et validé** via
+[PR #24](https://github.com/mysterus44/DigiTrove/pull/24), head
+`1492cd137a904c6025504fc5fd0cf0d51bd92db9`, merge
+`701cfa4f95700b61d70f242e15feef264adffa8b`, **CI #29 success**. Prochaine
+tâche : macro-gate P4-C4/P4-C5/P4-C6.
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

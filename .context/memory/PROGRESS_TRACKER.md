@@ -14,7 +14,7 @@ P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
-P4-C APPLICATIF     : ██████░░░░  P4-C0→C3 IMPLÉMENTÉS (macro-gate `p4-c0-c3-secure-delivery-pipeline`, D-035, EN ATTENTE DE REVUE/MERGE) : Queue/Mail safety + Grant Issuance + Refund Revocation + Secure Delivery Job, pipeline désactivé par défaut, aucune migration ; P4-C4/C5/C6 non démarrés
+P4-C APPLICATIF     : ██████░░░░  P4-C0→C3 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 (head `1492cd13`, merge `701cfa4f`, CI #29 success, D-035) : Queue/Mail safety + Grant Issuance + Refund Revocation + Secure Delivery Job, pipeline désactivé par défaut, aucune migration ; P4-C4/C5/C6 prochaine macro-tâche
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
@@ -442,7 +442,7 @@ ou un log).
 
 | Gate | Branche future | Objectif unique | Statut |
 |------|----------------|-----------------|--------|
-| **P4-C0→C3** Secure Delivery Pipeline *(macro-gate, D-035)* | `p4-c0-c3-secure-delivery-pipeline` | Queue/Mail safety (job unique `order_id` seul, Mailable non-`ShouldQueue` et non sérialisable, transport `log` refusé, `DeliveryConfig` fail-closed) + Grant Issuance (CSPRNG, hash seul, snapshot bundle, no upgrade) + Refund Revocation (partial garde, full révoque atomique G4) + Secure Delivery Job (tokens en mémoire, envoi synchrone, retry révoque/réémet). Pipeline **désactivé par défaut**. | 🔶 **IMPLÉMENTÉ — EN ATTENTE DE REVUE/MERGE** ; **aucune migration** ; P4-C **50/165** (C0 16/42, C1 14/36, C2 7/29, C3 9/30, concurrence 4/28 ; C1–C5 PostgreSQL réels) ; suite complète **587/4259**, Pint **191** |
+| **P4-C0→C3** Secure Delivery Pipeline *(macro-gate, D-035)* | `p4-c0-c3-secure-delivery-pipeline` | Queue/Mail safety (job unique `order_id` seul, Mailable non-`ShouldQueue` et non sérialisable, transport `log` refusé, `DeliveryConfig` fail-closed) + Grant Issuance (CSPRNG, hash seul, snapshot bundle, no upgrade) + Refund Revocation (partial garde, full révoque atomique G4) + Secure Delivery Job (tokens en mémoire, envoi synchrone, retry révoque/réémet). Pipeline **désactivé par défaut**. | ✅ **TERMINÉ, MERGÉ ET VALIDÉ** — [PR #24](https://github.com/mysterus44/DigiTrove/pull/24), head `1492cd13`, merge `701cfa4f`, CI #29 success ; **aucune migration** ; P4-C **50/165** (C0 16/42, C1 14/36, C2 7/29, C3 9/30, concurrence 4/28 ; C1–C5 PostgreSQL réels) ; suite complète **587/4259**, Pint **191** |
 | **P4-C0** Queue & Mail Secret Safety | `p4-c0-queue-mail-secret-safety` | *(fondu dans le macro-gate ci-dessus)* | ✅ inclus dans `p4-c0-c3-secure-delivery-pipeline` |
 | **P4-C1** Download Grant Issuance | `GrantIssuanceService` | CSPRNG, hash seul, `orders FOR UPDATE`, G3, unique partiel du couple actif, snapshot bundle, no implicit upgrade. | ✅ inclus dans `p4-c0-c3-secure-delivery-pipeline` |
 | **P4-C2** Refund Grant Revocation | `RefundCompletionService` | verrou Payment→Order → révocation de tous les grants actifs → `orders.status = refunded`, **même transaction** (G4 différé). Refund partiel : **aucune** révocation. | ✅ inclus dans `p4-c0-c3-secure-delivery-pipeline` |

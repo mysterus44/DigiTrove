@@ -6,12 +6,16 @@
 
 ## 📍 ÉTAT ACTUEL
 
-- **Dernier agent** : Claude Code
+- **Dernier agent** : Codex
 - **Date** : 2026-07-24
-- **Branche git active** : `p4-c0-c3-secure-delivery-pipeline` (macro-gate P4-C,
-  sur la stable locale de clôture `c79b48a`)
-- **P4-C0 → P4-C3 IMPLÉMENTÉS — EN ATTENTE DE REVUE/MERGE** (macro-gate unique,
-  **D-035**, **aucune migration** — 29 inchangées) : pipeline de livraison
+- **Branche git active** : `p0-foundations-laravel13` à
+  `701cfa4f95700b61d70f242e15feef264adffa8b`
+- **P4-C0 → P4-C3 TERMINÉS, MERGÉS ET VALIDÉS** via
+  [PR #24](https://github.com/mysterus44/DigiTrove/pull/24), head
+  `1492cd137a904c6025504fc5fd0cf0d51bd92db9`, merge
+  `701cfa4f95700b61d70f242e15feef264adffa8b`, **CI #29 success**
+  (macro-gate unique, **D-035**, **aucune migration** — 29 inchangées) :
+  pipeline de livraison
   sécurisé **désactivé par défaut**. Listener `QueueSecureDelivery` (dispatch si
   `DELIVERY_PIPELINE_ENABLED=true`) → job `SecureDeliveryJob` **unique, `order_id`
   seul** → `GrantIssuanceService` (tokens CSPRNG en mémoire, SHA-256 en base,
@@ -374,13 +378,12 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 Revue/merge P4-C0→C3, puis P4-C4 + P4-C5 + P4-C6
+## 🎯 P4-C4 + P4-C5 + P4-C6
 
-Le macro-gate P4-C0→C3 est implémenté sur
-`p4-c0-c3-secure-delivery-pipeline` et attend sa revue. Ne pas activer le
-pipeline avant P4-C4/C5. Après merge, réécrire
-`.context/skills/SECURITE_TELECHARGEMENT.md`, puis traiter autorisation,
-streaming HTTP et opérations dans un gate séparé.
+Le macro-gate P4-C0→C3 est mergé et validé. Traiter maintenant Download
+Authorization, HTTP File Delivery et Operations & Reconciliation dans le
+macro-gate unique `p4-c4-c6-download-delivery-operations`. Réécrire
+`.context/skills/SECURITE_TELECHARGEMENT.md` avant de finaliser le gate.
 
 ## 🗃️ Archive de passation P3-D4/D5 (supersédée par l'état en tête)
 
