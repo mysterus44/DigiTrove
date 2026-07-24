@@ -57,6 +57,7 @@ function p4c456Process(string $operation, array $payload): Process
 
         $payload = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
         config([
+            'delivery.enabled' => true,
             'filesystems.disks.private' => [
                 'driver' => 'local',
                 'root' => $payload['storage_root'],

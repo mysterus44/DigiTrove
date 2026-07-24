@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 use App\Models\DownloadGrant;
 use App\Models\DownloadLog;
+use App\Services\Delivery\DownloadAuthorizationService;
+use App\Support\DownloadAccessDenied;
+use App\Support\DownloadRequestContext;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\InteractsWithPaymentsDatabase;
@@ -53,6 +57,24 @@ function p4c4Authorize(DownloadGrant $grant, string $rawToken)
     return test()->withServerVariables(['REMOTE_ADDR' => '203.0.113.40'])
         ->withHeader('Authorization', 'Bearer '.$rawToken)
         ->postJson("/api/downloads/{$grant->public_id}/authorize");
+}
+
+/**
+ * @param  array<string, list<int>>  $levels
+ */
+function p4c4TrackPrivateDisk(array &$levels): void
+{
+    $backing = Storage::disk('private');
+    $disk = Mockery::mock(Filesystem::class);
+    $disk->shouldReceive('exists')->zeroOrMoreTimes()->andReturnUsing(
+        function (string $path) use (&$levels, $backing): bool {
+            $levels['exists'][] = DB::transactionLevel();
+
+            return $backing->exists($path);
+        },
+    );
+
+    Storage::set('private', $disk);
 }
 
 beforeEach(function (): void {
@@ -191,4 +213,60 @@ it('marks the attempt cookie secure outside local and testing', function (): voi
 
     expect($cookie)->not->toBeNull()
         ->and($cookie->isSecure())->toBeTrue();
+});
+
+it('runs authorization storage preflight outside transactions and rejects ambient calls before storage', function (): void {
+    ['grant' => $grant, 'raw_token' => $rawToken] = p4c4Grant('transaction-level');
+    $levels = ['exists' => []];
+    p4c4TrackPrivateDisk($levels);
+
+    $service = app(DownloadAuthorizationService::class);
+    $context = new DownloadRequestContext(str_repeat('a', 64), 1, 'P4-C4 transaction test');
+    $service->authorize((string) $grant->public_id, $rawToken, $context);
+
+    expect($levels['exists'])->toBe([0]);
+
+    $levels['exists'] = [];
+    $queries = [];
+    DB::listen(function ($query) use (&$queries): void {
+        $queries[] = $query->sql;
+    });
+
+    expect(fn () => DB::transaction(
+        fn () => $service->authorize((string) $grant->public_id, $rawToken, $context),
+    ))->toThrow(RuntimeException::class, 'Download authorization cannot join an ambient transaction.');
+
+    $trace = null;
+    try {
+        DB::transaction(
+            fn () => $service->authorize((string) $grant->public_id, $rawToken, $context),
+        );
+    } catch (RuntimeException $exception) {
+        $trace = (string) $exception;
+    }
+
+    expect($levels['exists'])->toBe([])
+        ->and($trace)->not->toBeNull()
+        ->and($trace)->not->toContain($rawToken)
+        ->and(collect($queries)->filter(
+            fn (string $sql): bool => str_contains($sql, 'download_grants')
+                || str_contains($sql, 'download_logs'),
+        ))->toHaveCount(0);
+});
+
+it('enforces the disabled pipeline as a service-level authorization kill switch', function (): void {
+    ['grant' => $grant, 'raw_token' => $rawToken] = p4c4Grant('kill-switch');
+    $levels = ['exists' => []];
+    p4c4TrackPrivateDisk($levels);
+    config(['delivery.enabled' => false]);
+
+    $service = app(DownloadAuthorizationService::class);
+    $context = new DownloadRequestContext(str_repeat('b', 64), 1, 'P4-C4 kill switch');
+
+    expect(fn () => $service->authorize((string) $grant->public_id, $rawToken, $context))
+        ->toThrow(DownloadAccessDenied::class);
+
+    expect($levels['exists'])->toBe([])
+        ->and(DownloadLog::query()->where('download_grant_id', $grant->id)->count())->toBe(0)
+        ->and(DownloadGrant::query()->findOrFail($grant->id)->downloads_count)->toBe(0);
 });

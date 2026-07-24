@@ -10,9 +10,12 @@ use App\Support\InvalidByteRange;
 use App\Support\PreparedDownload;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 final class DownloadFileController
 {
@@ -49,6 +52,8 @@ final class DownloadFileController
             ]);
         } catch (DownloadAccessDenied) {
             return $this->denied();
+        } catch (Throwable) {
+            return $this->denied();
         }
 
         $headers = $this->fileHeaders($download);
@@ -66,6 +71,10 @@ final class DownloadFileController
                 $stream = $download->stream;
 
                 try {
+                    if (DB::transactionLevel() !== 0) {
+                        throw new RuntimeException('Download streaming must run outside a database transaction.');
+                    }
+
                     $this->positionStream($stream, $download->start, $download->chunkBytes);
                     $remaining = $download->length();
 

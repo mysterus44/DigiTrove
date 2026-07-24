@@ -29,12 +29,17 @@ final class DownloadAuthorizationService
 
     public function authorize(
         string $grantPublicId,
+        #[\SensitiveParameter]
         string $rawGrantToken,
         DownloadRequestContext $context,
         ?CarbonImmutable $at = null,
     ): AuthorizedDownloadAttempt {
         if (DB::transactionLevel() !== 0) {
             throw new RuntimeException('Download authorization cannot join an ambient transaction.');
+        }
+
+        if (! DeliveryConfig::enabled()) {
+            throw new DownloadAccessDenied;
         }
 
         $this->assertCredentialShape($grantPublicId, $rawGrantToken);
@@ -44,9 +49,24 @@ final class DownloadAuthorizationService
         $candidate = DB::table('download_grants as dg')
             ->join('order_items as oi', 'oi.id', '=', 'dg.order_item_id')
             ->where('dg.public_id', $grantPublicId)
-            ->first(['dg.id', 'dg.token_hash', 'oi.order_id']);
+            ->first(['dg.id', 'dg.token_hash', 'dg.product_file_id', 'oi.order_id']);
 
         if ($candidate === null || ! hash_equals((string) $candidate->token_hash, $grantDigest)) {
+            throw new DownloadAccessDenied;
+        }
+
+        $fileResolvable = false;
+        $preflightFile = ProductFile::query()->whereKey($candidate->product_file_id)->first();
+        if ($preflightFile !== null && $preflightFile->is_active) {
+            try {
+                $this->files->assertResolvable($preflightFile);
+                $fileResolvable = true;
+            } catch (Throwable) {
+                $fileResolvable = false;
+            }
+        }
+
+        if (! DeliveryConfig::enabled()) {
             throw new DownloadAccessDenied;
         }
 
@@ -63,7 +83,12 @@ final class DownloadAuthorizationService
                     $attemptDigest,
                     $context,
                     $now,
+                    $fileResolvable,
                 ): ?AuthorizedDownloadAttempt {
+                    if (! DeliveryConfig::enabled()) {
+                        return null;
+                    }
+
                     $order = Order::query()->whereKey($candidate->order_id)->lockForUpdate()->first();
                     $grant = DownloadGrant::query()->whereKey($candidate->id)->lockForUpdate()->first();
 
@@ -89,15 +114,8 @@ final class DownloadAuthorizationService
                     }
 
                     $file = ProductFile::query()->whereKey($grant->product_file_id)->first();
-                    if ($file === null) {
-                        $this->recordDirectDenial($grant, 'product_file_unavailable', $context, $now);
-
-                        return null;
-                    }
-
-                    try {
-                        $this->files->assertResolvable($file);
-                    } catch (DownloadAccessDenied) {
+                    if ($file === null || ! $file->is_active || ! $fileResolvable
+                        || $file->id !== (int) $candidate->product_file_id) {
                         $this->recordDirectDenial($grant, 'product_file_unavailable', $context, $now);
 
                         return null;
@@ -142,8 +160,10 @@ final class DownloadAuthorizationService
         throw new DownloadAccessDenied;
     }
 
-    private function assertCredentialShape(string $publicId, string $rawToken): void
-    {
+    private function assertCredentialShape(
+        string $publicId,
+        #[\SensitiveParameter] string $rawToken,
+    ): void {
         // Compute one digest even for malformed credentials to reduce avoidable
         // timing differences at the public boundary.
         hash('sha256', $rawToken);

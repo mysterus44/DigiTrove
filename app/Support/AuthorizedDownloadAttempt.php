@@ -10,6 +10,7 @@ final readonly class AuthorizedDownloadAttempt
 {
     public function __construct(
         public string $grantPublicId,
+        #[\SensitiveParameter]
         public string $rawAttemptToken,
         public CarbonImmutable $expiresAt,
     ) {}

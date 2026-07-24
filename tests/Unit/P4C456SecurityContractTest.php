@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Services\Delivery\ByteRangeParser;
+use App\Services\Delivery\DownloadAuthorizationService;
+use App\Services\Delivery\DownloadFileService;
+use App\Support\AuthorizedDownloadAttempt;
 use App\Support\DeliveryConfig;
 use App\Support\InvalidByteRange;
 use Tests\TestCase;
@@ -50,4 +53,22 @@ it('contains no permanent URL, raw-token logging or whole-file read in the deliv
         ->not->toContain('?attempt=')
         ->not->toContain('?grant=')
         ->and(preg_match('/\bLog::|\blogger\s*\(/', $sources))->toBe(0);
+});
+
+it('marks every raw delivery credential parameter as sensitive', function (): void {
+    $parameters = [
+        [DownloadAuthorizationService::class, 'authorize', 'rawGrantToken'],
+        [DownloadAuthorizationService::class, 'assertCredentialShape', 'rawToken'],
+        [DownloadFileService::class, 'prepare', 'rawAttemptToken'],
+        [DownloadFileService::class, 'assertCredentialShape', 'rawToken'],
+        [AuthorizedDownloadAttempt::class, '__construct', 'rawAttemptToken'],
+    ];
+
+    foreach ($parameters as [$class, $method, $name]) {
+        $parameter = collect((new ReflectionMethod($class, $method))->getParameters())
+            ->first(fn (ReflectionParameter $candidate): bool => $candidate->getName() === $name);
+
+        expect($parameter)->not->toBeNull()
+            ->and($parameter->getAttributes(SensitiveParameter::class))->toHaveCount(1);
+    }
 });
