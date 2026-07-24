@@ -14,7 +14,7 @@ modèle casse dès la première analyse sérieuse. Voici la carte :
 | **Utilisateurs / Clients** | `users` (auth) · `customer_profiles` (CRM) · `visitors` (anonymes) |
 | **Produits Digitaux** | `products` · `product_prices` · `product_files` (livrables) · `product_bundles` · `categories` |
 | **Commandes** | `orders` · `order_items` · `payments` · `download_grants` |
-| **Données Analytiques** | `events` (partitionnée) · `analytics_sessions` · `campaigns` · rollups |
+| **Données Analytiques** | `events` (partitionnée) · `analytics_sessions` · rollups journaliers currency-safe |
 
 ### Décisions humaines finales avant P1
 
@@ -1629,114 +1629,94 @@ CREATE INDEX download_logs_terminal_retention_index
 
 ---
 
-## 🅳 BLOC ANALYTIQUE (le plus mal conçu d'habitude)
+## 🅳 BLOC ANALYTIQUE — P5-A0 (D-037)
 
-**Principe non négociable : l'analytique ne partage pas les tables chaudes du
-commerce.** Écrire 500 events/seconde sur une table liée par clé étrangère à
-`orders` finira par ralentir tes paiements.
+**État** : fondation PostgreSQL implémentée sur
+`p5-a0-analytics-schema-foundation`, en attente de revue/merge. L'ingestion
+P5-A1, les campagnes/segments P6 et P7 ne sont pas commencés.
 
-```sql
--- Table APPEND-ONLY, partitionnée par mois.
--- Pas de FK vers users/orders : on garde les ids en colonnes "molles".
--- Objectif : écritures massives, jamais de verrou sur le transactionnel.
-CREATE TABLE events (
-    id           BIGSERIAL,
-    occurred_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    visitor_id   UUID,
-    user_id      BIGINT,               -- volontairement SANS clé étrangère
-    session_id   UUID,
-    event_name   TEXT NOT NULL,        -- page_view, add_to_cart, purchase...
-    entity_type  TEXT,                 -- product, order, article
-    entity_id    BIGINT,
-    properties   JSONB NOT NULL DEFAULT '{}',   -- flexible, indexable en GIN
-    page_url     TEXT,
-    referrer     TEXT,
-    utm_source   TEXT,
-    utm_medium   TEXT,
-    utm_campaign TEXT,
-    device_type  TEXT,
-    country_code CHAR(2),
-    ip_hash      TEXT,                 -- haché, jamais l'IP brute (RGPD)
-    PRIMARY KEY (id, occurred_at)
-) PARTITION BY RANGE (occurred_at);
+**Principe non négociable** : l'analytique ne pose aucune FK, aucun verrou et
+aucune dépendance de disponibilité sur les tables chaudes du commerce.
+`orders`, `order_items`, `payments` et `refunds` restent les sources financières
+autoritatives. Les événements sont des observations append-only, non
+autoritatives et potentiellement livrées au moins une fois.
 
--- Une partition par mois. Purger = DROP PARTITION (instantané).
-CREATE TABLE events_2026_07 PARTITION OF events
-    FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
+### Migrations P5-A0
 
-CREATE INDEX ON events (event_name, occurred_at DESC);
-CREATE INDEX ON events (visitor_id, occurred_at DESC);
-CREATE INDEX ON events USING GIN (properties);   -- requêtes sur le JSONB
+1. `2026_07_14_000014_create_partitioned_events_table.php`
+2. `2026_07_14_000015_create_analytics_sessions_table.php`
+3. `2026_07_14_000016_create_analytics_rollups_tables.php`
 
--- Sessions analytiques (pour taux de rebond, durée, parcours)
--- Pas de FK volontairement : découplage analytique des tables chaudes.
-CREATE TABLE analytics_sessions (
-    id           UUID PRIMARY KEY,
-    visitor_id   UUID NOT NULL,
-    user_id      BIGINT,
-    started_at   TIMESTAMPTZ NOT NULL,
-    ended_at     TIMESTAMPTZ,
-    entry_page   TEXT,
-    exit_page    TEXT,
-    page_views   INT NOT NULL DEFAULT 0,
-    utm_source   TEXT,
-    utm_medium   TEXT,
-    utm_campaign TEXT,
-    device_type  TEXT,
-    country_code CHAR(2)
-);
-CREATE INDEX ON analytics_sessions (visitor_id, started_at DESC);
+Chaque frontière possède un rollback PostgreSQL isolé. Aucun DDL automatique
+ne crée de partition calendaire en P5-A0.
 
--- Campagnes marketing (le "M" de ton back-office)
-CREATE TABLE campaigns (
-    id            BIGSERIAL PRIMARY KEY,
-    name          TEXT NOT NULL,
-    channel       TEXT NOT NULL,   -- email, facebook, tiktok, seo, affiliate
-    utm_campaign  TEXT UNIQUE,     -- la jointure logique avec events/orders
-    budget_minor  BIGINT DEFAULT 0,
-    starts_at     DATE,
-    ends_at       DATE,
-    is_active     BOOLEAN NOT NULL DEFAULT true,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+### `events` et `events_default`
 
--- Affiliation future (post-P1) :
--- tables dédiées à prévoir plus tard, par exemple `affiliate_profiles`,
--- `affiliate_links`, `referrals`, `affiliate_commissions`, `affiliate_payouts`.
--- Un affilié doit être rattaché à un `user`; ce n'est pas un simple rôle.
+Le parent `events` est réellement `PARTITION BY RANGE (occurred_at)`. Il porte
+une identité `BIGINT`, `public_id UUID`, les temps `occurred_at/created_at
+TIMESTAMPTZ`, des identités molles (`visitor_id`, `user_id`, `session_id`), une
+référence d'entité optionnelle, l'attribution, le contexte appareil/pays et un
+HMAC IP optionnel versionné. La clé primaire est `(id, occurred_at)` et
+l'unicité publique `(public_id, occurred_at)`, conformément aux contraintes
+PostgreSQL des tables partitionnées.
 
--- 📊 ROLLUPS : le dashboard lit CES tables, jamais `events` directement.
--- Rafraîchis par un job planifié (Laravel Scheduler, toutes les heures).
--- Pas de FK volontairement : snapshots analytiques recalculables et découplés.
-CREATE TABLE daily_sales_stats (
-    day               DATE PRIMARY KEY,
-    orders_count      INT NOT NULL DEFAULT 0,
-    revenue_minor     BIGINT NOT NULL DEFAULT 0,
-    refunds_minor     BIGINT NOT NULL DEFAULT 0,
-    new_customers     INT NOT NULL DEFAULT 0,
-    avg_order_minor   BIGINT NOT NULL DEFAULT 0
-);
+`events_default` est la seule partition P5-A0. Les futures partitions
+calendaires seront créées et attachées par une opération contrôlée; chacune
+devra recevoir explicitement les mêmes révocations ACL que le parent.
 
-CREATE TABLE daily_product_stats (
-    day           DATE   NOT NULL,
-    product_id    BIGINT NOT NULL,
-    views         INT NOT NULL DEFAULT 0,
-    add_to_carts  INT NOT NULL DEFAULT 0,
-    purchases     INT NOT NULL DEFAULT 0,
-    revenue_minor BIGINT NOT NULL DEFAULT 0,
-    PRIMARY KEY (day, product_id)
-);
+Contraintes principales :
 
--- Tunnel de conversion : le chiffre que tu regarderas tous les matins
-CREATE TABLE daily_funnel_stats (
-    day             DATE PRIMARY KEY,
-    visitors        INT NOT NULL DEFAULT 0,
-    product_views   INT NOT NULL DEFAULT 0,
-    add_to_carts    INT NOT NULL DEFAULT 0,
-    checkouts       INT NOT NULL DEFAULT 0,
-    purchases       INT NOT NULL DEFAULT 0
-);
-```
+- `event_name` et `entity_type` en snake_case minuscule strict;
+- `entity_type` et `entity_id` simultanément présents ou absents;
+- `properties JSONB` objet, sérialisation limitée à 16 KiB;
+- chemins relatifs sans schéma, query, fragment ni CR/LF;
+- `referrer_host` canonique, UTM minuscules bornés, pays uppercase;
+- `ip_hash` absent avec sa version, ou SHA-256 minuscule avec version positive;
+- `created_at >= occurred_at`.
+
+Index B-tree : événement/date, visiteur/date, session/date, entité/date et
+campagne UTM/date. Aucun GIN sur `properties` n'est créé avant l'existence d'un
+contrat de requête mesuré.
+
+`prevent_analytics_events_mutation` et
+`analytics_events_prevent_mutation_trigger` refusent tout `UPDATE` ou `DELETE`
+en SQLSTATE `23514`. Aucun trigger n'écrit dans le commerce.
+
+### `analytics_sessions`
+
+Table sans FK : `id UUID PRIMARY KEY`, `visitor_id UUID NOT NULL`, `user_id
+BIGINT NULL`, temps de session en `TIMESTAMPTZ`, chemins d'entrée/sortie
+relatifs, `page_views INTEGER`, UTM, appareil et pays. Les CHECK verrouillent
+l'ordre temporel, les chemins, les formats et les compteurs non négatifs.
+Index : visiteur/début, utilisateur/début et campagne/début.
+
+P5-A0 ne crée ni cookie, ni middleware de session, ni écriture runtime.
+
+### Rollups journaliers
+
+Les rollups sont recalculables, sans FK, et utilisent exclusivement des entiers :
+
+- `daily_sales_stats` : PK `(day, currency)`, compteurs et montants `BIGINT`;
+  `net_revenue_minor = gross_revenue_minor - discount_minor + tax_minor -
+  refunds_minor`; moyenne entière déterministe;
+- `daily_product_stats` : PK `(day, product_id, currency)`, identifiant produit
+  mou, vues/paniers/achats/revenu en `BIGINT`;
+- `daily_funnel_stats` : PK `day`, visiteurs, sessions, vues produit, ajouts
+  panier, checkouts, achats et nouveaux clients en `BIGINT`.
+
+La devise est toujours `VARCHAR(3)` uppercase. Aucune colonne monétaire
+`FLOAT`, `REAL`, `DOUBLE`, `DECIMAL`, `NUMERIC` ou `MONEY`. Le funnel ne force
+pas une monotonie artificielle entre mesures indépendantes.
+
+### ACL et confidentialité
+
+`PUBLIC` et `digitrove_runtime` n'ont aucun droit sur les tables analytiques,
+`events_default`, `events_id_seq` ou la fonction append-only. Une future
+autorité d'ingestion dédiée devra être conçue en P5-A1.
+
+Ne sont jamais stockés : IP brute, e-mail, cookie, token, secret, payload
+webhook, URL complète, query string, fragment ou chemin privé. `campaigns`,
+segmentation client et affiliation sont reportés à P6.
 
 ---
 
@@ -1749,13 +1729,13 @@ visitors ──(login)──> users ──1:1──> customer_profiles
    │                    │            │                 │                     │
    │                    │            └──1:N──> payments│                     └──1:N──> download_logs
    │                    │                              │
-   │                    └──N:M──> customer_segments    └──> products ──1:N──> product_prices
+   │                    └──N:M──> customer_segments [P6] └──> products ──1:N──> product_prices
    │                                                          │
    │                                                          ├──1:N──> product_files
    │                                                          │
    └──1:N──> analytics_sessions ──1:N──> events               └──N:M──> categories
                                             ↑                 └──N:M──> product_bundles (self)
-                          campaigns ──(utm_campaign)──┘
+                    campaigns [P6] ──(utm_campaign)──┘
 ```
 
 ---

@@ -2874,5 +2874,71 @@ migrations jusqu'à `000013`, aucune `000014`. **P4-C0 → P4-C6 sont terminés*
 la couche applicative Commerce → Paiement → Livraison est complète. Prochaine
 tâche : **P5-A0 — Analytics Schema Foundation**.
 
+### D-037 — Partitioned Analytics Foundation ✅
+**Date** : 2026-07-24. **Statut** : P5-A0 implémenté sur
+`p5-a0-analytics-schema-foundation`, en attente de revue/merge.
+
+**CONTEXTE** : P4 est complet. La fondation analytique doit accepter un volume
+élevé sans ajouter de FK, de verrou ni de dépendance à la disponibilité des
+tables transactionnelles. Les données commerciales historiques restent
+autoritatives dans `orders`, `order_items`, `payments` et `refunds`; un événement
+analytique est une observation non autoritative et potentiellement livrée au
+moins une fois.
+
+**CHOIX** :
+
+1. Trois migrations indépendantes constituent P5-A0 :
+   `000014_create_partitioned_events_table`, `000015_create_analytics_sessions_table`
+   et `000016_create_analytics_rollups_tables`. Leurs rollbacks isolés sont
+   testés dans une base PostgreSQL temporaire.
+2. `events` est un parent PostgreSQL réellement partitionné par
+   `RANGE (occurred_at)`, avec clé primaire `(id, occurred_at)`, unicité
+   `(public_id, occurred_at)` et partition `events_default`. Aucun mois calendaire
+   n'est créé automatiquement en P5-A0. La création, l'attachement, la migration
+   et la purge des futures partitions seront des opérations contrôlées.
+3. `events` est append-only : `UPDATE` et `DELETE` sont refusés en SQLSTATE
+   `23514` par `prevent_analytics_events_mutation`. Il n'existe aucun mécanisme
+   d'ingestion, route, service, job, listener ou API dans ce gate.
+4. `events`, `analytics_sessions` et les trois rollups n'ont **aucune FK** vers
+   le commerce. Les identifiants `visitor_id`, `user_id`, `entity_id` et
+   `product_id` sont des références molles; leur éventuelle obsolescence ne doit
+   jamais bloquer une vente, un paiement, un remboursement ou une livraison.
+5. Le rôle général `digitrove_runtime` et `PUBLIC` n'ont aucun droit sur les
+   tables analytiques, `events_default`, la séquence d'identité ni la fonction
+   append-only. P4-B0 accordant par défaut des droits aux futurs objets, **chaque
+   future partition enfant devra aussi être explicitement révoquée**. Une
+   autorité d'ingestion dédiée sera conçue séparément en P5-A1.
+6. Confidentialité : aucune IP brute, adresse e-mail, cookie, token, secret,
+   payload webhook, URL complète ni chemin privé. `page_path`/`entry_path`/
+   `exit_path` sont des chemins relatifs sans query ni fragment; `referrer_host`
+   est un hostname canonique; `ip_hash` est un HMAC SHA-256 versionné. Les
+   propriétés sont un objet JSONB limité à 16 KiB.
+7. Les rollups sont recalculables, sans FK et sans monnaie flottante. Tous les
+   montants et compteurs sont des `BIGINT`. Les ventes et produits sont séparés
+   par `currency VARCHAR(3)`; les clés sont `(day, currency)` et
+   `(day, product_id, currency)`. `net_revenue_minor` suit exactement
+   `gross - discount + tax - refunds`; la moyenne est une division entière
+   déterministe. `daily_funnel_stats` inclut `new_customers` et n'impose aucune
+   monotonie artificielle entre étapes.
+8. Aucun index GIN sur `properties` n'est créé sans contrat de requête mesuré.
+   Les index B-tree couvrent événement/date, visiteur/date, session/date,
+   entité/date et campagne UTM/date.
+9. `campaigns`, segmentation client et affiliation relèvent de P6. P5-A0 ne les
+   crée pas et P5-A1 n'est pas commencé.
+
+**ALTERNATIVES REJETÉES** : FK vers les tables chaudes; droits analytiques au
+runtime métier; ingestion synchrone cachée dans ce gate; partition mensuelle
+codée en dur; DDL automatique; index GIN spéculatif; rollup de chiffre d'affaires
+sans devise; argent en `FLOAT`/`DECIMAL`; événements considérés comme source
+financière; campagnes ou segmentation avancées en P5-A0.
+
+**IMPACT ET VALIDATION** : cinq tables analytiques plus `events_default`, cinq
+modèles et cinq factories structurelles. PostgreSQL confirme le parent
+`relkind = 'p'`, la partition DEFAULT, zéro FK et zéro privilège runtime. P5-A0 :
+**19 tests / 256 assertions**; suite complète : **642 / 4779**; Pint :
+**235 fichiers**; **32 migrations**; `git diff --check` propre; aucune base
+temporaire résiduelle. Prochaine étape après revue/merge :
+**P5-A1 — First-party Event & Session Ingestion**.
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]
