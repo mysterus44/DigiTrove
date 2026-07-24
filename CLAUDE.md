@@ -340,8 +340,9 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   **12/109**), P4-C5 **13/202**, P4-C6 **5/41**, P4C456 **10/72**, suite
   complète **623/4542**, Pint **217**, 29 migrations, aucune `000014`.
 
-- **`P5-A0 — Analytics Schema Foundation` ✅ IMPLÉMENTÉ, EN ATTENTE DE
-  REVUE/MERGE** sur `p5-a0-analytics-schema-foundation` (**D-037**) :
+- **`P5-A0 — Analytics Schema Foundation` ✅ TERMINÉ, MERGÉ ET VALIDÉ** via
+  [PR #26](https://github.com/mysterus44/DigiTrove/pull/26), head `8d9d8cc`,
+  merge `94a8c08`, CI #32 success (**D-037**) :
   migrations `000014` à `000016`; parent `events` RANGE + `events_default`,
   append-only; `analytics_sessions`; trois rollups journaliers currency-safe;
   cinq modèles/factories structurels. Aucune FK vers le commerce, aucun droit
@@ -349,9 +350,8 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   campagne, segmentation ou P6/P7. Validation : **32 migrations**, P5-A0
   **19/256**, suite complète **642/4779**, Pint **235**, rollbacks isolés verts.
 
-**PROCHAINE TÂCHE : revue/CI/merge humain de P5-A0, puis plan P5-A1 —
-First-party Event & Session Ingestion.** Ne pas commencer P5-A1 avant le merge
-de P5-A0; ne pas commencer P6 ou P7. Invariants hérités :
+**PROCHAINE TÂCHE : P5-A1 — First-party Event & Session Ingestion.**
+Ne pas commencer P5-A2, P6 ou P7. Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —
 `coupon_redemptions` et `redemptions_count` n'arrivent qu'à la confirmation

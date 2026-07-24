@@ -1631,8 +1631,9 @@ CREATE INDEX download_logs_terminal_retention_index
 
 ## 🅳 BLOC ANALYTIQUE — P5-A0 (D-037)
 
-**État** : fondation PostgreSQL implémentée sur
-`p5-a0-analytics-schema-foundation`, en attente de revue/merge. L'ingestion
+**État** : fondation PostgreSQL terminée, mergée et validée via PR #26, head
+`8d9d8cc798e6a35ae74a36d1d9ae6a9d22bf171a`, merge
+`94a8c08c5a9d8448dd161665f69602d84715432b`, CI #32 success. L'ingestion
 P5-A1, les campagnes/segments P6 et P7 ne sont pas commencés.
 
 **Principe non négociable** : l'analytique ne pose aucune FK, aucun verrou et

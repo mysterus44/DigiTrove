@@ -2875,8 +2875,10 @@ la couche applicative Commerce → Paiement → Livraison est complète. Prochai
 tâche : **P5-A0 — Analytics Schema Foundation**.
 
 ### D-037 — Partitioned Analytics Foundation ✅
-**Date** : 2026-07-24. **Statut** : P5-A0 implémenté sur
-`p5-a0-analytics-schema-foundation`, en attente de revue/merge.
+**Date** : 2026-07-24. **Statut** : P5-A0 terminé, mergé et validé via
+[PR #26](https://github.com/mysterus44/DigiTrove/pull/26), head
+`8d9d8cc798e6a35ae74a36d1d9ae6a9d22bf171a`, merge
+`94a8c08c5a9d8448dd161665f69602d84715432b`, CI #32 success.
 
 **CONTEXTE** : P4 est complet. La fondation analytique doit accepter un volume
 élevé sans ajouter de FK, de verrou ni de dépendance à la disponibilité des
@@ -2939,6 +2941,13 @@ modèles et cinq factories structurelles. PostgreSQL confirme le parent
 **235 fichiers**; **32 migrations**; `git diff --check` propre; aucune base
 temporaire résiduelle. Prochaine étape après revue/merge :
 **P5-A1 — First-party Event & Session Ingestion**.
+
+**CLÔTURE POST-MERGE** : parents du merge `9a2a8f104d2f81719988c51091f2a29a9ec6cb0f`
+et `8d9d8cc798e6a35ae74a36d1d9ae6a9d22bf171a`. Les validations post-merge
+confirment P5-A0 **19/256**, P4-C **86/559**, P4-B **20/560**, P3-B
+**18/354**, Pint **235**, `git diff --check` propre et **32 migrations**.
+PostgreSQL confirme le parent RANGE, la partition DEFAULT, zéro FK, append-only
+et aucun DML analytique pour `digitrove_runtime`. D-037 reste inchangée.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

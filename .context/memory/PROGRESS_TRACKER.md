@@ -15,7 +15,7 @@ P3 COMMERCE         : ██████████  Schéma P3C-C refunds merg
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
-P5 ANALYTIQUE       : ██░░░░░░░░  P5-A0 fondation BDD implémentée sur branche dédiée, en attente de revue/merge (D-037) ; ingestion P5-A1 non démarrée
+P5 ANALYTIQUE       : ██░░░░░░░░  P5-A0 terminé, mergé et validé via PR #26 (`94a8c08`, CI #32, D-037) ; P5-A1 ingestion first-party non démarrée
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
@@ -483,13 +483,13 @@ Foundation**.
 ## P5 — ANALYTIQUE
 | Tâche | Statut |
 |-------|--------|
-| **P5-A0** migration `000014` : parent `events` RANGE + `events_default`, append-only, index B-tree ciblés, aucun GIN spéculatif | ✅ DONE — branche `p5-a0-analytics-schema-foundation`, en attente de revue/merge |
+| **P5-A0** migration `000014` : parent `events` RANGE + `events_default`, append-only, index B-tree ciblés, aucun GIN spéculatif | ✅ DONE — mergé PR #26, head `8d9d8cc`, merge `94a8c08`, CI #32 |
 | **P5-A0** migration `000015` : `analytics_sessions` sans FK, chemins/temps/attribution contraints | ✅ DONE — aucune ingestion ni session applicative |
 | **P5-A0** migration `000016` : `daily_sales_stats`, `daily_product_stats`, `daily_funnel_stats` currency-safe | ✅ DONE — montants et compteurs BIGINT, aucune FK |
 | ACL P5-A0 : aucun droit `PUBLIC`/`digitrove_runtime`, y compris partition DEFAULT, séquence et fonction | ✅ DONE — testé sous l'identité runtime réelle |
 | Rollbacks isolés `000014`/`000015`/`000016` | ✅ DONE — trois frontières testées, aucune base temporaire résiduelle |
 | Validation P5-A0 | ✅ DONE — 19 tests / 256 assertions ; suite complète 642 / 4779 ; Pint 235 ; 32 migrations |
-| **P5-A1** First-party Event & Session Ingestion | ⬜ TODO — prochaine étape après revue/merge de P5-A0 |
+| **P5-A1** First-party Event & Session Ingestion | ⬜ TODO — prochaine étape autorisée |
 | Partitions calendaires contrôlées et maintenance | ⬜ TODO — aucune création DDL automatique en P5-A0 |
 | AnalyticsService / jobs d'écriture et de rollup | ⬜ TODO — aucun service, job, listener, route ou API en P5-A0 |
 | Campaigns, segments et affiliation | ⬜ P6 — explicitement hors P5-A0 |

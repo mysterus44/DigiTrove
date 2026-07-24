@@ -8,10 +8,12 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-24
-- **Branche git active** : `p5-a0-analytics-schema-foundation`, créée depuis la
-  stable `9a2a8f104d2f81719988c51091f2a29a9ec6cb0f` après la clôture P4.
-- **P5-A0 ANALYTICS SCHEMA FOUNDATION IMPLÉMENTÉ — EN ATTENTE DE
-  REVUE/MERGE** (D-037). Trois migrations additives : `000014` crée le parent
+- **Branche git active** : `p0-foundations-laravel13`, synchronisée au merge
+  P5-A0 `94a8c08c5a9d8448dd161665f69602d84715432b`.
+- **P5-A0 ANALYTICS SCHEMA FOUNDATION TERMINÉ, MERGÉ ET VALIDÉ** via
+  [PR #26](https://github.com/mysterus44/DigiTrove/pull/26), head
+  `8d9d8cc798e6a35ae74a36d1d9ae6a9d22bf171a`, merge `94a8c08c`, CI #32
+  success (D-037). Trois migrations additives : `000014` crée le parent
   `events` partitionné RANGE, `events_default`, l'append-only et ses ACL ;
   `000015` crée `analytics_sessions` sans FK ; `000016` crée trois rollups
   journaliers currency-safe. Cinq modèles/factories structurels, aucune
@@ -405,18 +407,15 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 Revue/merge P5-A0, puis P5-A1 — First-party Event & Session Ingestion
+## 🎯 P5-A1 — First-party Event & Session Ingestion
 
-P5-A0 est implémenté et validé sur `p5-a0-analytics-schema-foundation`, mais
-n'est pas mergé. La prochaine action est la revue/CI puis le merge humain de ce
-gate. **Ne pas commencer P5-A1 avant ce merge.**
-
-Après le merge seulement, planifier P5-A1 dans une exécution séparée :
-autorité PostgreSQL dédiée, ingestion first-party et cycle de session. Respecter
+P5-A0 est mergé et validé. Implémenter maintenant P5-A1 sur une branche dédiée :
+consentement explicite, autorité PostgreSQL minimale, ingestion first-party
+désactivée par défaut et cycle de session. Respecter
 D-037 : aucun droit analytics pour `digitrove_runtime`, aucune FK vers le
 commerce, aucun événement comme source financière, aucune IP/email/token brut,
-et révocation explicite sur chaque future partition enfant. P6/P7 restent hors
-périmètre.
+et révocation explicite sur chaque future partition enfant. Ne pas commencer
+P5-A2, P6 ou P7.
 
 ## 🗃️ Archive de passation P3-D4/D5 (supersédée par l'état en tête)
 
@@ -741,6 +740,18 @@ aucun push direct sur `main`.
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-24 — Codex (clôture post-merge P5-A0)
+- [PR #26](https://github.com/mysterus44/DigiTrove/pull/26) mergée : head
+  `8d9d8cc798e6a35ae74a36d1d9ae6a9d22bf171a`, merge
+  `94a8c08c5a9d8448dd161665f69602d84715432b`, parents `9a2a8f1` +
+  `8d9d8cc`, CI #32 success.
+- Stable synchronisée `0/0`. PostgreSQL confirme `events` RANGE,
+  `events_default`, append-only, zéro FK, rollups currency-safe et zéro DML
+  analytique pour `digitrove_runtime`.
+- Validation post-merge : P5-A0 **19/256**, P4-C **86/559**, P4-B **20/560**,
+  P3-B **18/354**, Pint **235**, 32 migrations et `git diff --check` propre.
+- D-037 conservée intégralement. Laisse à : P5-A1 first-party, sans P5-A2/P6/P7.
 
 ### 2026-07-24 — Codex (P5-A0 Analytics Schema Foundation)
 - Clôture P4-C4/C6 enregistrée sur la stable par `9a2a8f1`, puis poussée vers
