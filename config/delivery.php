@@ -29,6 +29,29 @@ return [
         'unique_seconds' => (int) env('DELIVERY_JOB_UNIQUE_SECONDS', 3600),
     ],
 
+    'attempt' => [
+        'ttl_seconds' => (int) env('DELIVERY_ATTEMPT_TTL_SECONDS', 900),
+    ],
+
+    'rate_limit' => [
+        'authorize_per_minute' => (int) env('DELIVERY_AUTH_RATE_LIMIT_PER_MINUTE', 10),
+    ],
+
+    'audit' => [
+        // HMAC secret is mandatory at the HTTP boundary and never persisted.
+        'ip_hash_key' => env('DELIVERY_IP_HASH_KEY'),
+        'ip_hash_key_version' => (int) env('DELIVERY_IP_HASH_KEY_VERSION', 1),
+    ],
+
+    'log' => [
+        'retention_days' => (int) env('DELIVERY_LOG_RETENTION_DAYS', 90),
+    ],
+
+    'private_disks' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('DELIVERY_PRIVATE_DISKS', 'private')),
+    ))),
+
     // Required (and HTTPS-bound outside local/testing) only when the pipeline is
     // enabled. The final download route is wired in P4-C4/C5.
     'download_base_url' => env('DELIVERY_DOWNLOAD_BASE_URL'),

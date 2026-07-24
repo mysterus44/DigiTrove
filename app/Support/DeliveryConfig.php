@@ -65,6 +65,69 @@ final class DeliveryConfig
         return self::bounded($value, 1, 86_400, 'delivery.job.unique_seconds');
     }
 
+    public static function attemptTtlSeconds(): int
+    {
+        return self::bounded((int) config('delivery.attempt.ttl_seconds'), 60, 3_600, 'delivery.attempt.ttl_seconds');
+    }
+
+    public static function authorizeRateLimit(): int
+    {
+        return self::bounded((int) config('delivery.rate_limit.authorize_per_minute'), 1, 120, 'delivery.rate_limit.authorize_per_minute');
+    }
+
+    public static function logRetentionDays(): int
+    {
+        return self::bounded((int) config('delivery.log.retention_days'), 1, 3_650, 'delivery.log.retention_days');
+    }
+
+    public static function ipHashKey(): string
+    {
+        $key = config('delivery.audit.ip_hash_key');
+
+        if (! is_string($key) || strlen($key) < 32) {
+            throw new RuntimeException('The delivery audit HMAC key is not configured.');
+        }
+
+        return $key;
+    }
+
+    public static function ipHashKeyVersion(): int
+    {
+        return self::bounded((int) config('delivery.audit.ip_hash_key_version'), 1, 32_767, 'delivery.audit.ip_hash_key_version');
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function privateDisks(): array
+    {
+        $disks = config('delivery.private_disks');
+
+        if (! is_array($disks) || $disks === []) {
+            throw new RuntimeException('No private delivery disk is configured.');
+        }
+
+        foreach ($disks as $disk) {
+            if (! is_string($disk) || preg_match('/\A[a-zA-Z0-9_-]+\z/', $disk) !== 1) {
+                throw new RuntimeException('A private delivery disk name is invalid.');
+            }
+
+            $definition = config("filesystems.disks.{$disk}");
+            if (! is_array($definition)
+                || ($definition['visibility'] ?? 'private') === 'public'
+                || ($definition['serve'] ?? false) === true) {
+                throw new RuntimeException('A delivery disk is not private.');
+            }
+        }
+
+        return array_values($disks);
+    }
+
+    public static function cookieSecure(): bool
+    {
+        return ! in_array((string) config('app.env'), ['local', 'testing'], true);
+    }
+
     /**
      * The download base URL — required and HTTPS-bound only when the pipeline is
      * actually enabled. Throws fail-closed otherwise.
