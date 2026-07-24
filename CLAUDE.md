@@ -118,10 +118,11 @@ Pint 121, provisioning idempotent, identités migration/runtime prouvées,
 6 fonctions / 7 triggers P4, G4 différé, zéro résidu.
 
 **Le schéma P4 Livraison est COMPLET** (29 migrations). La couche applicative
-n'existe pas : `app/Services|Actions|Events|Listeners|Jobs|Notifications|Mail|
-Policies|Support|Http\Requests|Http\Middleware` n'existent pas, `routes/web.php`
-ne déclare que la page d'accueil, `OrderService` / `OrderPaid` /
-`IssueDownloadGrants` / `DownloadService` / `DownloadController` sont absents.
+P4-C0→C3 est mergée via PR #24 ; P4-C4→C6 est implémentée sur
+`p4-c4-c6-download-delivery-operations` et attend review/merge (D-036). Aucune
+migration `000014` : autorisation, fichier HTTP et opérations utilisent
+exclusivement `download_grants`, `download_logs`, G1→G6 et le disque privé
+existants. Le pipeline reste désactivé par défaut.
 
 - **Couche applicative planifiée** ✅ **D-030 FINALISÉE ET VALIDÉE**
   (KingKouda : **Q1 = A renforcée**, **Q2 = B renforcée**, **Q3 = A**) —
@@ -321,10 +322,20 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   `downloads_count`.** P4-C **50 tests / 165 assertions** (dont quatre preuves
   de concurrence PostgreSQL), suite **587/4259**, Pint **191**, 29 migrations.
 
-**PROCHAINE TÂCHE : macro-gate unique `P4-C4 + P4-C5 + P4-C6`**
-(Download Authorization → HTTP File Delivery →
-Operations, D-030) — **réécrire `.context/skills/SECURITE_TELECHARGEMENT.md`
-avant `P4-C4`**. Invariants hérités :
+- **`P4-C4 + P4-C5 + P4-C6 — Authorization, HTTP Delivery & Operations`
+  ✅ IMPLÉMENTÉS, EN ATTENTE DE REVUE/MERGE** sur
+  `p4-c4-c6-download-delivery-operations` (**D-036**, aucune migration) :
+  fragment e-mail retiré par page DB-free → Bearer sur POST seulement → secret
+  de tentative distinct en cookie `HttpOnly/SameSite=Strict`; G5 crée une ligne
+  `started` et consomme exactement une unité. GET/HEAD/Range réutilisent cette
+  ligne ; HEAD reste inerte ; stream privé borné, X-Accel local opt-in
+  fail-closed, aucune URL objet. Réconciliation, détection d'abus HMAC,
+  révocation support, purge G6, métriques et scheduler n'exposent aucun secret.
+  P4-C4 **6/67**, P4-C5 **7/120**, P4-C6 **5/41**, P4C456 **9/62**, suite
+  complète **614/4437**, Pint **216**, 29 migrations, aucune `000014`.
+
+**PROCHAINE TÂCHE : review/merge du macro-gate P4-C4→C6. Après clôture séparée,
+P5 — Analytics.** Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —
 `coupon_redemptions` et `redemptions_count` n'arrivent qu'à la confirmation
@@ -332,8 +343,9 @@ serveur (P3-D4) ; le webhook n'est jamais autoritatif, le contre-appel fournisse
 l'est ; le TTL `pending` est validé côté serveur (D-032) ; la clé d'idempotence
 brute n'est jamais persistée ; les collisions d'`order_number` passent par un
 **savepoint** PostgreSQL. `P4-C0` bloque tous les gates de livraison ; **`P4-C2`
-avant l'activation réelle de `P4-C3`** ; réécrire
-`.context/skills/SECURITE_TELECHARGEMENT.md` avant `P4-C4`. Deux jugements
+avant l'activation réelle de `P4-C3`**. Le guide
+`.context/skills/SECURITE_TELECHARGEMENT.md` est désormais aligné sur
+D-035/D-036. Deux jugements
 conservateurs hérités de P3-D1 restent en vigueur : seul
 `products.status = 'published'` est vendable ; `min_order_minor` est un plancher
 mesuré sur le panier entier. P5 non démarré.
