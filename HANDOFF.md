@@ -8,8 +8,22 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-24
-- **Branche git active** : `p0-foundations-laravel13`, synchronisée au merge
-  P5-A0 `94a8c08c5a9d8448dd161665f69602d84715432b`.
+- **Branche git active** : `p5-a1-first-party-analytics-ingestion`, créée depuis
+  la clôture P5-A0 `5bff49bf30dd76c193ce3a55207e007c52fd84b4`.
+- **P5-A1 FIRST-PARTY ANALYTICS INGESTION IMPLÉMENTÉ — EN ATTENTE DE
+  REVUE/MERGE** (D-038). Migration `000017`, rôle NOLOGIN
+  `digitrove_analytics_executor`, fonction SECURITY DEFINER
+  `ingest_first_party_analytics_event`, runtime EXECUTE-only, consentement
+  versionné et ingestion désactivée par défaut. Les cookies
+  `dt_analytics_consent`, `dt_analytics_visitor` et `dt_analytics_session` sont
+  first-party, chiffrés/signés, HttpOnly et SameSite Strict. Seuls `page_view`
+  et `product_view` sont publics; aucun événement financier, fournisseur tiers,
+  IP/user-agent brut, queue ou rollup. La sessionisation est atomique sous
+  advisory lock visiteur et verrou de ligne; les tests à connexions
+  PostgreSQL indépendantes prouvent l'absence de perte de compteur et de double
+  première session. Validation : **33 migrations**, P5-A1 **67 tests / 342
+  assertions**, suite complète **709 / 5125**, Pint **254 fichiers**,
+  `git diff --check` propre.
 - **P5-A0 ANALYTICS SCHEMA FOUNDATION TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #26](https://github.com/mysterus44/DigiTrove/pull/26), head
   `8d9d8cc798e6a35ae74a36d1d9ae6a9d22bf171a`, merge `94a8c08c`, CI #32
@@ -407,15 +421,34 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 P5-A1 — First-party Event & Session Ingestion
+## 🎯 P5-A2 — Authoritative Rollups and Partition Operations
 
-P5-A0 est mergé et validé. Implémenter maintenant P5-A1 sur une branche dédiée :
-consentement explicite, autorité PostgreSQL minimale, ingestion first-party
-désactivée par défaut et cycle de session. Respecter
-D-037 : aucun droit analytics pour `digitrove_runtime`, aucune FK vers le
-commerce, aucun événement comme source financière, aucune IP/email/token brut,
-et révocation explicite sur chaque future partition enfant. Ne pas commencer
-P5-A2, P6 ou P7.
+P5-A1 est implémenté sur `p5-a1-first-party-analytics-ingestion` et attend sa
+revue/son merge. Ne commencer P5-A2 qu'après ce merge. P5-A2 devra traiter les
+partitions calendaires contrôlées et les rollups issus des tables
+transactionnelles autoritatives; il ne devra pas transformer les événements
+client en source financière. P6 et P7 restent non commencés.
+
+### 2026-07-24 — Codex (P5-A1 first-party analytics ingestion)
+
+- Clôture P5-A0 : commit `5bff49b`, poussé sur
+  `origin/p0-foundations-laravel13`.
+- P5-A1 : `000017` ajoute uniquement l'autorité PostgreSQL; aucune table métier.
+  `digitrove_runtime` n'a toujours aucun DML direct et reçoit seulement EXECUTE
+  sur une fonction SECURITY DEFINER possédée par le rôle NOLOGIN dédié.
+- Consentement explicite/versionné, identité analytique dédiée créée seulement
+  après consentement, révocation immédiate des écritures futures, cookies
+  chiffrés HttpOnly/SameSite Strict, HTTPS hors local/testing.
+- Endpoint web/CSRF same-origin, un événement JSON borné par requête,
+  normalisation serveur, HMAC-SHA-256 versionné de l'IP, rate limiting sur
+  digests. `page_view` et `product_view` seulement.
+- Connexion Laravel dédiée refusée : le même rôle runtime n'apportait aucune
+  isolation d'identité mesurable; garde stricte contre toute transaction
+  Commerce ambiante et invocation préparée unique.
+- Validation réelle : P5-A1 **67/342**, P5-A0 **19/256**, P4-C **86/559**,
+  P4-B **20/560**, P3-B **18/354**, suite **709/5125**, Pint **254**,
+  **33 migrations**, rollback isolé et concurrence verts.
+- P5-A2, P6 et P7 non commencés.
 
 ## 🗃️ Archive de passation P3-D4/D5 (supersédée par l'état en tête)
 
