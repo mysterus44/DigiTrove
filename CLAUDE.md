@@ -305,9 +305,23 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   webhook 8 dont C1/C2, événement 7 dont C5), suite complète **537/4083**, Pint
   **175**, **29 migrations**, aucune `000014`.
 
-**PROCHAINE TÂCHE : revue et merge de la PR `P3-D4/D5`, puis macro-tâche
-`P4-C0 + P4-C1 + P4-C2`** (Queue/Mail Secret Safety → Grant Issuance → Refund
-Revocation, D-030). **NE PAS commencer P4-C avant le merge.** Invariants hérités :
+- **`P4-C0 → P4-C3 — Secure Delivery Pipeline` 🔶 IMPLÉMENTÉS — EN ATTENTE DE
+  REVUE/MERGE** (macro-gate `p4-c0-c3-secure-delivery-pipeline`, **D-035**,
+  **aucune migration** — 29 inchangées) : pipeline **désactivé par défaut**.
+  `OrderPaid` → listener `QueueSecureDelivery` (si `DELIVERY_PIPELINE_ENABLED`) →
+  job `SecureDeliveryJob` **unique, `order_id` seul** → `GrantIssuanceService`
+  (tokens CSPRNG mémoire, SHA-256 en base, snapshot bundle unique autorité, **no
+  implicit upgrade**, révoque/réémet au retry) → Mailable **synchrone jamais
+  `ShouldQueue`**. `RefundCompletionService` : partial garde les grants, full
+  révoque tout dans la même transaction (G4). Adaptateurs e-mail/refund non
+  inventés (scaffolds). **Aucun endpoint, aucun `download_logs`, aucun
+  `downloads_count`.** P4-C **50 tests / 165 assertions** (dont quatre preuves
+  de concurrence PostgreSQL), suite **587/4259**, Pint **191**, 29 migrations.
+
+**PROCHAINE TÂCHE : revue et merge de la PR `P4-C0/C3`, puis macro-tâche
+`P4-C4 + P4-C5 + P4-C6`** (Download Authorization → HTTP File Delivery →
+Operations, D-030) — **réécrire `.context/skills/SECURITE_TELECHARGEMENT.md`
+avant `P4-C4`**. Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —
 `coupon_redemptions` et `redemptions_count` n'arrivent qu'à la confirmation

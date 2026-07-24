@@ -2660,5 +2660,81 @@ coupon au checkout ; recalcul de la remise ; endpoint/statut/secret PowerPay
 inventé ; adaptateur CinetPay actif par défaut ; table outbox dans ce gate ;
 livraison ou listener P4-C.
 
+### D-035 — Pipeline de livraison sécurisé (P4-C0 → P4-C3) ✅
+**Date** : 2026-07-24. **Statut** : **P4-C0 à P4-C3 IMPLÉMENTÉS — EN ATTENTE DE
+REVUE/MERGE** (macro-gate unique `p4-c0-c3-secure-delivery-pipeline`, **aucune
+migration** — 29 inchangées). Pipeline **désactivé par défaut**.
+
+**DÉCISIONS FIGÉES**
+1. `OrderPaid` ne transporte que `order_id` (P3-D5, hérité).
+2. Un listener `QueueSecureDelivery` dispatch un job unique portant **`order_id`
+   seul**, et **uniquement si `DELIVERY_PIPELINE_ENABLED=true`**.
+3. Aucun token brut dans l'événement, le listener, le job, le payload de queue,
+   `failed_jobs`, le cache, la base, les logs ou une exception.
+4. Les tokens bruts sont générés **uniquement dans la mémoire du worker**
+   (`random_bytes(32)`, base64url sans padding).
+5. Seul le **SHA-256** du token est persisté (`download_grants.token_hash`).
+6. Le mail est envoyé **synchroniquement dans le worker** (`Mail::to()->send()`).
+7. La Mailable `OrderDownloadsReady` **n'implémente jamais `ShouldQueue`** et
+   refuse explicitement toute mise en queue ou sérialisation générique.
+8. Les grants sont créés et **committés avant** l'envoi du mail.
+9. Échec du mail ⇒ **révocation** des grants émis (`delivery_failed`) puis
+   exception sanitizée pour retry (at-least-once).
+10. Une reprise réutilise les **couples historiques** `(order_item_id,
+    product_file_id)` déjà émis — jamais un upgrade implicite ; les grants actifs
+    stales sont révoqués `delivery_uncertain_reissue` avant réémission.
+11. Le **live bundle pivot** n'est jamais lu pour déterminer les droits.
+12. La **snapshot d'achat** (`order_item_bundle_components`) est l'unique autorité
+    bundle ; produit simple ⇒ `product_files` actifs du produit acheté.
+13. Un **remboursement partiel** conserve les grants (`Order → partially_refunded`).
+14. Un **remboursement total** révoque **tous les grants actifs** dans la **même
+    transaction** que `Order → refunded` (`full_refund`), satisfaisant le trigger
+    différé **G4**. `RefundCompletionService` monte la ladder
+    `pending→processing→succeeded` et ne dépasse jamais le montant capturé (le
+    trigger de cap BDD reste la dernière défense).
+15. **Aucun endpoint de téléchargement** dans ce macro-gate (P4-C4/C5).
+16. Livraison réelle **désactivée par défaut** tant que P4-C4/C5 ne sont pas
+    mergés ; `DeliveryConfig` **fail-closed** (TTL/quota bornés, URL requise +
+    HTTPS hors local/testing quand activé).
+17. Fournisseurs e-mail **configurables par environnement**, jamais codés
+    (`docs/integrations/MAIL_PROVIDER_SETUP.md`, `.env.example` sans secret ;
+    `MAIL_MAILER=log` refusé avant dispatch/émission). Adaptateur refund fournisseur
+    **non implémenté** (`REFUND_PROVIDER_SETUP.md`, scaffold placeholders,
+    `RefundCompletionService` = primitive locale sans appel réseau).
+
+**TRANSPORT PROVISOIRE** : jusqu'à P4-C4/C5, les liens utilisent
+`{base}/{public_id}#token={raw}`. Le fragment n'est pas envoyé au serveur/proxy ;
+le futur gate devra l'échanger côté client contre le credential de tentative
+prévu, sans query string et sans ajouter de route dans ce macro-gate.
+
+**CRASH APRÈS MAIL (honnête)** : une panne après un envoi réussi mais avant l'ACK
+du job peut provoquer, au retry, une révocation puis un nouvel e-mail ; l'ancien
+lien devient invalide. Ce comportement **at-least-once** est volontaire et plus
+sûr que de conserver un grant dont le token brut n'est plus disponible.
+
+**PÉRIMÈTRE** : `config/delivery.php`, `app/Support/DeliveryConfig.php`,
+`app/Enums/GrantRevocationReason.php`, `app/Jobs/SecureDeliveryJob.php`,
+`app/Listeners/QueueSecureDelivery.php`, `app/Mail/OrderDownloadsReady.php`,
+`app/Services/Delivery/{GrantIssuanceService,RefundCompletionService}.php`,
+`app/Support/{IssuedGrant,IssuedGrantBatch,RefundCompletionResult}.php`,
+`AppServiceProvider` (listener), `.env.example`,
+`docs/integrations/{MAIL_PROVIDER_SETUP,REFUND_PROVIDER_SETUP}.md`.
+
+**VALIDATION** : **50 tests / 165 assertions P4-C** (C0 **16/42**, C1 **14/36**
+dont bundle/no-upgrade/token et Order refunded, C2 **7/29**, C3 **9/30**,
+concurrence **4/28**). C1–C3 utilisent des processus/connexions PostgreSQL
+indépendants et prouvent l'attente réelle sur les verrous ; C4 classe exactement
+`23505 + download_grants_token_hash_unique`, C5 exactement
+`23505 + download_grants_active_pair_unique`. Suite complète **587/4259**, Pint
+**191**, **29 migrations**, aucune `000014`. Garde-fou P4-B élargi (fichiers
+`Services/Delivery`, `app/Jobs`, `app/Listeners`, `app/Mail` en allowlist
+fail-closed).
+
+**ALTERNATIVES REJETÉES** : token brut en queue/log/exception ; reconstruire un
+token depuis son hash ; Mailable `ShouldQueue` ; mail sous transaction ; live
+bundle pivot comme autorité ; upgrade implicite au retry ; suppression/réactivation
+de grant ; endpoint de téléchargement ; API refund/e-mail inventée ; migration
+outbox.
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]
