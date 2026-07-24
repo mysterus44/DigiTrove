@@ -62,21 +62,22 @@ function p4b0Owner(): Connection
     return DB::connection('pgsql_migration');
 }
 
-it('applies the ACL migration ahead of the P4-B gate and introduces no P5 object', function () {
+it('keeps the P4-B0 ACL boundary active after the later P4 and P5-A0 migrations', function () {
     // On this branch the P4-B gate (000013) follows the ACL gate, so download_logs
     // legitimately exists here. The proof that NOTHING P4-B exists at the 000012
     // boundary itself lives in the isolated rollback test below, which stops
     // exactly there — that is where the gate frontier is asserted.
-    expect(DB::table('migrations')->count())->toBe(29)
+    expect(DB::table('migrations')->count())->toBe(32)
         ->and(DB::table('migrations')->where('migration', '2026_07_14_000012_harden_database_runtime_privileges')->exists())->toBeTrue()
         ->and(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
+        ->and(DB::table('migrations')->where('migration', '2026_07_14_000016_create_analytics_rollups_tables')->exists())->toBeTrue()
         ->and(Schema::hasTable('download_grants'))->toBeTrue()
-        ->and(Schema::hasTable('download_logs'))->toBeTrue();
+        ->and(Schema::hasTable('download_logs'))->toBeTrue()
+        ->and(Schema::hasTable('events'))->toBeTrue();
 
     // The ACL gate stays additive: the only download-log functions are P4-B's G5
-    // and G6, and no analytics/licensing (P5) object was ever created.
+    // and G6, while P6 licensing remains absent.
     expect(DB::table('pg_proc')->where('proname', 'like', '%download_log%')->count())->toBe(2)
-        ->and(Schema::hasTable('events'))->toBeFalse()
         ->and(Schema::hasTable('licenses'))->toBeFalse();
 });
 

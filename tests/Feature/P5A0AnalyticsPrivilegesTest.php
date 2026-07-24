@@ -73,7 +73,7 @@ it('denies runtime reads and writes while the migrator can append a valid event'
     expectP5A0RuntimeDenied("UPDATE events SET event_name = 'cart_view'");
     expectP5A0RuntimeDenied('DELETE FROM events');
     expectP5A0RuntimeDenied('SELECT * FROM analytics_sessions LIMIT 1');
-    expectP5A0RuntimeDenied("INSERT INTO daily_funnel_stats (day, updated_at) VALUES (CURRENT_DATE, now())");
+    expectP5A0RuntimeDenied('INSERT INTO daily_funnel_stats (day, updated_at) VALUES (CURRENT_DATE, now())');
 
     $owner = DB::connection('pgsql_migration');
     $owner->statement(

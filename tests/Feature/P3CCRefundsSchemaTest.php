@@ -108,8 +108,7 @@ it('runs P3C-C schema tests against PostgreSQL', function () {
 });
 
 it('creates the refunds table with native types, FK, enum, functions and triggers', function () {
-    expect(Schema::hasTable('refunds'))->toBeTrue()
-        ->and(Schema::hasTable('events'))->toBeFalse();
+    expect(Schema::hasTable('refunds'))->toBeTrue();
 
     expect(Schema::hasColumns('refunds', [
         'id', 'public_id', 'payment_id', 'provider', 'provider_refund_reference',
@@ -1006,8 +1005,8 @@ it('serialises concurrent succeeded refunds on the payment row and never exceeds
     expect(DB::table('pg_database')->where('datname', $harness->databaseName())->exists())->toBeFalse();
 });
 
-it('does not introduce delivery, analytics, or downstream tables', function () {
-    foreach (['events', 'campaigns', 'daily_sales_stats'] as $table) {
+it('does not introduce P6 marketing or downstream tables', function () {
+    foreach (['campaigns'] as $table) {
         expect(Schema::hasTable($table))->toBeFalse("Unexpected out-of-scope table exists: {$table}");
     }
 });

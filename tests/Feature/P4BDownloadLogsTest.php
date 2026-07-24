@@ -414,7 +414,7 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(29)
+        ->and(DB::table('migrations')->count())->toBe(32)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')
@@ -598,11 +598,10 @@ it('installs exactly the two P4-B functions and triggers and replaces G2 in plac
     expect(DB::table('pg_proc')->whereIn('proname', $downloadFunctions)->count())->toBe(6)
         ->and(DB::table('pg_trigger')->whereIn('tgname', $downloadTriggers)->where('tgisinternal', false)->count())->toBe(7);
 
-    // G4 stays deferred; G0 and S1–S3 are untouched; no P5 object exists.
+    // G4 stays deferred; G0 and S1–S3 are untouched; P6 licensing stays absent.
     expect(DB::table('pg_trigger')->where('tgname', 'download_grants_validate_order_consistency_trigger')->value('tgdeferrable'))->toBeTrue()
         ->and(DB::table('pg_proc')->where('proname', 'enforce_product_file_content_immutability')->count())->toBe(1)
         ->and(DB::table('pg_proc')->whereIn('proname', ['prevent_order_item_bundle_components_delete', 'enforce_order_item_bundle_component_immutability', 'validate_order_item_bundle_component'])->count())->toBe(3)
-        ->and(Schema::hasTable('events'))->toBeFalse()
         ->and(Schema::hasTable('licenses'))->toBeFalse();
 });
 

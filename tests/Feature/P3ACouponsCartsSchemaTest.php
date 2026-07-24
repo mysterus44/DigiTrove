@@ -116,12 +116,9 @@ it('has exactly the six P3A tables and expected columns', function () {
     }
 });
 
-it('does not create P3C, delivery, analytics, or affiliation tables', function () {
+it('does not create P6 marketing or affiliation tables', function () {
     $forbiddenTables = [
-        'events',
-        'analytics_sessions',
         'campaigns',
-        'daily_sales_stats',
         'customer_segments',
         'affiliate_profiles',
         'affiliate_links',
