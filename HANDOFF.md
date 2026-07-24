@@ -8,8 +8,19 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-24
-- **Branche git active** : `p0-foundations-laravel13`, synchronisée au merge
-  P4-C4/C6 `109fde4c6c0b401f4a8252fad780d1368711b161`.
+- **Branche git active** : `p5-a0-analytics-schema-foundation`, créée depuis la
+  stable `9a2a8f104d2f81719988c51091f2a29a9ec6cb0f` après la clôture P4.
+- **P5-A0 ANALYTICS SCHEMA FOUNDATION IMPLÉMENTÉ — EN ATTENTE DE
+  REVUE/MERGE** (D-037). Trois migrations additives : `000014` crée le parent
+  `events` partitionné RANGE, `events_default`, l'append-only et ses ACL ;
+  `000015` crée `analytics_sessions` sans FK ; `000016` crée trois rollups
+  journaliers currency-safe. Cinq modèles/factories structurels, aucune
+  ingestion, route, API, session applicative, campagne, segmentation ou P6/P7.
+  `PUBLIC` et `digitrove_runtime` n'ont aucun droit sur les objets analytiques.
+  Validation PostgreSQL réelle : **32 migrations**, P5-A0 **19 tests / 256
+  assertions**, suite complète **642 / 4779**, Pint **235 fichiers**,
+  `git diff --check` propre, rollbacks isolés verts, aucune base temporaire.
+  Commits fonctionnels : `6c17a78` (events) et `bf51c87` (sessions/rollups).
 - **P4-C4 → P4-C6 TERMINÉS, MERGÉS ET VALIDÉS** via
   [PR #25](https://github.com/mysterus44/DigiTrove/pull/25), head
   `07d566fb4016a805fc007f4210bf122ac2fd9bed`, merge `109fde4c`, **CI #31
@@ -394,15 +405,18 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 P5-A0 — Analytics Schema Foundation
+## 🎯 Revue/merge P5-A0, puis P5-A1 — First-party Event & Session Ingestion
 
-P4-C0→C6 sont terminés, mergés et validés. La couche applicative Commerce →
-Paiement → Livraison est complète ; le pipeline reste désactivé par défaut tant
-que la configuration opérationnelle de production n'est pas renseignée.
-Construire maintenant uniquement la fondation PostgreSQL analytique P5-A0 :
-`events` partitionnée + DEFAULT, `analytics_sessions`, rollups journaliers
-currency-safe, ACL sans droit runtime, append-only et rollbacks isolés. Ne pas
-commencer l'ingestion P5-A1, P6 ou P7.
+P5-A0 est implémenté et validé sur `p5-a0-analytics-schema-foundation`, mais
+n'est pas mergé. La prochaine action est la revue/CI puis le merge humain de ce
+gate. **Ne pas commencer P5-A1 avant ce merge.**
+
+Après le merge seulement, planifier P5-A1 dans une exécution séparée :
+autorité PostgreSQL dédiée, ingestion first-party et cycle de session. Respecter
+D-037 : aucun droit analytics pour `digitrove_runtime`, aucune FK vers le
+commerce, aucun événement comme source financière, aucune IP/email/token brut,
+et révocation explicite sur chaque future partition enfant. P6/P7 restent hors
+périmètre.
 
 ## 🗃️ Archive de passation P3-D4/D5 (supersédée par l'état en tête)
 
@@ -727,6 +741,22 @@ aucun push direct sur `main`.
 ---
 
 ## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-07-24 — Codex (P5-A0 Analytics Schema Foundation)
+- Clôture P4-C4/C6 enregistrée sur la stable par `9a2a8f1`, puis poussée vers
+  `origin/p0-foundations-laravel13`. Branche P5-A0 créée depuis ce commit.
+- P5-A0 : migrations `000014`/`000015`/`000016`, parent `events` RANGE avec
+  partition DEFAULT, append-only, sessions molles et trois rollups journaliers
+  currency-safe. Cinq modèles et cinq factories structurels.
+- Frontière fail-closed : aucune FK analytique, aucune ingestion/API/service/job,
+  aucun droit `PUBLIC` ou `digitrove_runtime`; chaque partition future devra
+  recevoir une révocation explicite. Aucun GIN sans contrat de requête.
+- Validation : 32 migrations appliquées; P5-A0 **19/256**; P4-C **86/559**;
+  P4-B **20/560**; P3-D4 **52/138**; P3-B **18/354**; catalogue **12/99**;
+  suite complète **642/4779**; Pint **235**; rollbacks isolés verts;
+  `git diff --check` propre; aucune base temporaire résiduelle.
+- Décision : **D-037**. Laisse à : revue/CI/merge humain de P5-A0, puis plan
+  P5-A1 dans une nouvelle exécution. P5-A1, P6 et P7 non commencés.
 
 ### 2026-07-22 — Claude Code (clôture post-merge P3-D2 + hotfix temporel P3-D1)
 - **Deux merges prouvés.** P3-D2 : `4c691864`, parents `5d07abad` + `ef758bbb`

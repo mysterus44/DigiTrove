@@ -340,8 +340,18 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   **12/109**), P4-C5 **13/202**, P4-C6 **5/41**, P4C456 **10/72**, suite
   complète **623/4542**, Pint **217**, 29 migrations, aucune `000014`.
 
-**PROCHAINE TÂCHE : P5-A0 — Analytics Schema Foundation.** P4-C0→C6 sont
-terminés ; ne pas commencer l'ingestion P5-A1, P6 ou P7. Invariants hérités :
+- **`P5-A0 — Analytics Schema Foundation` ✅ IMPLÉMENTÉ, EN ATTENTE DE
+  REVUE/MERGE** sur `p5-a0-analytics-schema-foundation` (**D-037**) :
+  migrations `000014` à `000016`; parent `events` RANGE + `events_default`,
+  append-only; `analytics_sessions`; trois rollups journaliers currency-safe;
+  cinq modèles/factories structurels. Aucune FK vers le commerce, aucun droit
+  `PUBLIC`/`digitrove_runtime`, aucune ingestion, route, API, service, job,
+  campagne, segmentation ou P6/P7. Validation : **32 migrations**, P5-A0
+  **19/256**, suite complète **642/4779**, Pint **235**, rollbacks isolés verts.
+
+**PROCHAINE TÂCHE : revue/CI/merge humain de P5-A0, puis plan P5-A1 —
+First-party Event & Session Ingestion.** Ne pas commencer P5-A1 avant le merge
+de P5-A0; ne pas commencer P6 ou P7. Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —
 `coupon_redemptions` et `redemptions_count` n'arrivent qu'à la confirmation
@@ -354,7 +364,10 @@ avant l'activation réelle de `P4-C3`**. Le guide
 D-035/D-036. Deux jugements
 conservateurs hérités de P3-D1 restent en vigueur : seul
 `products.status = 'published'` est vendable ; `min_order_minor` est un plancher
-mesuré sur le panier entier. P5-A0 est la prochaine fondation BDD.
+mesuré sur le panier entier. D-037 impose aussi que les événements restent
+non autoritatifs, sans FK transactionnelle, sans donnée sensible brute et sans
+droit du runtime métier; chaque future partition enfant doit recevoir ses
+révocations ACL explicites.
 
 ## 🔄 EN FIN DE TÂCHE
 

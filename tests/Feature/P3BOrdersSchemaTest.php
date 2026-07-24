@@ -1014,14 +1014,11 @@ it('allows the future deferred redemption sequence and preserves snapshots after
         ->and($redemption->coupon_code_snapshot)->toBe($codeSnapshot);
 });
 
-it('does not create later P3C, delivery, analytics, or affiliation tables', function () {
+it('does not create P6 marketing or affiliation tables', function () {
     // `payments` is introduced by the P3C-A gate; only the remaining P3C-B/P3C-C
     // and downstream phase tables must still be absent here.
     $forbiddenTables = [
-        'events',
-        'analytics_sessions',
         'campaigns',
-        'daily_sales_stats',
         'customer_segments',
         'affiliate_profiles',
         'affiliate_links',

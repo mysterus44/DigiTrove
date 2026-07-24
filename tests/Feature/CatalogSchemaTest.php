@@ -95,19 +95,15 @@ it('has explicit indexes for reverse catalog lookups', function () {
         ->toContain('product_bundles_child_product_id_index');
 });
 
-it('does not create P3C, payment, delivery, analytics, or affiliation tables', function () {
+it('does not create P6 marketing or affiliation tables', function () {
     $forbiddenTables = [
         'affiliate_profiles',
         'affiliate_links',
         'referrals',
         'affiliate_commissions',
         'affiliate_payouts',
-        'events',
-        'analytics_sessions',
         'campaigns',
-        'daily_sales_stats',
-        'daily_product_stats',
-        'daily_funnel_stats',
+        'customer_segments',
     ];
 
     foreach ($forbiddenTables as $table) {
