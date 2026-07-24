@@ -35,8 +35,9 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Checkout/CheckoutException.php',
     'Checkout/CheckoutRefusalReason.php',
     'Checkout/OrderService.php',
-    // P4-C1 (D-035) — secure delivery grant issuance.
+    // P4-C1/P4-C2 (D-035) — grant issuance and refund revocation.
     'Delivery/GrantIssuanceService.php',
+    'Delivery/RefundCompletionService.php',
     // P3-D4/P3-D5 (D-034) — server-side confirmation. Commerce only, no delivery.
     'Payments/FreeOrderConfirmationService.php',
     // P3-D3 (D-033) — payment initiation. Commerce only, no delivery.
