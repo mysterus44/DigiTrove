@@ -57,6 +57,18 @@ class AppServiceProvider extends ServiceProvider
                 ->response(fn () => response()->json(['message' => 'Download unavailable.'], 429));
         });
 
+        RateLimiter::for('download-file', function (Request $request): Limit {
+            $key = $this->downloadRateLimitKey($request);
+
+            return Limit::perMinute(DeliveryConfig::fileRateLimit())
+                ->by($key)
+                ->response(fn () => response('Download unavailable.', 429, [
+                    'Cache-Control' => 'private, no-store',
+                    'Referrer-Policy' => 'no-referrer',
+                    'X-Content-Type-Options' => 'nosniff',
+                ]));
+        });
+
         // Secure delivery pipeline (P4-C0, D-035): a paid order queues an
         // order-id-only delivery job, and only when the pipeline is enabled.
         Event::listen(OrderPaid::class, QueueSecureDelivery::class);

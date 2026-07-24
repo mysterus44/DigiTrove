@@ -156,18 +156,22 @@ it('retries the historical pairs without delivering a file added after the first
         ->and(DownloadGrant::query()->whereNull('revoked_at')->count())->toBe(1);
 });
 
-it('adds no download HTTP route in the delivery pipeline gate', function (): void {
+it('allows only the three explicitly reviewed P4-C4/C5 download routes', function (): void {
     $applicationDownloadRoutes = collect(Route::getRoutes()->getRoutes())
         ->filter(function ($route): bool {
             $action = $route->getActionName();
 
             return str_contains(mb_strtolower($route->uri()), 'download')
                 && ($action === 'Closure' || str_starts_with($action, 'App\\'));
-        });
-    $routeSources = collect(glob(base_path('routes/*.php')) ?: [])
-        ->map(fn (string $path): string => (string) file_get_contents($path))
-        ->implode("\n");
+        })
+        ->map(fn ($route): string => implode('|', $route->methods()).' '.$route->uri().' '.$route->getActionName())
+        ->sort()
+        ->values()
+        ->all();
 
-    expect($applicationDownloadRoutes)->toBeEmpty()
-        ->and($routeSources)->not->toMatch('/Route::(?:get|post|put|patch|delete|match|any)\\s*\\([^;]*download/is');
+    expect($applicationDownloadRoutes)->toBe([
+        'GET|HEAD downloads/{grantPublicId} App\Http\Controllers\DownloadLandingController',
+        'GET|HEAD downloads/{grantPublicId}/file App\Http\Controllers\DownloadFileController',
+        'POST api/downloads/{grantPublicId}/authorize App\Http\Controllers\Api\DownloadAuthorizationController',
+    ]);
 });

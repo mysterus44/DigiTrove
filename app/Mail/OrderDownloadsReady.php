@@ -59,7 +59,7 @@ final class OrderDownloadsReady extends Mailable
         $rows = '';
         foreach ($this->batch->grants as $grant) {
             /** @var IssuedGrant $grant */
-            // TODO(P4-C4/C5): wire this URL onto the secure authorization + streaming route.
+            // The fragment stays client-side and is exchanged for a short-lived attempt cookie.
             // The token stays in the URI fragment, which browsers do not send
             // to the server or proxy logs. P4-C4/C5 will exchange it for the
             // dedicated attempt credential through the approved HTTP contract.

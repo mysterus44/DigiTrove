@@ -75,6 +75,73 @@ final class DeliveryConfig
         return self::bounded((int) config('delivery.rate_limit.authorize_per_minute'), 1, 120, 'delivery.rate_limit.authorize_per_minute');
     }
 
+    public static function fileRateLimit(): int
+    {
+        return self::bounded((int) config('delivery.rate_limit.file_per_minute'), 1, 600, 'delivery.rate_limit.file_per_minute');
+    }
+
+    public static function streamChunkBytes(): int
+    {
+        return self::bounded((int) config('delivery.file.stream_chunk_bytes'), 65_536, 8_388_608, 'delivery.file.stream_chunk_bytes');
+    }
+
+    public static function fileDriver(): string
+    {
+        $driver = config('delivery.file.driver');
+
+        if (! in_array($driver, ['stream', 'x_accel'], true)) {
+            throw new RuntimeException('The delivery file driver is invalid.');
+        }
+
+        return $driver;
+    }
+
+    public static function xAccelPrefix(): string
+    {
+        if (config('delivery.acceleration.driver') !== 'x_accel') {
+            throw new RuntimeException('X-Accel delivery is not enabled.');
+        }
+
+        $prefix = config('delivery.acceleration.x_accel_prefix');
+        if (! is_string($prefix)
+            || preg_match('/\A\/[A-Za-z0-9_\/-]+\z/', $prefix) !== 1
+            || str_contains($prefix, '..')) {
+            throw new RuntimeException('The X-Accel internal prefix is invalid.');
+        }
+
+        return rtrim($prefix, '/');
+    }
+
+    public static function xAccelMinBytes(): int
+    {
+        return self::bounded((int) config('delivery.acceleration.x_accel_min_bytes'), 0, PHP_INT_MAX, 'delivery.acceleration.x_accel_min_bytes');
+    }
+
+    public static function startedReconcileMinutes(): int
+    {
+        return self::bounded((int) config('delivery.operations.started_reconcile_minutes'), 1, 1_440, 'delivery.operations.started_reconcile_minutes');
+    }
+
+    public static function revokedGrantRetentionDays(): int
+    {
+        return self::bounded((int) config('delivery.operations.revoked_grant_retention_days'), 1, 3_650, 'delivery.operations.revoked_grant_retention_days');
+    }
+
+    public static function abuseWindowHours(): int
+    {
+        return self::bounded((int) config('delivery.operations.abuse_window_hours'), 1, 720, 'delivery.operations.abuse_window_hours');
+    }
+
+    public static function abuseDistinctIpThreshold(): int
+    {
+        return self::bounded((int) config('delivery.operations.abuse_distinct_ip_threshold'), 2, 100, 'delivery.operations.abuse_distinct_ip_threshold');
+    }
+
+    public static function operationsBatchSize(): int
+    {
+        return self::bounded((int) config('delivery.operations.batch_size'), 1, 5_000, 'delivery.operations.batch_size');
+    }
+
     public static function logRetentionDays(): int
     {
         return self::bounded((int) config('delivery.log.retention_days'), 1, 3_650, 'delivery.log.retention_days');

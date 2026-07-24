@@ -9,6 +9,7 @@ use App\Support\DeliveryConfig;
 use App\Support\DownloadAccessDenied;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
+use RuntimeException;
 use Throwable;
 
 final class PrivateFileLocator
@@ -38,6 +39,52 @@ final class PrivateFileLocator
         } catch (Throwable) {
             throw new DownloadAccessDenied;
         }
+    }
+
+    public function size(ProductFile $file): int
+    {
+        try {
+            $size = $this->diskFor($file)->size($file->storage_path);
+        } catch (Throwable) {
+            throw new DownloadAccessDenied;
+        }
+
+        if ($size !== (int) $file->size_bytes) {
+            throw new DownloadAccessDenied;
+        }
+
+        return $size;
+    }
+
+    /**
+     * @return resource
+     */
+    public function readStream(ProductFile $file)
+    {
+        try {
+            $stream = $this->diskFor($file)->readStream($file->storage_path);
+        } catch (Throwable) {
+            throw new DownloadAccessDenied;
+        }
+
+        if (! is_resource($stream)) {
+            throw new DownloadAccessDenied;
+        }
+
+        return $stream;
+    }
+
+    public function xAccelPath(ProductFile $file): string
+    {
+        $disk = config("filesystems.disks.{$file->storage_disk}");
+        if (! is_array($disk) || ($disk['driver'] ?? null) !== 'local') {
+            throw new RuntimeException('X-Accel requires a local private disk.');
+        }
+
+        $prefix = DeliveryConfig::xAccelPrefix();
+        $segments = array_map('rawurlencode', explode('/', (string) $file->storage_path));
+
+        return $prefix.'/'.implode('/', $segments);
     }
 
     private function validPath(string $path): bool

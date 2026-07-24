@@ -36,7 +36,10 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Checkout/CheckoutRefusalReason.php',
     'Checkout/OrderService.php',
     // P4-C1/P4-C2 (D-035) — grant issuance and refund revocation.
+    'Delivery/ByteRangeParser.php',
     'Delivery/DownloadAuthorizationService.php',
+    'Delivery/DownloadFileService.php',
+    'Delivery/DownloadOperationsService.php',
     'Delivery/GrantIssuanceService.php',
     'Delivery/PrivateFileLocator.php',
     'Delivery/RefundCompletionService.php',
@@ -1007,6 +1010,7 @@ it('keeps HEAD commercially inert and allows only the explicitly reviewed downlo
     sort($downloadRoutes);
     expect($downloadRoutes)->toBe([
         'GET|HEAD downloads/{grantpublicid}',
+        'GET|HEAD downloads/{grantpublicid}/file',
         'POST api/downloads/{grantpublicid}/authorize',
     ]);
 
@@ -1019,8 +1023,11 @@ it('keeps HEAD commercially inert and allows only the explicitly reviewed downlo
         ->all();
     expect($downloadHttpFiles)->toBe([
         'Http/Controllers/Api/DownloadAuthorizationController.php',
+        'Http/Controllers/DownloadFileController.php',
         'Http/Controllers/DownloadLandingController.php',
         'Services/Delivery/DownloadAuthorizationService.php',
+        'Services/Delivery/DownloadFileService.php',
+        'Services/Delivery/DownloadOperationsService.php',
     ]);
     // P4-C0/P4-C3 (D-035) legitimately introduces the queued delivery layer.
     // The boundary stays FAIL-CLOSED: each directory may contain EXACTLY its
