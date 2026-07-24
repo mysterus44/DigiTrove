@@ -35,6 +35,9 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Checkout/CheckoutException.php',
     'Checkout/CheckoutRefusalReason.php',
     'Checkout/OrderService.php',
+    // P4-C1/P4-C2 (D-035) — grant issuance and refund revocation.
+    'Delivery/GrantIssuanceService.php',
+    'Delivery/RefundCompletionService.php',
     // P3-D4/P3-D5 (D-034) — server-side confirmation. Commerce only, no delivery.
     'Payments/FreeOrderConfirmationService.php',
     // P3-D3 (D-033) — payment initiation. Commerce only, no delivery.
@@ -1005,8 +1008,24 @@ it('keeps the gate purely relational: no HTTP surface, no HEAD artefact, no P5 o
     foreach ($appFiles as $file) {
         expect((string) $file)->not->toMatch('/DownloadController|DownloadService|IssueDownloadGrants|Stream|RateLimit/i');
     }
-    expect(File::isDirectory(app_path('Listeners')))->toBeFalse()
-        ->and(File::isDirectory(app_path('Jobs')))->toBeFalse();
+    // P4-C0/P4-C3 (D-035) legitimately introduces the queued delivery layer.
+    // The boundary stays FAIL-CLOSED: each directory may contain EXACTLY its
+    // allowlisted P4-C file and nothing else — a smuggled download controller,
+    // streamer or rate-limiter under app/Jobs or app/Listeners is still caught.
+    $dirAllowlist = static function (string $dir, array $allowed): void {
+        if (! File::isDirectory(app_path($dir))) {
+            expect($allowed)->toBe([]);
+
+            return;
+        }
+        $actual = collect(File::allFiles(app_path($dir)))
+            ->map(fn ($f) => str_replace('\\', '/', $f->getRelativePathname()))
+            ->sort()->values()->all();
+        expect($actual)->toBe($allowed);
+    };
+    $dirAllowlist('Jobs', ['SecureDeliveryJob.php']);
+    $dirAllowlist('Listeners', ['QueueSecureDelivery.php']);
+    $dirAllowlist('Mail', ['OrderDownloadsReady.php']);
 
     // P3-D1 (D-030) legitimately introduces app/Services/Pricing, a read-only
     // COMMERCE kernel. Guarding by keyword or by the first directory name was

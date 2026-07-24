@@ -14,7 +14,7 @@ P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
-P4-C APPLICATIF     : ░░░░░░░░░░  0% — planifié D-030 (P4-C0→P4-C6), non démarré
+P4-C APPLICATIF     : ██████░░░░  P4-C0→C3 IMPLÉMENTÉS (macro-gate `p4-c0-c3-secure-delivery-pipeline`, D-035, EN ATTENTE DE REVUE/MERGE) : Queue/Mail safety + Grant Issuance + Refund Revocation + Secure Delivery Job, pipeline désactivé par défaut, aucune migration ; P4-C4/C5/C6 non démarrés
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
@@ -442,10 +442,11 @@ ou un log).
 
 | Gate | Branche future | Objectif unique | Statut |
 |------|----------------|-----------------|--------|
-| **P4-C0** Queue & Mail Secret Safety | `p4-c0-queue-mail-secret-safety` | Rendre l'infra asynchrone sûre **avant** qu'un secret existe : connexion de queue explicite, **`after_commit = true`**, stratégie de failed jobs sans token, worker/retry, **tests de sérialisation sur connexion non-`sync`**, garde anti-journalisation du token, interdiction de `MAIL_MAILER=log` en environnement émettant de vrais liens. | ⬜ TODO — **bloque tous les suivants** |
-| **P4-C1** Download Grant Issuance | `p4-c1-grant-issuance` | Service d'émission : CSPRNG, hash seul, `orders FOR UPDATE`, G3, unique partiel du couple actif. Implémentable **non câblé** tant que C2/C3 ne sont pas prêts. | ⬜ TODO |
-| **P4-C2** Refund Grant Revocation | `p4-c2-refund-grant-revocation` | `RefundService` : verrou Order → révocation de tous les grants actifs → `orders.status = refunded`, **même transaction** (G4 différé). Refund partiel : **aucune** révocation automatique. | ⬜ TODO — **à merger avant activation de P4-C3** |
-| **P4-C3** Secure Secret Delivery Job | `p4-c3-secret-delivery-job` | Job queued `order_id` seul : verrou Order, génération des tokens en mémoire, émission ou révocation/réémission au retry, envoi synchrone. Nouveau dispatch après succès ⇒ sans effet. | ⬜ TODO |
+| **P4-C0→C3** Secure Delivery Pipeline *(macro-gate, D-035)* | `p4-c0-c3-secure-delivery-pipeline` | Queue/Mail safety (job unique `order_id` seul, Mailable non-`ShouldQueue` et non sérialisable, transport `log` refusé, `DeliveryConfig` fail-closed) + Grant Issuance (CSPRNG, hash seul, snapshot bundle, no upgrade) + Refund Revocation (partial garde, full révoque atomique G4) + Secure Delivery Job (tokens en mémoire, envoi synchrone, retry révoque/réémet). Pipeline **désactivé par défaut**. | 🔶 **IMPLÉMENTÉ — EN ATTENTE DE REVUE/MERGE** ; **aucune migration** ; P4-C **50/165** (C0 16/42, C1 14/36, C2 7/29, C3 9/30, concurrence 4/28 ; C1–C5 PostgreSQL réels) ; suite complète **587/4259**, Pint **191** |
+| **P4-C0** Queue & Mail Secret Safety | `p4-c0-queue-mail-secret-safety` | *(fondu dans le macro-gate ci-dessus)* | ✅ inclus dans `p4-c0-c3-secure-delivery-pipeline` |
+| **P4-C1** Download Grant Issuance | `GrantIssuanceService` | CSPRNG, hash seul, `orders FOR UPDATE`, G3, unique partiel du couple actif, snapshot bundle, no implicit upgrade. | ✅ inclus dans `p4-c0-c3-secure-delivery-pipeline` |
+| **P4-C2** Refund Grant Revocation | `RefundCompletionService` | verrou Payment→Order → révocation de tous les grants actifs → `orders.status = refunded`, **même transaction** (G4 différé). Refund partiel : **aucune** révocation. | ✅ inclus dans `p4-c0-c3-secure-delivery-pipeline` |
+| **P4-C3** Secure Secret Delivery Job | `SecureDeliveryJob` | Job queued `order_id` seul, tokens en mémoire, émission ou révocation/réémission au retry, envoi synchrone. | ✅ inclus dans `p4-c0-c3-secure-delivery-pipeline` |
 | **P4-C4** Download Authorization | `p4-c4-download-authorization` | Résolution uniforme non énumérable, tentative authentifiée (secret CSPRNG dédié), log `started` + `+1` atomique via **G5**, Range/retry sur une seule ligne, HEAD sans effet. **Prérequis : réécrire `SECURITE_TELECHARGEMENT.md`.** | ⬜ TODO |
 | **P4-C5** HTTP File Delivery | `p4-c5-http-file-delivery` | Route + contrôleur mince + rate limiting + transport du secret (header/cookie, **jamais** en query string) + mécanisme de remise choisi selon `size_bytes`. **Aucun téléchargement public n'existe avant ce gate.** | ⬜ TODO |
 | **P4-C6** Delivery Operations | `p4-c6-delivery-operations` | Purge via G6, réconciliation des `started` anciens, détection d'abus (> 3 IP / 24 h), révocation support, métriques. | ⬜ TODO |
@@ -454,12 +455,12 @@ ou un log).
 
 | Dette mesurée | Gate |
 |---|---|
-| `DOWNLOAD_LINK_TTL_HOURS` / `DOWNLOAD_MAX_PER_GRANT` dans `.env.example`, lus par **aucun** fichier `config/` | P4-C1 |
+| `DOWNLOAD_LINK_TTL_HOURS` / `DOWNLOAD_MAX_PER_GRANT` hérités dans `.env.example` ne sont pas autoritatifs ; P4-C lit et borne exclusivement `DELIVERY_GRANT_TTL_MINUTES` / `DELIVERY_GRANT_MAX_DOWNLOADS` via `config/delivery.php` | dette de nettoyage P4-C4 |
 | queue par défaut `database` sans table `jobs` / `job_batches` | P4-C0 |
 | failed jobs par défaut **`database-uuids`** sans table `failed_jobs` (sous-point **ouvert**, à trancher au gate) | P4-C0 |
 | `after_commit = false` sur toutes les connexions de queue | P4-C0 |
-| `MAIL_MAILER` par défaut `log` ⇒ une URL avec token brut irait dans `storage/logs` | P4-C0 |
-| `phpunit.xml` force `QUEUE_CONNECTION=sync` ⇒ sérialisation réelle jamais prouvée | P4-C0 |
+| `MAIL_MAILER=log` avec pipeline actif | ✅ fermé P4-C0 : refus fail-closed avant dispatch et avant émission |
+| payload de queue contenant un secret | ✅ fermé P4-C0 : payload Laravel réel introspecté, job `order_id` seul ; Mailable queue/sérialisation refusées |
 | enums `DownloadLogStatus` / `DownloadDenialReasonCode` prévus par D-029.5, absents de `app/Enums/` | P4-C4 |
 | `coupons.redemptions_count` et plafonds coupon entièrement applicatifs (aucun trigger) | P3-D4 |
 | aucun `Money` value object malgré `LARAVEL_PATTERNS.md` | P3-D1 |

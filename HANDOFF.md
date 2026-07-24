@@ -7,9 +7,27 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Claude Code
-- **Date** : 2026-07-23
-- **Branche git active** : `p0-foundations-laravel13` (stable, à `a62563fd` —
-  merge de P3-D4/D5)
+- **Date** : 2026-07-24
+- **Branche git active** : `p4-c0-c3-secure-delivery-pipeline` (macro-gate P4-C,
+  sur la stable locale de clôture `c79b48a`)
+- **P4-C0 → P4-C3 IMPLÉMENTÉS — EN ATTENTE DE REVUE/MERGE** (macro-gate unique,
+  **D-035**, **aucune migration** — 29 inchangées) : pipeline de livraison
+  sécurisé **désactivé par défaut**. Listener `QueueSecureDelivery` (dispatch si
+  `DELIVERY_PIPELINE_ENABLED=true`) → job `SecureDeliveryJob` **unique, `order_id`
+  seul** → `GrantIssuanceService` (tokens CSPRNG en mémoire, SHA-256 en base,
+  snapshot bundle unique autorité, **no implicit upgrade**, révoque/réémet au
+  retry) → Mailable `OrderDownloadsReady` **synchrone, jamais `ShouldQueue`,
+  jamais sérialisable**.
+  `RefundCompletionService` : partial ⇒ `partially_refunded` (grants gardés),
+  full ⇒ `refunded` + révocation de tous les grants actifs **dans la même
+  transaction** (G4). CinetPay/refund/e-mail : adaptateurs réels non inventés
+  (scaffolds `MAIL_PROVIDER_SETUP.md` / `REFUND_PROVIDER_SETUP.md`). **Aucun
+  endpoint de téléchargement, aucun `download_logs`, aucun `downloads_count`.**
+  Validation : P4-C **50 tests / 165 assertions** (C0 16/42, C1 14/36, C2
+  7/29, C3 9/30, concurrence 4/28), suite complète **587/4259**, Pint **191**,
+  **29 migrations**. **Prochaine macro-tâche : `P4-C4 + P4-C5 + P4-C6`** (Download
+  Authorization + HTTP File Delivery + Operations) — réécrire d'abord
+  `.context/skills/SECURITE_TELECHARGEMENT.md`.
 - **P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS** via
   [PR #23](https://github.com/mysterus44/DigiTrove/pull/23), head `8aad4fc`,
   merge `a62563fdb8aad86bef5cf1ac27b4bebcb5259342` (parents `0b9e7ac` +
@@ -356,7 +374,17 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 Après merge du macro-gate : `P4-C0 + P4-C1 + P4-C2` (NON commencé)
+## 🎯 Revue/merge P4-C0→C3, puis P4-C4 + P4-C5 + P4-C6
+
+Le macro-gate P4-C0→C3 est implémenté sur
+`p4-c0-c3-secure-delivery-pipeline` et attend sa revue. Ne pas activer le
+pipeline avant P4-C4/C5. Après merge, réécrire
+`.context/skills/SECURITE_TELECHARGEMENT.md`, puis traiter autorisation,
+streaming HTTP et opérations dans un gate séparé.
+
+## 🗃️ Archive de passation P3-D4/D5 (supersédée par l'état en tête)
+
+## 🎯 Après merge du macro-gate : `P4-C0 + P4-C1 + P4-C2` (historique)
 
 **`P3-D4 + P3-D5` SONT IMPLÉMENTÉS** sur `p3-d4-d5-payment-confirmation`
 (macro-gate unique, **D-034**), **en attente de revue/merge**. **Aucune
@@ -633,29 +661,19 @@ aucun push direct sur `main`.
   `download_grant_id`) et omet `public_id`, `quota_consumed`, `retention_until`
   (tous NOT NULL sans DEFAULT) ; ni tentative authentifiée, ni G5, ni frontière
   runtime. **À réécrire avant le gate P4-C4** (action obligatoire de D-030).
-- 🚨 **Infrastructure de queue non opérationnelle par défaut** (D-030, dette
-  P4-C0) : `config/queue.php` L16 `env('QUEUE_CONNECTION', 'database')`, L124
-  `env('QUEUE_FAILED_DRIVER', 'database-uuids')` table `failed_jobs`, L105-107
-  batching `job_batches` — **aucune de ces trois tables n'a de migration**.
-  `after_commit = false` sur toutes les connexions (L44/L53/L64/L73) : un job
-  programmé dans une transaction peut être consommé avant son COMMIT. Seul
-  `.env.example` masque le problème (Redis + `QUEUE_FAILED_DRIVER=file`).
-  `config/mail.php` L17 vaut `env('MAIL_MAILER', 'log')` : un e-mail portant un
-  token brut serait écrit intégralement dans `storage/logs`. Enfin `phpunit.xml`
-  force `QUEUE_CONNECTION=sync`, donc l'invariant « aucun secret sérialisé » est
-  aujourd'hui **inprouvable en test**. Tout cela doit être réglé par **P4-C0**
-  avant qu'un secret de téléchargement existe.
-- ⚠️ **G4 rend la révocation obligatoire** : `validate_download_grant_order_
-  consistency` est différé et monté sur `download_grants` **et** `orders`. Dès
-  qu'un grant actif existe, passer un Order à `refunded` échoue au COMMIT si les
-  grants ne sont pas révoqués dans la même transaction. **P4-C2 doit donc être
-  mergé avant l'activation réelle de P4-C3.**
+- ✅ **P4-C0 ferme la frontière queue/mail** : Redis et failed jobs fichier dans
+  `.env.example`, job explicitement `afterCommit`, payload Laravel réel
+  introspecté (`order_id` seul), Mailable non-queueable/non-sérialisable et
+  `MAIL_MAILER=log` refusé avant toute émission.
+- ✅ **P4-C2 satisfait G4** : un remboursement total passe l'Order à `refunded`
+  et révoque tous ses grants actifs dans la même transaction ; un partiel les
+  conserve.
 - ⚠️ `coupons.redemptions_count` n'est maintenu par **aucun trigger** : plafond
   global et plafond client sont 100 % applicatifs, sous `FOR UPDATE` (gate P3-D4).
-- ⚠️ `DOWNLOAD_LINK_TTL_HOURS` et `DOWNLOAD_MAX_PER_GRANT` existent dans
-  `.env.example` mais **aucun fichier `config/` ne les lit** : il n'existe encore
-  aucun point de configuration pour porter `expires_at` / `max_downloads`, que
-  D-029.1-B exige explicites à chaque INSERT (gate P4-C1).
+- ⚠️ Les anciens `DOWNLOAD_LINK_TTL_HOURS` / `DOWNLOAD_MAX_PER_GRANT` restent
+  hérités mais non autoritatifs ; P4-C utilise exclusivement les valeurs bornées
+  `DELIVERY_GRANT_TTL_MINUTES` / `DELIVERY_GRANT_MAX_DOWNLOADS` de
+  `config/delivery.php`. Leur nettoyage est reporté à P4-C4.
 - 🚨 **Legacy** : deux mots de passe en clair étaient dans l'historique git de l'ancien
   dépôt. Les scripts concernés sont neutralisés, mais les valeurs historiques doivent
   rester considérées compromises.

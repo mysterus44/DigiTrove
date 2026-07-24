@@ -4,7 +4,10 @@ namespace App\Providers;
 
 use App\Contracts\Payments\PaymentConfirmationProvider;
 use App\Contracts\Payments\PaymentProvider;
+use App\Events\OrderPaid;
+use App\Listeners\QueueSecureDelivery;
 use App\Payments\PaymentProviderFactory;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -42,6 +45,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // Secure delivery pipeline (P4-C0, D-035): a paid order queues an
+        // order-id-only delivery job, and only when the pipeline is enabled.
+        Event::listen(OrderPaid::class, QueueSecureDelivery::class);
     }
 }

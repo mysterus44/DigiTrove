@@ -16,7 +16,8 @@ namespace App\Events;
  * `pending → paid` transition, AFTER COMMIT, never on replay or rollback, never
  * for `payment_review`/pending/processing/failed/cancelled/unknown. A process
  * crash between COMMIT and dispatch is a residual window; durable reconciliation
- * belongs to the future P4-C/Ops flow. No listener exists in this gate.
+ * belongs to the future P4-C/Ops flow. P4-C0 adds one minimal, feature-gated
+ * listener that dispatches an order-id-only delivery job.
  */
 final class OrderPaid
 {

@@ -116,6 +116,7 @@ function createP3BOrder(
 function createP3BCouponOrder(OrderStatus $status = OrderStatus::Paid, ?Coupon $coupon = null): array
 {
     $coupon ??= Coupon::factory()->percent(1000)->create();
+    $placedAt = now()->toImmutable();
 
     $result = createP3BOrder([
         'coupon_id' => $coupon->id,
@@ -127,8 +128,10 @@ function createP3BCouponOrder(OrderStatus $status = OrderStatus::Paid, ?Coupon $
         'discount_minor' => 1000,
         'total_minor' => 9000,
         'status' => $status,
+        'placed_at' => $placedAt,
+        'expires_at' => $placedAt->addMinutes(30),
         'paid_at' => in_array($status, [OrderStatus::Paid, OrderStatus::PartiallyRefunded, OrderStatus::Refunded], true)
-            ? now()
+            ? $placedAt
             : null,
     ], [
         'line_discount_minor' => 1000,
