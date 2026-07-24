@@ -122,7 +122,11 @@ P4-C0→C3 est mergée via PR #24 ; P4-C4→C6 est implémentée sur
 `p4-c4-c6-download-delivery-operations` et attend review/merge (D-036). Aucune
 migration `000014` : autorisation, fichier HTTP et opérations utilisent
 exclusivement `download_grants`, `download_logs`, G1→G6 et le disque privé
-existants. Le pipeline reste désactivé par défaut.
+existants. Le hardening `5bd86d3` garantit qu'aucun I/O stockage privé ni
+callback stream ne s'exécute sous transaction PostgreSQL ; la livraison suit
+transaction DB courte → I/O hors transaction → finalisation DB courte. Le
+pipeline reste désactivé par défaut et son kill switch coupe aussi les
+tentatives déjà émises.
 
 - **Couche applicative planifiée** ✅ **D-030 FINALISÉE ET VALIDÉE**
   (KingKouda : **Q1 = A renforcée**, **Q2 = B renforcée**, **Q3 = A**) —
@@ -157,11 +161,9 @@ existants. Le pipeline reste désactivé par défaut.
   `storage/logs`) ; `phpunit.xml` en `sync` ⇒ sérialisation jamais prouvée ;
   `DOWNLOAD_*` de `.env.example` lues par aucun `config/` ; enums `DownloadLog*`
   absents ; `coupons.redemptions_count` 100 % applicatif ; pas de `Money`.
-- 🚨 **`.context/skills/SECURITE_TELECHARGEMENT.md` est PARTIELLEMENT PÉRIMÉ**
-  (UPDATE direct de `downloads_count`, colonne `grant_id` inexistante, colonnes
-  P4-B obligatoires absentes, ni tentative authentifiée ni G5 ni frontière
-  runtime). **Ne plus l'utiliser comme modèle de code ; le réécrire avant le gate
-  `P4-C4`.**
+- ✅ **`.context/skills/SECURITE_TELECHARGEMENT.md` est aligné sur
+  D-035/D-036** : G5/G6, tentative authentifiée, disque privé, frontières
+  runtime et séparation stricte entre transactions PostgreSQL et I/O stockage.
 
 - **`P3-D1 — Pricing & Quote Kernel` ✅ TERMINÉ ET MERGÉ** via
   [PR #17](https://github.com/mysterus44/DigiTrove/pull/17), merge `78f475e7`
@@ -331,8 +333,12 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   ligne ; HEAD reste inerte ; stream privé borné, X-Accel local opt-in
   fail-closed, aucune URL objet. Réconciliation, détection d'abus HMAC,
   révocation support, purge G6, métriques et scheduler n'exposent aucun secret.
-  P4-C4 **6/67**, P4-C5 **7/120**, P4-C6 **5/41**, P4C456 **9/62**, suite
-  complète **614/4437**, Pint **216**, 29 migrations, aucune `000014`.
+  Hardening : préflight stockage hors transaction, transactions DB courtes
+  avant/après l'I/O, garde transaction ambiante, locator fail-closed, kill
+  switch couvrant les tentatives existantes et secrets bruts
+  `SensitiveParameter`. Filtre P4-C4 **18/152** (autorisation + contrat exacts
+  **12/109**), P4-C5 **13/202**, P4-C6 **5/41**, P4C456 **10/72**, suite
+  complète **623/4542**, Pint **217**, 29 migrations, aucune `000014`.
 
 **PROCHAINE TÂCHE : review/merge du macro-gate P4-C4→C6. Après clôture séparée,
 P5 — Analytics.** Invariants hérités :

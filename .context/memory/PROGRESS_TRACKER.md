@@ -14,7 +14,7 @@ P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
-P4-C APPLICATIF     : ██████████  P4-C0→C3 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 ; P4-C4→C6 IMPLÉMENTÉS sur `p4-c4-c6-download-delivery-operations`, en attente de review/merge (D-036, aucune migration). Autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut
+P4-C APPLICATIF     : ██████████  P4-C0→C3 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 ; P4-C4→C6 IMPLÉMENTÉS et durcis sur `p4-c4-c6-download-delivery-operations`, en attente de review/merge (D-036, aucune migration). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut
 P5 ANALYTIQUE       : ░░░░░░░░░░  0%
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
@@ -449,14 +449,18 @@ ou un log).
 | **P4-C1** Download Grant Issuance | `GrantIssuanceService` | CSPRNG, hash seul, `orders FOR UPDATE`, G3, unique partiel du couple actif, snapshot bundle, no implicit upgrade. | ✅ inclus dans `p4-c0-c3-secure-delivery-pipeline` |
 | **P4-C2** Refund Grant Revocation | `RefundCompletionService` | verrou Payment→Order → révocation de tous les grants actifs → `orders.status = refunded`, **même transaction** (G4 différé). Refund partiel : **aucune** révocation. | ✅ inclus dans `p4-c0-c3-secure-delivery-pipeline` |
 | **P4-C3** Secure Secret Delivery Job | `SecureDeliveryJob` | Job queued `order_id` seul, tokens en mémoire, émission ou révocation/réémission au retry, envoi synchrone. | ✅ inclus dans `p4-c0-c3-secure-delivery-pipeline` |
-| **P4-C4** Download Authorization | `p4-c4-c6-download-delivery-operations` | Échange fragment → header Bearer ; page DB-free ; tentative CSPRNG dédiée, hash seul ; cookie `HttpOnly/SameSite=Strict` ; refus uniforme ; G5 atomique ; limiter HMAC-IP + public ID hashé. | ✅ IMPLÉMENTÉ — `de0fbe4`, **6/67**, en attente de review/merge |
-| **P4-C5** HTTP File Delivery | `p4-c4-c6-download-delivery-operations` | GET/HEAD privés ; tentative réutilisée ; Range simple strict ; stream borné et fermé ; headers sûrs ; X-Accel local opt-in fail-closed ; aucune URL objet publique. | ✅ IMPLÉMENTÉ — `fefb28e`, **7/120**, en attente de review/merge |
-| **P4-C6** Delivery Operations | `p4-c4-c6-download-delivery-operations` | Réconciliation sans restitution de quota ; détection d'abus pseudonymisée ; révocation support set-once ; purge G6 ; métriques/commandes/scheduler sans secret. | ✅ IMPLÉMENTÉ — `fefb28e`, **5/41** + P4C456 **9/62**, en attente de review/merge |
+| **P4-C4** Download Authorization | `p4-c4-c6-download-delivery-operations` | Échange fragment → header Bearer ; page DB-free ; préflight stockage hors transaction puis transaction G5 courte ; tentative CSPRNG dédiée, hash seul ; cookie `HttpOnly/SameSite=Strict` ; refus uniforme ; limiter HMAC-IP + public ID hashé. | ✅ IMPLÉMENTÉ + DURCI — `de0fbe4` + `5bd86d3`, filtre **18/152** (autorisation + contrat exacts 12/109), en attente de review/merge |
+| **P4-C5** HTTP File Delivery | `p4-c4-c6-download-delivery-operations` | Transaction DB courte → I/O privé hors transaction → finalisation DB courte ; GET/HEAD ; Range strict ; stream borné et fermé ; X-Accel local opt-in fail-closed ; aucune URL objet publique. | ✅ IMPLÉMENTÉ + DURCI — `fefb28e` + `5bd86d3`, **13/202**, en attente de review/merge |
+| **P4-C6** Delivery Operations | `p4-c4-c6-download-delivery-operations` | Réconciliation sans restitution de quota ; détection d'abus pseudonymisée ; révocation support set-once ; purge G6 ; métriques/commandes/scheduler sans secret. | ✅ IMPLÉMENTÉ — `fefb28e`, **5/41** + P4C456 **10/72**, en attente de review/merge |
 
-Validation macro-gate : suite complète **614/4437**, Pint **216 fichiers**,
-`git diff --check` propre, **29 migrations** jusqu'à `000013`, aucune `000014`.
-Les tests dédiés C1→C6 utilisent des processus et connexions PostgreSQL runtime
-indépendants. Prochaine phase après review/merge : **P5 — Analytics**.
+Validation macro-gate après hardening : suite complète **623/4542**, Pint **217
+fichiers**, `git diff --check` propre, **29 migrations** jusqu'à `000013`,
+aucune `000014`. Niveaux maximum observés : `exists=0`, `size=0`,
+`readStream=0`, `xAccelPath=0`, callback stream `=0`. Le kill switch service
+coupe aussi les tentatives existantes et les secrets bruts sont marqués
+`SensitiveParameter`. Les tests dédiés C1→C6 utilisent des processus et
+connexions PostgreSQL runtime indépendants. Prochaine phase après review/merge :
+**P5 — Analytics**.
 
 ### Dettes reconnues par D-030 et leur gate
 

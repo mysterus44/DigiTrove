@@ -2750,8 +2750,9 @@ tâche : macro-gate P4-C4/P4-C5/P4-C6.
 ### D-036 — Download Authorization, File Delivery and Operations ✅
 **Date** : 2026-07-24. **Statut** : **P4-C4 + P4-C5 + P4-C6 IMPLÉMENTÉS — EN
 ATTENTE DE REVUE/MERGE** sur `p4-c4-c6-download-delivery-operations` (commits
-`de0fbe4` + `fefb28e`, **aucune migration** — 29 inchangées). Le pipeline reste
-**désactivé par défaut** jusqu'à sa clôture et son activation opérationnelle.
+`de0fbe4` + `fefb28e` + `671669b` + hardening `5bd86d3`, **aucune migration** —
+29 inchangées). Le pipeline reste **désactivé par défaut** jusqu'à sa clôture et
+son activation opérationnelle.
 
 **DÉCISIONS FIGÉES**
 1. Le secret brut du grant ne passe jamais en query string. Le lien e-mail le
@@ -2765,11 +2766,13 @@ ATTENTE DE REVUE/MERGE** sur `p4-c4-c6-download-delivery-operations` (commits
    persisté ; le brut reste en mémoire puis dans le cookie `dl_attempt`
    `HttpOnly`, `SameSite=Strict`, `Secure` hors local/testing, chemin borné au
    fichier et durée courte.
-4. Le POST verrouille **Order → DownloadGrant**, revalide grant, Order et fichier
-   privé, puis laisse **G5** créer exactement un `download_logs.started` et
-   incrémenter `downloads_count` de `+1` atomiquement. Une tentative encore
-   réutilisable bloque le rejeu ; le dernier quota produit une seule
-   consommation et un refus uniforme non consommant.
+4. Le POST effectue un préflight du fichier privé **hors transaction**, puis
+   verrouille **Order → DownloadGrant** dans une transaction courte sans I/O
+   filesystem. Il revalide grant, Order et métadonnées ProductFile, puis laisse
+   **G5** créer exactement un `download_logs.started` et incrémenter
+   `downloads_count` de `+1` atomiquement. Une tentative encore réutilisable
+   bloque le rejeu ; le dernier quota produit une seule consommation et un refus
+   uniforme non consommant.
 5. Grant inconnu, identifiant malformé, token faux, grant expiré/révoqué/épuisé,
    Order non livrable et fichier indisponible exposent la même réponse publique.
    Aucun token, digest, disque, `storage_path` ou détail SQL/stack ne sort.
@@ -2781,10 +2784,11 @@ ATTENTE DE REVUE/MERGE** sur `p4-c4-c6-download-delivery-operations` (commits
 8. Un seul Range `bytes` strict est accepté (`start-end`, `start-`, `-suffix`).
    Multi-range, unité différente, syntaxe ambiguë, overflow et hors-limite
    retournent `416`. Les retries réutilisent le même attempt sans quota.
-9. Le mode par défaut est un `readStream()` privé, lu par chunks bornés et fermé
-   en `finally`. `X-Accel-Redirect` est opt-in, réservé au disque local privé et
-   fail-closed si préfixe, chemin ou taille minimale sont invalides. Aucune URL
-   objet publique, permanente ou pré-signée n'est générée.
+9. Le mode par défaut est un `readStream()` privé, ouvert **hors transaction
+   PostgreSQL**, lu par chunks bornés et fermé en `finally`.
+   `X-Accel-Redirect` est préparé lui aussi hors transaction, opt-in, réservé au
+   disque local privé et fail-closed si préfixe, chemin ou taille minimale sont
+   invalides. Aucune URL objet publique, permanente ou pré-signée n'est générée.
 10. `completed` signifie remise réussie au mécanisme de livraison, jamais preuve
     de réception intégrale par le navigateur (R3A). Une erreur avant ouverture
     du flux devient `denied/storage_failure` ; une interruption ultérieure relève
@@ -2818,6 +2822,25 @@ ATTENTE DE REVUE/MERGE** sur `p4-c4-c6-download-delivery-operations` (commits
     qu'une transition. Aucun `25P02`, `42501` ou deadlock.
 18. Le schéma P4-B existant suffit. **Aucune migration `000014`** ni nouvelle
     table n'est créée.
+19. Aucun I/O filesystem ou objet n'est autorisé sous transaction PostgreSQL.
+    `PrivateFileLocator` refuse en production `diskFor`, `assertResolvable`,
+    `size`, `readStream` et `xAccelPath` lorsque
+    `DB::transactionLevel() !== 0`. Les services d'autorisation et de livraison
+    refusent également toute transaction ambiante avant lecture BDD ou stockage.
+20. La livraison suit trois phases explicites : transaction DB courte
+    **Order → Grant → Log** et snapshot scalaire immuable ; I/O stockage,
+    Range, stream ou X-Accel hors transaction ; puis transaction DB courte de
+    revalidation/finalisation. Le callback HTTP s'exécute au niveau de
+    transaction zéro.
+21. Une erreur stockage ferme tout stream ouvert puis finalise séparément le log
+    encore `started` en `denied/storage_failure`, sans restitution de quota.
+    Une revalidation finale refusée ferme immédiatement le stream et ne retourne
+    aucun fichier.
+22. `DELIVERY_PIPELINE_ENABLED=false` coupe au niveau service les nouvelles
+    autorisations **et les tentatives déjà émises** (GET, HEAD, Range et appel
+    direct), sans accès stockage ni mutation de log/compteur.
+23. Les paramètres transportant les secrets bruts grant/attempt sont marqués
+    `#[SensitiveParameter]`. La persistance reste exclusivement SHA-256.
 
 **SURFACE HTTP** :
 `GET /downloads/{grantPublicId}` ·
@@ -2827,10 +2850,12 @@ Headers fichier : `Accept-Ranges`, `Content-Length`, `Content-Disposition`
 nettoyé, `ETag`, `Content-Range` pour 206/416, `Cache-Control: private, no-store`,
 `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`.
 
-**VALIDATION** : P4-C4 **6/67**, P4-C5 **7/120**, P4-C6 **5/41**, contrat et
-concurrence P4-C456 **9/62**. Suite complète **614 tests / 4437 assertions**,
-Pint **216 fichiers**, `git diff --check` propre, **29 migrations** jusqu'à
-`000013`, aucune `000014`.
+**VALIDATION APRÈS HARDENING** : filtre P4-C4 **18/152** (inclut P4C456 ;
+autorisation + contrat exacts **12/109**), P4-C5 **13/202**, P4-C6 **5/41**,
+contrat et concurrence P4-C456 **10/72**. Les niveaux maximum observés sont
+`exists=0`, `size=0`, `readStream=0`, `xAccelPath=0` et callback stream `=0`.
+Suite complète **623 tests / 4542 assertions**, Pint **217 fichiers**,
+`git diff --check` propre, **29 migrations** jusqu'à `000013`, aucune `000014`.
 
 **ALTERNATIVES REJETÉES** : token en query/cookie de grant/localStorage/log ;
 nouvelle ligne par Range ; quota rendu après interruption ; fichier public ;

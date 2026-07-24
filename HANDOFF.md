@@ -10,22 +10,26 @@
 - **Date** : 2026-07-24
 - **Branche git active** : `p4-c4-c6-download-delivery-operations` ; base stable
   incluant la clôture P4-C0/C3 `f8cfd8f`, commits feature `de0fbe4` +
-  `fefb28e`.
+  `fefb28e` + `671669b`, hardening stockage `5bd86d3`.
 - **P4-C4 → P4-C6 IMPLÉMENTÉS — EN ATTENTE DE REVUE/MERGE** (D-036,
   **aucune migration** — 29 inchangées). Surface :
   `GET /downloads/{grantPublicId}` (page d'échange DB-free, fragment retiré),
   `POST /api/downloads/{grantPublicId}/authorize` (Bearer grant, refus uniforme,
   G5 atomique, cookie de tentative `HttpOnly/SameSite=Strict`) et
   `GET|HEAD /downloads/{grantPublicId}/file` (attempt cookie seulement).
-  Streaming privé par `readStream()` en chunks, Range simple strict, HEAD sans
-  effet, headers no-store/nosniff/no-referrer ; X-Accel local opt-in
-  fail-closed, aucune URL objet publique. Opérations : réconciliation sans rendu
-  de quota, abus par HMAC IP, révocation support set-once, purge G6, métriques,
-  cinq commandes et scheduler sans overlap. C1→C6 prouvent les verrous sur
-  processus PostgreSQL runtime indépendants. Validation : P4-C4 **6/67**,
-  P4-C5 **7/120**, P4-C6 **5/41**, P4C456 **9/62**, suite complète
-  **614/4437**, Pint **216**, `git diff --check` propre, 29 migrations,
-  aucune `000014`. Pipeline toujours **désactivé par défaut**.
+  Le hardening `5bd86d3` impose : préflight fichier hors transaction puis
+  transaction G5 courte ; livraison en transaction DB courte → I/O stockage
+  hors transaction → finalisation DB courte ; stream et X-Accel préparés au
+  niveau zéro ; garde runtime du locator et refus des transactions ambiantes.
+  Une erreur stockage est finalisée séparément en `denied/storage_failure`,
+  sans rendre le quota ; tout stream rejeté par la revalidation finale est
+  fermé. `DELIVERY_PIPELINE_ENABLED=false` coupe aussi les tentatives existantes
+  au niveau service. Les secrets bruts sont `SensitiveParameter`. Validation :
+  filtre P4-C4 **18/152** (autorisation + contrat exacts **12/109**), P4-C5
+  **13/202**, P4-C6 **5/41**, P4C456 **10/72**, suite complète **623/4542**,
+  Pint **217**, `git diff --check` propre, 29 migrations, aucune `000014`.
+  Maximum observé : `exists/size/readStream/xAccelPath/callback = 0`.
+  Pipeline toujours **désactivé par défaut**.
 - **P4-C0 → P4-C3 TERMINÉS, MERGÉS ET VALIDÉS** via
   [PR #24](https://github.com/mysterus44/DigiTrove/pull/24), head
   `1492cd137a904c6025504fc5fd0cf0d51bd92db9`, merge
@@ -391,12 +395,14 @@
 
 ## 🎯 Review et merge de P4-C4 + P4-C5 + P4-C6
 
-Le macro-gate applicatif final P4-C est implémenté sur
-`p4-c4-c6-download-delivery-operations` avec trois commits non squashés :
-`de0fbe4` (autorisation), `fefb28e` (streaming/opérations) et le commit
-documentaire courant. Auditer la PR contre `p0-foundations-laravel13`, ne pas la
-merger automatiquement. Après merge et clôture séparée, prochaine phase :
-**P5 — Analytics**. Ne pas commencer P5 dans la review P4-C.
+Le macro-gate applicatif final P4-C est implémenté et durci sur
+`p4-c4-c6-download-delivery-operations`. La branche doit contenir cinq commits
+non squashés : `de0fbe4` (autorisation), `fefb28e` (streaming/opérations),
+`671669b` (documentation initiale), `5bd86d3` (I/O stockage hors transaction) et
+le commit documentaire de hardening. Auditer la PR #25 contre
+`p0-foundations-laravel13`, ne pas la merger automatiquement. Après merge et
+clôture séparée, prochaine phase : **P5 — Analytics**. Ne pas commencer P5 dans
+la review P4-C.
 
 ## 🗃️ Archive de passation P3-D4/D5 (supersédée par l'état en tête)
 

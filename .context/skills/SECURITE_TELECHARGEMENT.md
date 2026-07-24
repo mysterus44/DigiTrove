@@ -21,6 +21,10 @@ réel P4-C0 à P4-C6. Il ne doit jamais servir à contourner G1-G6.
 8. HEAD ne crée pas de log, ne consomme pas et ne change aucun statut.
 9. Une interruption ne rend jamais le quota. La réconciliation clôt l'audit.
 10. Seuls les logs terminaux après rétention sont supprimables par G6.
+11. Aucun I/O filesystem ou objet, aucune ouverture de stream et aucun callback
+    HTTP de streaming ne s'exécute sous transaction PostgreSQL.
+12. `DELIVERY_PIPELINE_ENABLED=false` coupe aussi les tentatives déjà émises.
+13. Tout paramètre transportant un secret brut est marqué `SensitiveParameter`.
 
 ---
 
@@ -58,8 +62,9 @@ est limité à `/downloads/{publicId}/file` et sa durée est bornée.
 ## Autorisation non énumérable
 
 `DownloadAuthorizationService` refuse une transaction ambiante, valide la forme
-du public ID et du token, calcule le digest en mémoire, puis verrouille dans
-l'ordre global :
+du public ID et du token, calcule le digest en mémoire et effectue le préflight
+du ProductFile/disque privé **hors transaction**. Il verrouille ensuite dans une
+transaction courte, sans aucun I/O stockage, selon l'ordre global :
 
 ```text
 Order -> DownloadGrant
@@ -70,7 +75,7 @@ Sous verrou, il revalide :
 * grant non révoqué et non expiré ;
 * quota disponible ;
 * Order `paid` ou `partially_refunded` ;
-* ProductFile résoluble sur un disque privé allowlisté ;
+* ProductFile toujours présent et actif selon les métadonnées revalidées ;
 * absence d'une tentative consommante encore réutilisable.
 
 Inconnu, faux, expiré, révoqué, épuisé, non livrable et fichier indisponible
@@ -99,8 +104,16 @@ la seconde requête concurrente. Il ne produit jamais une seconde consommation.
 Order -> DownloadGrant -> DownloadLog
 ```
 
-Il revalide la tentative, le grant, l'Order, le ProductFile, le disque, le
-chemin et la taille physique. Le contrôleur reste mince.
+La préparation refuse toute transaction ambiante. Elle suit trois phases :
+
+1. transaction DB courte : revalidation de la tentative, du grant, de l'Order
+   et du ProductFile, puis snapshot scalaire immuable ;
+2. hors transaction : disque/chemin privé, existence, taille, Range,
+   `readStream()` ou X-Accel ;
+3. transaction DB courte : nouvelle revalidation et finalisation du log.
+
+Le contrôleur reste mince. `PrivateFileLocator` refuse chaque entrée filesystem
+si `DB::transactionLevel() !== 0`.
 
 ### GET et Range
 
@@ -155,8 +168,10 @@ configure jamais Nginx automatiquement.
 
 `completed` signifie que le fichier a été remis au mécanisme de livraison, pas
 que le navigateur a reçu chaque octet. Une panne avant ouverture devient
-`denied/storage_failure`. Une panne après engagement relève du modèle
-at-least-once et de la réconciliation.
+`denied/storage_failure` dans une transaction de finalisation séparée, sans
+restitution de quota. Un stream ouvert est fermé si la revalidation finale
+refuse la livraison. Une panne après engagement relève du modèle at-least-once
+et de la réconciliation.
 
 ---
 
@@ -262,12 +277,15 @@ En incident :
 
 ```text
 [ ] DELIVERY_PIPELINE_ENABLED reste false avant validation opérationnelle
+[ ] kill switch vérifié sur autorisation, GET, HEAD, Range et appels directs
 [ ] aucun fichier digital sous public/
 [ ] aucun secret en query string ou logs
+[ ] paramètres de secrets bruts marqués SensitiveParameter
 [ ] grant token dans fragment puis Bearer POST seulement
 [ ] attempt token dans cookie HttpOnly/Strict seulement
 [ ] G5 et G6 présents et ACL runtime intactes
 [ ] disque privé allowlisté ; aucune URL objet publique
+[ ] transactionLevel = 0 pour exists/size/readStream/X-Accel/callback stream
 [ ] HEAD inerte ; Range unique ; retries sans quota
 [ ] rate limits et TTL/batches dans leurs bornes
 [ ] réconciliation, purge et métriques sans PII
