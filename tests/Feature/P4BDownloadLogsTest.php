@@ -31,6 +31,8 @@ uses(RefreshDatabase::class);
  * under `app/Services` fails the guard, whatever its name or namespace.
  */
 const P4B_ALLOWED_SERVICE_FILES = [
+    // P5-A1 (D-038) — single privacy-gated analytics ingestion authority.
+    'Analytics/FirstPartyAnalyticsIngestionService.php',
     // P3-D2 (D-031) — checkout transaction. Commerce only, no delivery.
     'Checkout/CheckoutException.php',
     'Checkout/CheckoutRefusalReason.php',
@@ -414,7 +416,7 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(32)
+        ->and(DB::table('migrations')->count())->toBe(33)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')
