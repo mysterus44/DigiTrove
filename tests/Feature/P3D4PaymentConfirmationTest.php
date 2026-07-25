@@ -12,6 +12,7 @@ use App\Models\CouponRedemption;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PaymentWebhookEvent;
+use App\Models\Product;
 use App\Models\User;
 use App\Payments\PaymentProviderFactory;
 use App\Services\Payments\PaymentConfirmationException;
@@ -101,6 +102,7 @@ function p3d4FakeCheck(string $status, int $amount, string $currency = 'XOF', ?s
 function p3d4Order(array $attributes = [], ?User $user = null): Order
 {
     return DB::transaction(function () use ($attributes, $user): Order {
+        $purchasedProductId = Product::factory()->create()->id;
         $order = Order::factory()->create(array_merge([
             'status' => OrderStatus::Pending,
             'total_minor' => 15_000,
@@ -118,6 +120,7 @@ function p3d4Order(array $attributes = [], ?User $user = null): Order
         DB::table('order_items')->insert([
             'order_id' => $order->id,
             'product_id' => null,
+            'purchased_product_id' => $purchasedProductId,
             'product_name_snapshot' => 'Pay Product',
             'product_slug_snapshot' => 'pay-product',
             'product_type_snapshot' => 'ebook',

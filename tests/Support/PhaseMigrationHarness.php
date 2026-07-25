@@ -96,6 +96,35 @@ final class PhaseMigrationHarness
     }
 
     /**
+     * Apply only the explicitly named migrations to an already prepared phase
+     * database. This is used to seed pre-migration state before exercising a
+     * data backfill or a fail-closed migration precondition.
+     *
+     * @param  list<string>  $files
+     * @return list<string>
+     */
+    public function applyExactMigrations(array $files): array
+    {
+        $known = $this->allMigrationFiles();
+
+        foreach ($files as $file) {
+            if (! in_array($file, $known, true)) {
+                throw new RuntimeException("Unknown migration: {$file}");
+            }
+        }
+
+        $before = $this->ranMigrations();
+        $paths = array_map(
+            static fn (string $file): string => '--path=database/migrations/'.$file,
+            $files,
+        );
+
+        $this->artisan(['migrate', '--env=testing', '--force', '--database=pgsql_migration', ...$paths]);
+
+        return array_values(array_diff($this->ranMigrations(), $before));
+    }
+
+    /**
      * Roll back ONLY the given gate migrations (by path). Returns the migration names
      * whose down() actually ran, computed from the migrations table before/after.
      *
@@ -226,6 +255,14 @@ final class PhaseMigrationHarness
             $this->runtimeConnection['password'],
             [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
         );
+    }
+
+    /**
+     * Owner connection for phase-specific seed and catalog assertions.
+     */
+    public function ownerPdo(): PDO
+    {
+        return $this->pdo();
     }
 
     private function makePdo(string $database): PDO

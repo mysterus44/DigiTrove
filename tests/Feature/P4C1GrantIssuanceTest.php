@@ -81,6 +81,7 @@ function p4cDeliverableOrder(Product $product, string $typeSnapshot = 'ebook', ?
         $orderItemId = DB::table('order_items')->insertGetId([
             'order_id' => $order->id,
             'product_id' => $product->id,
+            'purchased_product_id' => $product->id,
             'product_name_snapshot' => 'Prod',
             'product_slug_snapshot' => 'prod',
             'product_type_snapshot' => $typeSnapshot,
@@ -273,7 +274,7 @@ it('refuses a pending order', function (): void {
             'placed_at' => now(), 'expires_at' => now()->addMinutes(30),
         ]);
         DB::table('order_items')->insert([
-            'order_id' => $o->id, 'product_id' => $product->id, 'product_name_snapshot' => 'p',
+            'order_id' => $o->id, 'product_id' => $product->id, 'purchased_product_id' => $product->id, 'product_name_snapshot' => 'p',
             'product_slug_snapshot' => 'p', 'product_type_snapshot' => 'ebook', 'unit_price_minor' => 0,
             'quantity' => 1, 'line_subtotal_minor' => 0, 'line_discount_minor' => 0, 'line_total_minor' => 0,
             'currency' => 'XOF', 'created_at' => now(), 'updated_at' => now(),

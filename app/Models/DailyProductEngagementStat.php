@@ -2,16 +2,16 @@
 
 namespace App\Models;
 
-use Database\Factories\DailyProductStatFactory;
+use Database\Factories\DailyProductEngagementStatFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Read-oriented rollup with the PostgreSQL key `(day, product_id, currency)`.
+ * Currency-free product engagement keyed by `(day, product_id)`.
  */
-class DailyProductStat extends Model
+class DailyProductEngagementStat extends Model
 {
-    /** @use HasFactory<DailyProductStatFactory> */
+    /** @use HasFactory<DailyProductEngagementStatFactory> */
     use HasFactory;
 
     public $incrementing = false;
@@ -23,9 +23,8 @@ class DailyProductStat extends Model
     protected $fillable = [
         'day',
         'product_id',
-        'currency',
-        'purchases',
-        'revenue_minor',
+        'views',
+        'add_to_carts',
         'updated_at',
     ];
 
@@ -37,8 +36,8 @@ class DailyProductStat extends Model
         return [
             'day' => 'immutable_date',
             'product_id' => 'integer',
-            'purchases' => 'integer',
-            'revenue_minor' => 'integer',
+            'views' => 'integer',
+            'add_to_carts' => 'integer',
             'updated_at' => 'immutable_datetime',
         ];
     }

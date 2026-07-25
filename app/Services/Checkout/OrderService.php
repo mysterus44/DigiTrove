@@ -382,6 +382,7 @@ final class OrderService
             $item = OrderItem::query()->create([
                 'order_id' => $order->id,
                 'product_id' => $line->productId,
+                'purchased_product_id' => $line->productId,
                 'product_name_snapshot' => $line->productNameSnapshot,
                 'product_slug_snapshot' => $line->productSlugSnapshot,
                 'product_type_snapshot' => $line->productTypeSnapshot,
