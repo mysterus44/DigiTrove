@@ -6,7 +6,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Provisions the P4-B0 cluster-level PostgreSQL roles (D-029.6).
+ * Provisions the cluster-level PostgreSQL boundary roles (D-029.6, D-038).
  *
  * Idempotent convenience wrapper around docker/postgres/provision-runtime-roles.sql,
  * for local development, CI and the phase migration harness. It runs on the
@@ -20,7 +20,7 @@ class ProvisionRuntimeRoles extends Command
     protected $signature = 'db:provision-runtime-roles
         {--connection=pgsql_migration : Administrative connection able to CREATE ROLE}';
 
-    protected $description = 'Provision the restricted runtime and download-executor PostgreSQL roles (P4-B0, D-029.6)';
+    protected $description = 'Provision the restricted runtime and NOLOGIN executor PostgreSQL roles';
 
     public function handle(): int
     {
@@ -58,7 +58,7 @@ class ProvisionRuntimeRoles extends Command
             $connection->statement("SELECT set_config('digitrove.runtime_password', '', false)");
         }
 
-        $this->info('P4-B0 runtime roles provisioned (digitrove_runtime, digitrove_download_executor).');
+        $this->info('Runtime roles provisioned (digitrove_runtime, digitrove_download_executor, digitrove_analytics_executor).');
 
         return self::SUCCESS;
     }

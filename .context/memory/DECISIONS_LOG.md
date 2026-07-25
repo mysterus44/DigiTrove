@@ -2949,5 +2949,92 @@ confirment P5-A0 **19/256**, P4-C **86/559**, P4-B **20/560**, P3-B
 PostgreSQL confirme le parent RANGE, la partition DEFAULT, zéro FK, append-only
 et aucun DML analytique pour `digitrove_runtime`. D-037 reste inchangée.
 
+### D-038 — Privacy-gated First-party Analytics Ingestion ✅
+**Date** : 2026-07-24. **Statut** : P5-A1 implémenté sur
+`p5-a1-first-party-analytics-ingestion`, en attente de revue/merge.
+
+**CONTEXTE** : D-037 interdit tout DML analytique direct au runtime métier.
+P5-A1 doit collecter deux observations comportementales first-party sans faire
+de l'analytique une dépendance de Commerce, sans créer d'identité avant
+consentement et sans accepter une donnée financière venant du navigateur.
+
+**CHOIX** :
+
+1. L'ingestion est désactivée par défaut. Le consentement est first-party,
+   explicite et versionné. Consentement absent, refusé, obsolète ou révoqué :
+   aucune écriture. La révocation arrête immédiatement les écritures futures et
+   expire les cookies d'identité analytique, sans suppression historique
+   automatique ni modification de l'identité Commerce.
+2. Aucun fournisseur ou script tiers, `localStorage`, fingerprint, e-mail,
+   téléphone, nom, token ou secret. L'IP brute et le user-agent brut ne sont
+   jamais persistés : l'IP devient un HMAC-SHA-256 versionné et le user-agent
+   une classe grossière `device_type`.
+3. Les seuls événements publics sont `page_view` et `product_view`. `purchase`,
+   `payment`, `refund`, `download`, revenus et toute donnée financière sont
+   refusés côté client; les futurs événements financiers proviendront
+   exclusivement des tables transactionnelles autoritatives.
+4. Une requête HTTP same-origin sous middleware web/CSRF transporte exactement
+   un événement JSON borné. Le serveur impose l'horodatage, dérive `user_id` de
+   l'authentification et `visitor_id` du contexte first-party, normalise chemin,
+   referrer, UTM, appareil et HMAC IP. Le client ne choisit jamais identité,
+   session effective, timestamp, IP, appareil, montant, devise, commande ou
+   paiement.
+5. Les événements comportementaux sont at-least-once; aucune garantie
+   exactly-once n'est annoncée. Une panne analytique interne produit un `204`
+   sanitizé et ne fait jamais échouer Commerce. Le service refuse toute
+   transaction ambiante (`DB::transactionLevel() !== 0`) et ne mute aucune table
+   Commerce.
+6. La migration additive `000017` ne crée aucune table. Elle installe
+   `ingest_first_party_analytics_event`, fonction SECURITY DEFINER possédée par
+   `digitrove_analytics_executor`, rôle NOLOGIN sans CREATE, TEMP, CREATEDB,
+   CREATEROLE ni droits Commerce. Le `search_path` est épinglé, les objets sont
+   qualifiés, il n'existe ni SQL dynamique ni DDL.
+7. `digitrove_runtime` conserve zéro SELECT/INSERT/UPDATE/DELETE analytique et
+   reçoit uniquement EXECUTE sur la fonction; `PUBLIC` ne reçoit aucun EXECUTE.
+   L'executor possède seulement INSERT sur `events`, les droits nécessaires sur
+   sa séquence et SELECT/INSERT/UPDATE sur `analytics_sessions`.
+8. La sessionisation est atomique dans PostgreSQL. Un advisory lock par visiteur
+   sérialise la première session; la session réutilisée est verrouillée
+   `FOR UPDATE`, vérifiée par visiteur, inactivité, âge maximal et compatibilité
+   du contexte d'authentification. Une session anonyme peut être réutilisée puis
+   enrichie lors du login. Une session déjà identifiée n'est jamais réutilisée
+   après logout ni sous un autre compte : le changement de contexte crée ou
+   sélectionne une session compatible, tandis que l'identité de l'ancienne
+   session reste immuable. Cette règle est imposée par la fonction PostgreSQL,
+   pas seulement par Laravel. `last_seen_at` ne recule jamais et `page_views`
+   n'augmente que pour `page_view`.
+9. Les cookies `dt_analytics_consent`, `dt_analytics_visitor` et
+   `dt_analytics_session` sont chiffrés/signés par Laravel, HttpOnly,
+   SameSite Strict et Secure hors local/testing. L'identité visiteur analytique
+   est un UUID dédié créé uniquement après consentement; elle ne modifie aucun
+   invariant checkout Visitor.
+10. Toute configuration est bornée par `AnalyticsConfig` et fail-closed :
+    activation, version de consentement, TTL/inactivité, âge maximal, limite,
+    taille des propriétés, clé/version HMAC et HTTPS hors local/testing.
+11. Le rate limiter `analytics-ingestion` emploie uniquement un HMAC de l'IP et
+    un SHA-256 de l'UUID visiteur; aucune IP, cookie ou session brute dans sa clé.
+12. Une connexion `pgsql_analytics` séparée est rejetée pour ce gate : avec les
+    mêmes identifiants runtime, elle n'ajoutait aucune isolation d'identité
+    mesurable. L'invocation préparée unique utilise la connexion runtime et la
+    garde stricte contre les transactions Commerce ambiantes.
+
+**ALTERNATIVES REJETÉES** : DML direct au runtime; ingestion générique ou batch;
+événements financiers navigateur; timestamp client; cookie publicitaire;
+identité Visitor Commerce réutilisée sans preuve; IP/user-agent bruts; script
+tiers; queue; listener `OrderPaid`/refund; rollup ou DDL de partition pendant
+l'ingestion; connexion dédiée cosmétique.
+
+**IMPACT ET VALIDATION** : six suites P5-A1 couvrent autorité, consentement,
+ingestion, sessions, concurrence et contrat statique : **74 tests / 400
+assertions**. Les scénarios HTTP et les appels directs sous
+`digitrove_runtime` prouvent logout A → session anonyme distincte, A → B →
+session B distincte, anonyme → A → session enrichie et A → A → session
+réutilisée. Deux processus PostgreSQL indépendants prouvent aussi la
+sérialisation d'une requête A puis anonyme sans mélange d'identité, perte de
+page view, deadlock, `25P02` ou `42501`. Suite complète : **716 / 5183**; Pint :
+**254 fichiers**; **33 migrations**; rollback isolé `000017`, P5-A0 **19/256**,
+P4-C **86/559**, P4-B **20/560**, P3-B **18/354**, `git diff --check` propre.
+P5-A2, P6 et P7 ne sont pas commencés.
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

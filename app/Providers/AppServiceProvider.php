@@ -7,12 +7,14 @@ use App\Contracts\Payments\PaymentProvider;
 use App\Events\OrderPaid;
 use App\Listeners\QueueSecureDelivery;
 use App\Payments\PaymentProviderFactory;
+use App\Support\AnalyticsConfig;
 use App\Support\DeliveryConfig;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use RuntimeException;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -49,6 +51,24 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        RateLimiter::for('analytics-ingestion', function (Request $request): Limit {
+            try {
+                $secret = AnalyticsConfig::ipHashKey();
+                $ip = is_string($request->ip()) ? $request->ip() : '';
+                $ipDigest = hash_hmac('sha256', $ip, $secret);
+                $visitorDigest = hash('sha256', (string) $request->cookie(AnalyticsConfig::VISITOR_COOKIE));
+                $limit = AnalyticsConfig::rateLimitPerMinute();
+                $key = $ipDigest.':'.$visitorDigest;
+            } catch (RuntimeException) {
+                $limit = 1;
+                $key = hash('sha256', 'analytics-disabled');
+            }
+
+            return Limit::perMinute($limit)
+                ->by($key)
+                ->response(fn () => response()->noContent());
+        });
+
         RateLimiter::for('download-authorize', function (Request $request): Limit {
             $key = $this->downloadRateLimitKey($request);
 

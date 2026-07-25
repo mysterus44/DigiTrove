@@ -350,8 +350,21 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   campagne, segmentation ou P6/P7. Validation : **32 migrations**, P5-A0
   **19/256**, suite complète **642/4779**, Pint **235**, rollbacks isolés verts.
 
-**PROCHAINE TÂCHE : P5-A1 — First-party Event & Session Ingestion.**
-Ne pas commencer P5-A2, P6 ou P7. Invariants hérités :
+- **`P5-A1 — First-party Event & Session Ingestion` ✅ IMPLÉMENTÉ, EN ATTENTE
+  DE REVUE/MERGE** sur `p5-a1-first-party-analytics-ingestion` (**D-038**) :
+  migration `000017`, executor PostgreSQL NOLOGIN, fonction SECURITY DEFINER,
+  runtime EXECUTE-only, consentement versionné, cookies first-party chiffrés,
+  `page_view`/`product_view` uniquement, HMAC IP, rate limiting et
+  sessionisation atomique isolée par contexte d'authentification dans
+  PostgreSQL. Une session anonyme peut être enrichie au login; une session
+  identifiée n'est jamais réutilisée après logout ni sous un autre compte.
+  Ingestion désactivée par défaut; aucune écriture sans consentement courant;
+  aucune donnée financière cliente, queue, rollup ou fournisseur tiers.
+  Validation : **33 migrations**, P5-A1 **74/400**, suite complète **716/5183**,
+  Pint **254**.
+
+**PROCHAINE TÂCHE APRÈS MERGE : P5-A2 — Authoritative Rollups and Partition
+Operations.** Ne pas commencer P6 ou P7. Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —
 `coupon_redemptions` et `redemptions_count` n'arrivent qu'à la confirmation

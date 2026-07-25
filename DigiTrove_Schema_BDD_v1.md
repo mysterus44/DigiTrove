@@ -1634,7 +1634,8 @@ CREATE INDEX download_logs_terminal_retention_index
 **État** : fondation PostgreSQL terminée, mergée et validée via PR #26, head
 `8d9d8cc798e6a35ae74a36d1d9ae6a9d22bf171a`, merge
 `94a8c08c5a9d8448dd161665f69602d84715432b`, CI #32 success. L'ingestion
-P5-A1, les campagnes/segments P6 et P7 ne sont pas commencés.
+P5-A1 est désormais implémentée séparément par `000017` (D-038), en attente de
+revue/merge. Les campagnes/segments P6 et P7 ne sont pas commencés.
 
 **Principe non négociable** : l'analytique ne pose aucune FK, aucun verrou et
 aucune dépendance de disponibilité sur les tables chaudes du commerce.
@@ -1711,13 +1712,85 @@ pas une monotonie artificielle entre mesures indépendantes.
 
 ### ACL et confidentialité
 
-`PUBLIC` et `digitrove_runtime` n'ont aucun droit sur les tables analytiques,
-`events_default`, `events_id_seq` ou la fonction append-only. Une future
-autorité d'ingestion dédiée devra être conçue en P5-A1.
+`PUBLIC` et `digitrove_runtime` n'ont aucun droit direct sur les tables
+analytiques, `events_default` ou `events_id_seq`. D-038 ajoute une autorité
+d'ingestion dédiée sans rendre ce DML au runtime.
 
 Ne sont jamais stockés : IP brute, e-mail, cookie, token, secret, payload
 webhook, URL complète, query string, fragment ou chemin privé. `campaigns`,
 segmentation client et affiliation sont reportés à P6.
+
+### P5-A1 — First-party Event & Session Ingestion (D-038)
+
+**État** : implémenté sur `p5-a1-first-party-analytics-ingestion`, en attente de
+revue/merge. Migration unique :
+`2026_07_14_000017_create_analytics_ingestion_authority.php`. Elle ne crée
+aucune table métier et porte le total à 33 migrations.
+
+#### Autorité PostgreSQL
+
+`digitrove_analytics_executor` est un rôle NOLOGIN restreint. Il possède
+uniquement INSERT sur `events`, l'usage de `events_id_seq` et
+SELECT/INSERT/UPDATE sur `analytics_sessions`. La fonction
+`public.ingest_first_party_analytics_event` est SECURITY DEFINER, possédée par
+ce rôle, avec `search_path` épinglé et objets qualifiés. `PUBLIC` n'a aucun
+EXECUTE; `digitrove_runtime` a seulement EXECUTE et aucun DML analytique direct.
+La fonction ne contient ni SQL dynamique, ni DDL, ni lecture Commerce.
+
+La fonction reçoit des valeurs déjà normalisées, génère l'heure serveur,
+verrouille le visiteur par advisory lock puis la session réutilisable
+`FOR UPDATE`, et insère atomiquement session/événement. Elle retourne uniquement
+l'UUID de session effectif. Une session n'est réutilisée que pour le même
+visiteur, avant expiration d'inactivité et d'âge maximal, et si son identité est
+compatible : session anonyme, ou session du même utilisateur authentifié. Une
+session anonyme peut être enrichie au login. Une session identifiée A n'est
+jamais réutilisée après logout ni sous B; la fonction crée ou sélectionne une
+session compatible sans désidentifier ni muter l'ancienne session. Cette règle
+s'applique aux recherches par session demandée et par fallback visiteur.
+`last_seen_at` ne recule pas; `page_views` augmente seulement pour `page_view`.
+
+#### Consentement et identité
+
+L'ingestion est désactivée par défaut et fail-closed. Les routes web/CSRF
+same-origin sont `GET|POST|DELETE /analytics/consent` et
+`POST /analytics/events`. Le consentement est explicite et versionné. Sans
+consentement courant `granted`, aucune identité analytique ni écriture n'est
+créée. Refus/révocation expirent immédiatement les cookies analytiques sans
+toucher à l'identité Commerce.
+
+Les cookies `dt_analytics_consent`, `dt_analytics_visitor` et
+`dt_analytics_session` sont first-party, chiffrés/signés par Laravel, HttpOnly,
+SameSite Strict et Secure hors local/testing. Le visiteur analytique est un UUID
+dédié; le cookie de session ne contient que l'UUID de session.
+
+#### Contrat public et confidentialité
+
+Une requête transporte un seul événement JSON borné :
+
+- `page_view` sans entité et avec propriétés vides;
+- `product_view` pour un produit existant, avec `placement` dans
+  `catalog|search|recommendation|direct`.
+
+Tout autre événement est refusé, notamment achat, paiement, remboursement,
+téléchargement et revenu. Le navigateur ne fournit jamais `user_id`,
+`visitor_id`, session effective, timestamp, IP, appareil, montant, devise,
+commande ou paiement. Le serveur normalise le chemin relatif sans query ni
+fragment, le hostname referrer, les UTM lowercase et une classe d'appareil
+grossière. L'IP est uniquement un HMAC-SHA-256 versionné; IP et user-agent bruts
+ne sont jamais persistés.
+
+`AnalyticsConfig` borne activation, version de consentement, TTL, âge maximal,
+limite par minute, taille des propriétés et clé/version HMAC. Le limiter utilise
+un HMAC IP et un digest visiteur, jamais les valeurs brutes. Toute panne interne
+répond `204` sans détail SQL et reste indépendante des transactions Commerce.
+Les événements sont at-least-once, non financiers et non autoritatifs.
+
+Validation : P5-A1 **74 tests / 400 assertions**, suite complète **716 / 5183**,
+Pint **254**, rollback isolé et concurrence PostgreSQL réelle verts. Les
+scénarios HTTP, les appels directs sous `digitrove_runtime` et les connexions
+concurrentes couvrent logout, changement de compte, upgrade anonyme et même
+compte. P5-A2 (partitions contrôlées et rollups autoritatifs), P6 et P7 ne sont
+pas commencés.
 
 ---
 
