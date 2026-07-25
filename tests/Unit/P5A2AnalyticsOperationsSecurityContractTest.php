@@ -55,3 +55,43 @@ it('registers bounded commands and conditional non-overlapping schedules', funct
         ->and($guard)->toContain("'Analytics/AuthoritativeRollupService.php'")
         ->toContain("'Analytics/EventPartitionService.php'");
 });
+
+it('provisions distinct ephemeral runtime and analytics worker passwords in one CI psql session', function () use ($root) {
+    $workflow = file_get_contents($root.'/.github/workflows/ci.yml');
+    $phpunit = file_get_contents($root.'/phpunit.xml');
+    $provisioning = file_get_contents($root.'/docker/postgres/provision-runtime-roles.sql');
+
+    preg_match(
+        '/^      - name: Provision the runtime privilege boundary roles\R.*?(?=^      - name:|\z)/ms',
+        $workflow,
+        $stepMatch,
+    );
+    expect($stepMatch)->toHaveCount(1);
+
+    $step = $stepMatch[0];
+    preg_match('/^\s+RUNTIME_PASSWORD:\s*(\S+)\s*$/m', $step, $runtimeMatch);
+    preg_match('/^\s+ANALYTICS_WORKER_PASSWORD:\s*(\S+)\s*$/m', $step, $workerMatch);
+
+    expect($runtimeMatch)->toHaveCount(2)
+        ->and($workerMatch)->toHaveCount(2)
+        ->and($workerMatch[1])->toBe('digitrove_analytics_worker_local')
+        ->not->toBe($runtimeMatch[1])
+        ->and($phpunit)->toContain(
+            '<env name="ANALYTICS_WORKER_DB_PASSWORD" value="'.$workerMatch[1].'"/>',
+        )
+        ->and(substr_count($step, 'psql -h'))->toBe(1);
+
+    $runtimeGuc = strpos($step, "SET digitrove.runtime_password TO '\$RUNTIME_PASSWORD'");
+    $workerGuc = strpos($step, "SET digitrove.analytics_worker_password TO '\$ANALYTICS_WORKER_PASSWORD'");
+    $script = strpos($step, '-f docker/postgres/provision-runtime-roles.sql');
+
+    expect($runtimeGuc)->not->toBeFalse()
+        ->and($workerGuc)->not->toBeFalse()
+        ->and($script)->not->toBeFalse()
+        ->and($runtimeGuc)->toBeLessThan($script)
+        ->and($workerGuc)->toBeLessThan($script)
+        ->and($provisioning)->toContain("current_setting('digitrove.runtime_password', true)")
+        ->toContain('digitrove.runtime_password must be set before running this script')
+        ->toContain("current_setting('digitrove.analytics_worker_password', true)")
+        ->toContain('digitrove.analytics_worker_password must be set before running this script');
+});
