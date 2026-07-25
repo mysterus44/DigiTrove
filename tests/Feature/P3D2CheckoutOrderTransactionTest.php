@@ -844,6 +844,7 @@ it('recovers from an order number collision without aborting the transaction', f
     DB::table('order_items')->insert([
         'order_id' => DB::table('orders')->where('order_number', $taken)->value('id'),
         'product_id' => null,
+        'purchased_product_id' => DB::table('cart_items')->where('cart_id', $cart->id)->value('product_id'),
         'product_name_snapshot' => 'seed', 'product_slug_snapshot' => 'seed',
         'product_type_snapshot' => 'ebook',
         'unit_price_minor' => 0, 'quantity' => 1, 'line_subtotal_minor' => 0,

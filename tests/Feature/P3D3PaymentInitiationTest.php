@@ -9,6 +9,7 @@ use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\Product;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Services\Payments\InitiatedPayment;
@@ -114,6 +115,7 @@ function p3d3Order(array $attributes = [], ?User $user = null, ?Visitor $visitor
     // order needs the payment its status implies. The setup is therefore wrapped
     // in its own transaction (committed here, BEFORE the service runs at level 0).
     return DB::transaction(function () use ($attributes, $user, $visitor): Order {
+        $purchasedProductId = Product::factory()->create()->id;
         $order = Order::factory()->create(array_merge([
             'status' => OrderStatus::Pending,
             'total_minor' => 5_000,
@@ -130,6 +132,7 @@ function p3d3Order(array $attributes = [], ?User $user = null, ?Visitor $visitor
         DB::table('order_items')->insert([
             'order_id' => $order->id,
             'product_id' => null,
+            'purchased_product_id' => $purchasedProductId,
             'product_name_snapshot' => 'Pay Product',
             'product_slug_snapshot' => 'pay-product',
             'product_type_snapshot' => 'ebook',

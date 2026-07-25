@@ -31,6 +31,9 @@ uses(RefreshDatabase::class);
  * under `app/Services` fails the guard, whatever its name or namespace.
  */
 const P4B_ALLOWED_SERVICE_FILES = [
+    // P5-A2 (D-039) — EXECUTE-only rollup and partition operation clients.
+    'Analytics/AuthoritativeRollupService.php',
+    'Analytics/EventPartitionService.php',
     // P5-A1 (D-038) — single privacy-gated analytics ingestion authority.
     'Analytics/FirstPartyAnalyticsIngestionService.php',
     // P3-D2 (D-031) — checkout transaction. Commerce only, no delivery.
@@ -213,7 +216,7 @@ function p4bProbeG2AsOwner(Closure $probe): void
         $owner->statement("INSERT INTO products (slug, name, type, status, created_at, updated_at) VALUES (?, 'P4B G2', 'ebook', 'published', now(), now())", [$slug]);
         $owner->statement("INSERT INTO product_files (product_id, storage_disk, storage_path, original_name, size_bytes, checksum_sha256, version, is_active) SELECT id, 'private', 'products/'||slug||'/f.zip', 'f.zip', 10, repeat('a', 64), '1.0', true FROM products WHERE slug = ?", [$slug]);
         $owner->statement("INSERT INTO orders (public_id, order_number, checkout_idempotency_hash, customer_email, subtotal_minor, discount_minor, tax_minor, total_minor, currency, status, placed_at, expires_at, paid_at, created_at, updated_at) VALUES (gen_random_uuid(), ?, repeat('b', 64), 'g2@example.test', 1000, 0, 0, 1000, 'XOF', 'paid', now(), now() + interval '30 minutes', now(), now(), now())", [$orderNo]);
-        $owner->statement("INSERT INTO order_items (order_id, product_id, product_name_snapshot, product_slug_snapshot, product_type_snapshot, unit_price_minor, quantity, line_subtotal_minor, line_discount_minor, line_total_minor, currency, created_at, updated_at) SELECT o.id, p.id, 'P4B G2', p.slug, 'ebook', 1000, 1, 1000, 0, 1000, 'XOF', now(), now() FROM orders o, products p WHERE o.order_number = ? AND p.slug = ?", [$orderNo, $slug]);
+        $owner->statement("INSERT INTO order_items (order_id, product_id, purchased_product_id, product_name_snapshot, product_slug_snapshot, product_type_snapshot, unit_price_minor, quantity, line_subtotal_minor, line_discount_minor, line_total_minor, currency, created_at, updated_at) SELECT o.id, p.id, p.id, 'P4B G2', p.slug, 'ebook', 1000, 1, 1000, 0, 1000, 'XOF', now(), now() FROM orders o, products p WHERE o.order_number = ? AND p.slug = ?", [$orderNo, $slug]);
         $owner->statement("INSERT INTO payments (public_id, order_id, provider, idempotency_key_hash, attempt_number, amount_minor, currency, status, succeeded_at, created_at, updated_at) SELECT gen_random_uuid(), o.id, 'provider_test', repeat('c', 64), 1, 1000, 'XOF', 'succeeded', now(), now(), now() FROM orders o WHERE o.order_number = ?", [$orderNo]);
         $owner->statement("INSERT INTO download_grants (public_id, order_item_id, product_file_id, token_hash, expires_at, max_downloads, created_at, updated_at) SELECT gen_random_uuid(), oi.id, pf.id, ?, now() + interval '1 day', 2, now(), now() FROM order_items oi JOIN product_files pf ON pf.product_id = oi.product_id WHERE oi.product_slug_snapshot = ?", [$token, $slug]);
         $owner->statement('SET CONSTRAINTS ALL IMMEDIATE');
@@ -416,7 +419,7 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(33)
+        ->and(DB::table('migrations')->count())->toBe(34)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')

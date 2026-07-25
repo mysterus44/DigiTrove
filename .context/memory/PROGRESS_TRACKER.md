@@ -15,7 +15,7 @@ P3 COMMERCE         : ██████████  Schéma P3C-C refunds merg
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
-P5 ANALYTIQUE       : ██████░░░░  P5-A0 et P5-A1 mergés ; ingestion first-party validée via PR #27 (`c699c5b9`, CI #33, D-038) ; P5-A2 en cours
+P5 ANALYTIQUE       : ████████░░  P5-A0/P5-A1 mergés ; P5-A2 implémenté sur `p5-a2-authoritative-rollups-partitions`, en attente de revue/merge (D-039)
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
@@ -492,9 +492,12 @@ Foundation**.
 | **P5-A1** First-party Event & Session Ingestion | ✅ DONE — mergé PR #27, head `955cc340`, merge `c699c5b9`, CI #33 ; consentement versionné, autorité SECURITY DEFINER et isolation des contextes d'authentification |
 | Autorité P5-A1 `000017` | ✅ DONE — rôle NOLOGIN `digitrove_analytics_executor`, runtime EXECUTE-only, compatibilité session anonyme/même compte imposée dans les deux lookups SQL, rollback isolé ; 33 migrations |
 | Validation P5-A1 | ✅ POST-MERGE GREEN — 74 tests / 400 assertions ; Pint 254 ; P5-A0/P4-C/P4-B/P3-B verts |
-| **P5-A2** partitions et rollups autoritatifs | 🔄 IN PROGRESS — Authoritative Rollups and Safe Partition Operations |
-| Partitions calendaires contrôlées et maintenance | ⬜ P5-A2 — aucune DDL automatique en P5-A1 |
-| Jobs d'écriture financière et de rollup | ⬜ P5-A2 — aucun listener financier, job ou scheduler en P5-A1 |
+| **P5-A2** partitions et rollups autoritatifs | ✅ IMPLÉMENTÉ, EN ATTENTE DE REVUE/MERGE — migration unique `000018`, D-039 |
+| Correction dimensionnelle produit | ✅ engagement sans devise dans `daily_product_engagement_stats`; commerce currency-safe dans `daily_product_stats`; `purchased_product_id` immuable sans FK |
+| Autorité de rollup | ✅ worker LOGIN EXECUTE-only, executor NOLOGIN, SECURITY DEFINER, recalcul UTC atomique/idempotent, commandes et scheduler conditionnel |
+| Partitions calendaires contrôlées | ✅ création mensuelle bornée et idempotente, DEFAULT jamais déplacée, audit non destructif, ACL explicites |
+| Validation P5-A2 | ✅ PostgreSQL réel : 34 migrations, P5-A2 24/182, suite 740/5365, Pint 278, rollback/concurrence verts |
+| **P5-A3** read models et dashboard analytique | ⬜ PROCHAINE PHASE APRÈS REVUE/MERGE P5-A2 — non commencée |
 | Campaigns, segments et affiliation | ⬜ P6 — explicitement hors P5-A0 |
 
 ## P6 — CRM & MARKETING

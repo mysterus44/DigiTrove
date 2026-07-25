@@ -85,12 +85,10 @@ it('keeps daily sales separated by currency and enforces exact integer formulas'
     expectP5A0RollupViolation('daily_sales_stats', [...$base, 'day' => '2026-07-29', 'currency' => 'EUR', 'average_order_minor' => 10499], 'daily_sales_stats_average_formula_check');
 });
 
-it('keeps product rollups soft-linked and currency-safe without undefined refund attribution', function () {
+it('keeps commercial product rollups soft-linked and currency-safe without undefined refund attribution', function () {
     $base = [
         'day' => '2026-07-24',
         'product_id' => 999999,
-        'views' => 12,
-        'add_to_carts' => 4,
         'purchases' => 2,
         'revenue_minor' => 5000,
         'updated_at' => now(),
@@ -105,7 +103,7 @@ it('keeps product rollups soft-linked and currency-safe without undefined refund
         ->and(Schema::hasColumn('daily_product_stats', 'refunds_minor'))->toBeFalse();
 
     expectP5A0RollupViolation('daily_product_stats', [...$base, 'day' => '2026-07-25', 'currency' => 'xof'], 'daily_product_stats_currency_format_check');
-    expectP5A0RollupViolation('daily_product_stats', [...$base, 'day' => '2026-07-26', 'currency' => 'EUR', 'views' => -1], 'daily_product_stats_metrics_non_negative_check');
+    expectP5A0RollupViolation('daily_product_stats', [...$base, 'day' => '2026-07-26', 'currency' => 'EUR', 'purchases' => -1], 'daily_product_stats_metrics_non_negative_check');
     expectP5A0RollupViolation('daily_product_stats', [...$base, 'day' => '2026-07-27', 'currency' => 'EUR', 'product_id' => 0], 'daily_product_stats_product_id_positive_check');
 });
 

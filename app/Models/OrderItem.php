@@ -16,6 +16,7 @@ class OrderItem extends Model
     protected $fillable = [
         'order_id',
         'product_id',
+        'purchased_product_id',
         'product_name_snapshot',
         'product_slug_snapshot',
         'product_type_snapshot',
@@ -65,6 +66,7 @@ class OrderItem extends Model
     protected function casts(): array
     {
         return [
+            'purchased_product_id' => 'integer',
             'unit_price_minor' => 'integer',
             'quantity' => 'integer',
             'line_subtotal_minor' => 'integer',

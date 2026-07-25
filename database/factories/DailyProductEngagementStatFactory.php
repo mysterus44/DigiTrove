@@ -2,22 +2,21 @@
 
 namespace Database\Factories;
 
-use App\Models\DailyProductStat;
+use App\Models\DailyProductEngagementStat;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends Factory<DailyProductStat>
+ * @extends Factory<DailyProductEngagementStat>
  */
-class DailyProductStatFactory extends Factory
+class DailyProductEngagementStatFactory extends Factory
 {
     public function definition(): array
     {
         return [
             'day' => today(),
             'product_id' => fake()->numberBetween(1, 100000),
-            'currency' => 'XOF',
-            'purchases' => 2,
-            'revenue_minor' => 5000,
+            'views' => 12,
+            'add_to_carts' => 0,
             'updated_at' => now(),
         ];
     }

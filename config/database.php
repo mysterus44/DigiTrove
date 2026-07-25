@@ -122,6 +122,24 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        // P5-A2 scheduled operations use a dedicated LOGIN with EXECUTE-only
+        // access to audited PostgreSQL authorities. Credentials deliberately
+        // have no fallback to either runtime or migration identities.
+        'pgsql_analytics_worker' => [
+            'driver' => 'pgsql',
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '5432'),
+            'database' => env('DB_DATABASE', 'digitrove'),
+            'username' => env('ANALYTICS_WORKER_DB_USERNAME'),
+            'password' => env('ANALYTICS_WORKER_DB_PASSWORD'),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('DB_SSLMODE', 'prefer'),
+            'application_name' => 'digitrove_analytics_worker',
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),

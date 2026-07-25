@@ -53,6 +53,34 @@ $$;
 ALTER ROLE digitrove_analytics_executor
     NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
 
+-- --- digitrove_analytics_rollup_executor -----------------------------------------
+-- NOLOGIN owner of the P5-A2 rollup authority. It receives narrowly scoped
+-- source SELECT and projection DML, but is never assumable by an application.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'digitrove_analytics_rollup_executor') THEN
+        CREATE ROLE digitrove_analytics_rollup_executor
+            NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+    END IF;
+END
+$$;
+ALTER ROLE digitrove_analytics_rollup_executor
+    NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+
+-- --- digitrove_analytics_worker --------------------------------------------------
+-- Dedicated LOGIN for scheduled P5-A2 operations. It can execute the audited
+-- authorities only; migrations revoke all direct source/projection access.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'digitrove_analytics_worker') THEN
+        CREATE ROLE digitrove_analytics_worker
+            LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+    END IF;
+END
+$$;
+ALTER ROLE digitrove_analytics_worker
+    LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+
 -- --- digitrove_runtime -----------------------------------------------------------
 -- Restricted LOGIN identity for the application, workers and business tests. No
 -- superuser, no DDL, no ability to become another role.
@@ -81,12 +109,25 @@ BEGIN
 END
 $$;
 
+DO $$
+DECLARE
+    pw text := current_setting('digitrove.analytics_worker_password', true);
+BEGIN
+    IF pw IS NULL OR length(pw) = 0 THEN
+        RAISE EXCEPTION 'P5-A2 provisioning: digitrove.analytics_worker_password must be set before running this script';
+    END IF;
+
+    EXECUTE format('ALTER ROLE digitrove_analytics_worker PASSWORD %L', pw);
+END
+$$;
+
 -- --- Sole membership path --------------------------------------------------------
 -- The migrator/owner (digitrove) may ASSUME the executor identity ONLY via
 -- SET ROLE (no inherited privileges, no admin option). This is what lets a
 -- non-superuser migrator create/own G5 during the migration, and nothing else.
 GRANT digitrove_download_executor TO digitrove WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT digitrove_analytics_executor TO digitrove WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
+GRANT digitrove_analytics_rollup_executor TO digitrove WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 
 -- --- Fail-closed guardrails ------------------------------------------------------
 DO $$
@@ -103,16 +144,29 @@ BEGIN
         RAISE EXCEPTION 'P5-A1 provisioning: digitrove_analytics_executor must be NOLOGIN';
     END IF;
 
+    IF (SELECT rolcanlogin FROM pg_roles WHERE rolname = 'digitrove_analytics_rollup_executor') THEN
+        RAISE EXCEPTION 'P5-A2 provisioning: digitrove_analytics_rollup_executor must be NOLOGIN';
+    END IF;
+
+    IF NOT (SELECT rolcanlogin FROM pg_roles WHERE rolname = 'digitrove_analytics_worker') THEN
+        RAISE EXCEPTION 'P5-A2 provisioning: digitrove_analytics_worker must be LOGIN';
+    END IF;
+
     -- The runtime must never be able to become the migrator or the executor.
     IF EXISTS (
         SELECT 1
         FROM pg_auth_members m
         JOIN pg_roles member ON member.oid = m.member
         JOIN pg_roles granted ON granted.oid = m.roleid
-        WHERE member.rolname = 'digitrove_runtime'
-          AND granted.rolname IN ('digitrove', 'digitrove_download_executor', 'digitrove_analytics_executor')
+        WHERE member.rolname IN ('digitrove_runtime', 'digitrove_analytics_worker')
+          AND granted.rolname IN (
+              'digitrove',
+              'digitrove_download_executor',
+              'digitrove_analytics_executor',
+              'digitrove_analytics_rollup_executor'
+          )
     ) THEN
-        RAISE EXCEPTION 'P4-B0 provisioning: digitrove_runtime must not be a member of the migrator or executor role';
+        RAISE EXCEPTION 'P5-A2 provisioning: runtime identities must not be members of migrator or executor roles';
     END IF;
 END
 $$;

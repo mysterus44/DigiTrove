@@ -26,6 +26,7 @@ class OrderItemFactory extends Factory
                 'slug' => $slug,
                 'type' => ProductType::Ebook,
             ]),
+            'purchased_product_id' => fn (array $attributes): int => (int) $attributes['product_id'],
             'product_name_snapshot' => $name,
             'product_slug_snapshot' => $slug,
             'product_type_snapshot' => ProductType::Ebook->value,
@@ -51,6 +52,7 @@ class OrderItemFactory extends Factory
 
         return $this->state(fn (array $attributes) => [
             'product_id' => $product->getKey(),
+            'purchased_product_id' => $product->getKey(),
             'product_name_snapshot' => $product->name,
             'product_slug_snapshot' => $product->slug,
             'product_type_snapshot' => $type,

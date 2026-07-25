@@ -3047,5 +3047,81 @@ P5-A0 **19/256**, P4-C **86/559**, P4-B **20/560**, P3-B **18/354**, Pint
 intégralement applicables. Prochaine tâche : **P5-A2 — Authoritative Rollups and
 Safe Partition Operations**.
 
+### D-039 — Dimensionally Correct Product Analytics and Authoritative Operations ✅
+
+**Date** : 2026-07-25. **Statut** : P5-A2 implémenté sur
+`p5-a2-authoritative-rollups-partitions`, en attente de revue/merge.
+
+**PROBLÈMES CORRIGÉS** :
+
+1. `daily_product_stats` associait `views` et `add_to_carts`, observations sans
+   devise, à une clé `(day, product_id, currency)` conçue pour les achats et le
+   revenu. Dupliquer une vue dans chaque devise ou utiliser une devise sentinelle
+   (`XXX`, `N/A`, devise catalogue/pays/client) aurait créé une mesure fausse.
+2. `order_items.product_id` est une FK catalogue nullable `ON DELETE SET NULL`.
+   Elle ne peut donc pas identifier durablement le produit acheté après une
+   suppression catalogue; ni titre, ni slug, ni zéro ne sont des substituts
+   historiques fiables.
+
+**DÉCISION STRUCTURELLE** :
+
+- `daily_product_engagement_stats`, sans devise ni FK, porte `(day,
+  product_id)`, `views`, `add_to_carts` et `updated_at`. `views` compte les
+  événements `product_view`; `add_to_carts` reste zéro tant que cet événement
+  n'est pas autorisé.
+- `daily_product_stats` devient strictement commercial : `(day, product_id,
+  currency)`, `purchases`, `revenue_minor`, `updated_at`.
+- `order_items.purchased_product_id BIGINT NOT NULL` est un snapshot positif,
+  sans FK et immuable. Le checkout serveur le copie depuis le `PricedLine`; le
+  client ne le fournit jamais. Il survit à la nullification de `product_id`. Une
+  ligne bundle attribue l'achat au bundle vendu, jamais à ses composants.
+- L'audit pré-migration a trouvé zéro `order_items`, zéro `product_id NULL` et
+  zéro métrique historique `views/add_to_carts` non nulle : aucun identifiant ni
+  engagement n'a été inventé. La migration reste fail-closed si un futur
+  environnement contient une ligne impossible à backfiller ou une métrique
+  ambiguë non nulle.
+
+**ROLLUPS AUTORITATIFS** :
+
+- `daily_sales_stats` utilise les commandes payées par `paid_at` et les
+  remboursements réussis par `succeeded_at`, groupés en journée UTC et devise.
+- `daily_product_stats` utilise `purchased_product_id`, la quantité et le total
+  snapshot de ligne, avec la devise de la commande; aucun join catalogue.
+- `daily_product_engagement_stats` compte chaque `product_view` une fois, sans
+  devise ni source financière.
+- `daily_funnel_stats` dérive visiteurs, sessions, vues, checkouts, achats et
+  nouveaux clients selon leurs sources autoritatives. Le recalcul journalier
+  est atomique, idempotent et sérialisé par advisory lock de date.
+
+**AUTORITÉ ET OPÉRATIONS** :
+
+- `digitrove_analytics_worker` est un rôle LOGIN dédié, sans droit direct sur
+  tables/séquences; il reçoit seulement EXECUTE sur trois fonctions.
+- `digitrove_analytics_rollup_executor` est NOLOGIN et possède la fonction
+  `refresh_authoritative_daily_analytics(date)` SECURITY DEFINER. Ses lectures
+  Commerce et écritures de projections sont strictement bornées.
+- `ensure_analytics_events_month_partition(date)` crée uniquement une partition
+  mensuelle déterministe dans une fenêtre de ±60 mois, sous advisory lock. Elle
+  refuse toute plage déjà occupée dans `events_default`, vérifie parent/bornes et
+  applique explicitement les ACL. Elle ne déplace, détache ni supprime rien.
+- `audit_analytics_event_partitions()` expose seulement noms, bornes et nombre
+  de lignes DEFAULT. Les services refusent une transaction ambiante et utilisent
+  la connexion dédiée `pgsql_analytics_worker`; commandes :
+  `analytics:rollup`, `analytics:partitions:ensure` et
+  `analytics:partitions:audit`. Le scheduler est conditionnel, distribué et sans
+  chevauchement.
+
+**MIGRATION ET ROLLBACK** : toute la correction et les autorités résident dans
+`2026_07_14_000018_create_analytics_operations_authority.php`; aucune `000019`.
+Le rollback isolé retire les autorités et l'engagement, restaure exactement les
+colonnes P5-A0, enlève le snapshot créé par ce gate et préserve P5-A0/P5-A1,
+événements, partitions déjà créées, Commerce et rôles globaux.
+
+**VALIDATION** : PostgreSQL 16 réel, **34 migrations**, P5-A2 **24 tests / 182
+assertions**, suite complète **740 / 5365**, Pint **278 fichiers**,
+`git diff --check` propre. Concurrence par connexions indépendantes, ACL,
+fonctions, partition DEFAULT, rollback et backfill fail-closed sont couverts.
+P5-A3, P6 et P7 ne sont pas commencés.
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

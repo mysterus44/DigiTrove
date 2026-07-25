@@ -820,7 +820,21 @@ it('serialises concurrent succeeded refunds on the payment row and never exceeds
             return \Illuminate\Support\Facades\DB::transaction(function () {
                 $product = \App\Models\Product::factory()->create();
                 $order = \App\Models\Order::factory()->create(['subtotal_minor'=>10000,'discount_minor'=>0,'tax_minor'=>0,'total_minor'=>10000,'status'=>'paid','paid_at'=>now()]);
-                \App\Models\OrderItem::factory()->forOrder($order)->forProduct($product)->create(['unit_price_minor'=>10000,'quantity'=>1,'line_subtotal_minor'=>10000,'line_discount_minor'=>0,'line_total_minor'=>10000,'currency'=>$order->currency]);
+                \Illuminate\Support\Facades\DB::table('order_items')->insert([
+                    'order_id' => $order->id,
+                    'product_id' => $product->id,
+                    'product_name_snapshot' => $product->name,
+                    'product_slug_snapshot' => $product->slug,
+                    'product_type_snapshot' => $product->type->value,
+                    'unit_price_minor' => 10000,
+                    'quantity' => 1,
+                    'line_subtotal_minor' => 10000,
+                    'line_discount_minor' => 0,
+                    'line_total_minor' => 10000,
+                    'currency' => $order->currency,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
                 $payment = \App\Models\Payment::factory()->forOrder($order)->succeeded()->create(['provider'=>'powerpay']);
                 \Illuminate\Support\Facades\DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
                 return $payment->id.'|'.$order->id;

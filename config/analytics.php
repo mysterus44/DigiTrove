@@ -4,6 +4,16 @@ return [
     'ingestion' => [
         'enabled' => env('ANALYTICS_INGESTION_ENABLED', false),
     ],
+    'operations' => [
+        'enabled' => env('ANALYTICS_OPERATIONS_ENABLED', false),
+        'rollups_enabled' => env('ANALYTICS_ROLLUPS_ENABLED', false),
+        'partitions_enabled' => env('ANALYTICS_PARTITIONS_ENABLED', false),
+        'max_backfill_days' => env('ANALYTICS_MAX_BACKFILL_DAYS', 31),
+        'partition_months_ahead' => env('ANALYTICS_PARTITION_MONTHS_AHEAD', 3),
+        'partition_months_behind' => env('ANALYTICS_PARTITION_MONTHS_BEHIND', 1),
+        'statement_timeout_ms' => env('ANALYTICS_STATEMENT_TIMEOUT_MS', 30000),
+        'lock_timeout_ms' => env('ANALYTICS_LOCK_TIMEOUT_MS', 5000),
+    ],
     'consent' => [
         'version' => env('ANALYTICS_CONSENT_VERSION', 1),
     ],

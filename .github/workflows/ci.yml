@@ -67,9 +67,11 @@ jobs:
         env:
           PGPASSWORD: digitrove_local
           RUNTIME_PASSWORD: digitrove_runtime_local
+          ANALYTICS_WORKER_PASSWORD: digitrove_analytics_worker_local
         run: |
           psql -h 127.0.0.1 -U digitrove -d digitrove_testing -v ON_ERROR_STOP=1 \
             -c "SET digitrove.runtime_password TO '$RUNTIME_PASSWORD'" \
+            -c "SET digitrove.analytics_worker_password TO '$ANALYTICS_WORKER_PASSWORD'" \
             -f docker/postgres/provision-runtime-roles.sql
 
       - name: Syntax check
