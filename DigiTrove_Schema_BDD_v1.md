@@ -1635,9 +1635,10 @@ CREATE INDEX download_logs_terminal_retention_index
 `8d9d8cc798e6a35ae74a36d1d9ae6a9d22bf171a`, merge
 `94a8c08c5a9d8448dd161665f69602d84715432b`, CI #32 success. L'ingestion
 P5-A1 est terminée, mergée et validée via PR #27, head `955cc340`, merge
-`c699c5b9`, CI #33 success (D-038). P5-A2 est implémenté sur
-`p5-a2-authoritative-rollups-partitions`, en attente de revue/merge (D-039).
-P5-A3, P6 et P7 ne sont pas commencés.
+`c699c5b9`, CI #33 success (D-038). P5-A2 est terminée, mergée et validée via
+PR #28, head `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
+`17aaa4f43fcac0d3ef5e039897f0d30666b9d29d`, CI #35 success (D-039).
+P5-A3 est auditée mais non commencée; P6 et P7 ne sont pas commencés.
 
 **Principe non négociable** : l'analytique ne pose aucune FK, aucun verrou et
 aucune dépendance de disponibilité sur les tables chaudes du commerce.
@@ -1858,9 +1859,74 @@ Commandes : `analytics:rollup`, `analytics:partitions:ensure` et
 Le rollback isolé retire les autorités P5-A2 et la table d'engagement, restaure
 les colonnes P5-A0, retire le snapshot ajouté par `000018`, et préserve P5-A0,
 P5-A1, les événements, les partitions existantes, Commerce et les rôles
-globaux. Validation : P5-A2 **24/182**, suite complète **740/5365**, Pint
-**278**, concurrence et rollback PostgreSQL verts. P5-A3, P6 et P7 ne sont pas
-commencés.
+globaux. Validation post-merge : P5-A2 **25/198**, P5-A1 **74/400**, P5-A0
+**19/256**, suite complète **741/5381**, Pint **278**, concurrence et rollback
+PostgreSQL verts.
+
+### Audit P5-A3 — frontière des read models et du dashboard
+
+**État** : audit terminé; aucune classe, branche, migration, page ou widget P5-A3
+n'est créé. L'implémentation est bloquée jusqu'aux décisions produit ci-dessous.
+
+- Le schéma et les rollups sont **globaux**. Ni `products`, ni `orders`, ni les
+  quatre projections ne portent vendeur, owner ou tenant. Un dashboard vendeur
+  exige d'abord un contrat d'ownership Commerce et des dimensions analytiques;
+  aucune agrégation existante ne permet de le reconstruire honnêtement.
+- Le panel Filament unique est `admin`, mais `User` n'implémente pas
+  `FilamentUser`; en production, Filament refuse donc tous les rôles. Les enums
+  connaissent `admin` et `staff`, sans policy/gate analytique. Les exigences
+  attribuent les finances à l'admin, alors que le guide générique autorise le
+  staff actif au panel : le public exact doit être validé.
+- Les ACL empêchent `digitrove_runtime` et `digitrove_analytics_worker` de lire
+  les rollups. Le worker P5-A2 reste strictement EXECUTE-only. Le premier gate
+  P5-A3 doit ajouter une identité PostgreSQL read-only dédiée aux tables
+  `daily_sales_stats`, `daily_product_stats`,
+  `daily_product_engagement_stats` et `daily_funnel_stats`, sans accès à
+  `events`, `analytics_sessions`, Commerce ou aux fonctions d'opération.
+- Les seules structures d'accès sont les PK B-tree `(day, currency)`, `(day,
+  product_id, currency)`, `(day, product_id)` et `(day)`. Elles suffisent pour
+  des fenêtres UTC bornées. Les classements produit font un scan et tri de la
+  plage demandée; aucun index ne sera ajouté sans `EXPLAIN` et volume mesuré.
+- Les montants restent séparés par devise. Les compteurs de commandes/achats
+  peuvent être additionnés, mais jamais les revenus, remises, taxes, refunds ou
+  moyennes entre devises. Une journée absente signifie « non calculée », pas
+  zéro. Le jour courant n'est pas produit par le scheduler quotidien et doit
+  être marqué provisoire/indisponible. Un net négatif reste signé. La métrique
+  `add_to_carts` reste indisponible tant que son événement n'est pas autorisé.
+
+**Read models proposés, sans implémentation** :
+
+1. `AnalyticsOverviewQuery` : plage UTC validée, devise explicite pour l'argent,
+   DTO par devise + funnel, fraîcheur `updated_at`, états disabled/missing.
+2. `AnalyticsSalesQuery` : série quotidienne currency-safe, plage bornée, ordre
+   stable, jamais de moyenne de moyennes.
+3. `AnalyticsProductQuery` : commerce par devise séparé de l'engagement sans
+   devise, classement paginé et borné, libellé catalogue optionnel avec fallback
+   sur l'identifiant historique.
+4. `AnalyticsFunnelQuery` : compteurs journaliers globaux, trous explicites,
+   aucune lecture de `events`.
+
+Toutes utilisent la future connexion reader, des DTO immuables et un cache Redis
+court dont la clé inclut version, rôle/scope, UTC, plage, devise, filtres et page.
+Fenêtre proposée : 30 jours par défaut, maximum 366; tableaux limités à 100
+lignes par page. Les widgets ne requêtent jamais directement plusieurs tables.
+
+**Écrans candidats** : Vue d'ensemble, Ventes, Produits, Tunnel et, en option,
+État analytique read-only limité à la fraîcheur/configuration. Aucun écran ne
+déclenche rollup, partition, backfill ou activation. Aucun identifiant
+visiteur/utilisateur/session, `properties`, `ip_hash`, webhook ou secret n'est
+exposé.
+
+**Décisions humaines requises** :
+
+1. `admin` uniquement ou `admin + staff` actif avec permissions distinctes;
+2. dashboard global maintenant ou future isolation vendeur/tenant;
+3. widgets livrés en P5-A3 ou conservés en P6 comme l'indique encore le tracker.
+
+Découpage recommandé après validation : P5-A3A autorisation + rôle reader +
+queries/tests; P5-A3B overview/ventes; P5-A3C produits/tunnel; P5-A3D état
+opérationnel read-only optionnel. Priorité : autorisation, read models, tests,
+UI, puis optimisation mesurée. P6 et P7 restent non commencés.
 
 ---
 

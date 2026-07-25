@@ -365,20 +365,28 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   Pint **254**.
 
 - **`P5-A2 — Authoritative Rollups and Safe Partition Operations` ✅
-  IMPLÉMENTÉ, EN ATTENTE DE REVUE/MERGE** sur
-  `p5-a2-authoritative-rollups-partitions` (**D-039**) :
+  TERMINÉ, MERGÉ ET VALIDÉ** via PR #28, head `03063db8`, merge `17aaa4f4`,
+  CI #35 success (**D-039**) :
   migration unique `000018`; engagement produit sans devise séparé des
   projections commerciales par devise; snapshot
   `order_items.purchased_product_id` positif, sans FK et immuable; rollups UTC
   autoritatifs sans join catalogue; worker LOGIN EXECUTE-only et executor
   NOLOGIN; trois fonctions SECURITY DEFINER; partitions mensuelles bornées sans
   déplacement de DEFAULT; commandes et scheduler conditionnel. Validation :
-  **34 migrations**, P5-A2 **24/182**, suite complète **740/5365**, Pint
+  **34 migrations**, P5-A2 **25/198**, suite complète **741/5381**, Pint
   **278**, rollback isolé, ACL et concurrence PostgreSQL verts.
 
-**TÂCHE ACTIVE : revue/merge P5-A2, puis P5-A3 — Analytics Read Models and
-Dashboard dans une exécution séparée.** Ne pas commencer P5-A3, P6 ou P7 avant
-le merge. Invariants hérités :
+**TÂCHE ACTIVE : décisions produit préalables à P5-A3 — Analytics Read Models
+and Dashboard. IMPLÉMENTATION NON COMMENCÉE.** L'audit prouve un seul panel
+Filament `admin`, mais aucun accès production tant que `User` n'implémente pas
+`FilamentUser`; aucun gate/policy analytique; aucun vendeur, tenant ou ownership;
+des rollups exclusivement globaux; et aucune identité web autorisée à lire ces
+tables (`digitrove_runtime` et le worker sont tous deux refusés). Trancher
+`admin` seul versus `admin + staff`, dashboard global versus future isolation,
+et P5-A3 versus P6 pour les widgets. Le premier gate devra établir une
+autorisation fail-closed et une connexion PostgreSQL read-only dédiée aux quatre
+rollups, jamais le worker P5-A2. Ne commencer ni P5-A3, ni P6, ni P7 avant ces
+décisions. Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —
 `coupon_redemptions` et `redemptions_count` n'arrivent qu'à la confirmation

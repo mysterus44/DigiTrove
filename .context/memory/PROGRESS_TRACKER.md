@@ -15,7 +15,7 @@ P3 COMMERCE         : ██████████  Schéma P3C-C refunds merg
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
-P5 ANALYTIQUE       : ████████░░  P5-A0/P5-A1 mergés ; P5-A2 implémenté sur `p5-a2-authoritative-rollups-partitions`, en attente de revue/merge (D-039)
+P5 ANALYTIQUE       : █████████░  P5-A0/P5-A1/P5-A2 terminés et mergés ; P5-A3 audité, bloqué sur décisions produit et frontière de lecture
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
@@ -492,12 +492,15 @@ Foundation**.
 | **P5-A1** First-party Event & Session Ingestion | ✅ DONE — mergé PR #27, head `955cc340`, merge `c699c5b9`, CI #33 ; consentement versionné, autorité SECURITY DEFINER et isolation des contextes d'authentification |
 | Autorité P5-A1 `000017` | ✅ DONE — rôle NOLOGIN `digitrove_analytics_executor`, runtime EXECUTE-only, compatibilité session anonyme/même compte imposée dans les deux lookups SQL, rollback isolé ; 33 migrations |
 | Validation P5-A1 | ✅ POST-MERGE GREEN — 74 tests / 400 assertions ; Pint 254 ; P5-A0/P4-C/P4-B/P3-B verts |
-| **P5-A2** partitions et rollups autoritatifs | ✅ IMPLÉMENTÉ, EN ATTENTE DE REVUE/MERGE — migration unique `000018`, D-039 |
+| **P5-A2** partitions et rollups autoritatifs | ✅ TERMINÉ, MERGÉ ET VALIDÉ — PR #28, head `03063db8`, merge `17aaa4f4`, CI #35, migration unique `000018`, D-039 |
 | Correction dimensionnelle produit | ✅ engagement sans devise dans `daily_product_engagement_stats`; commerce currency-safe dans `daily_product_stats`; `purchased_product_id` immuable sans FK |
 | Autorité de rollup | ✅ worker LOGIN EXECUTE-only, executor NOLOGIN, SECURITY DEFINER, recalcul UTC atomique/idempotent, commandes et scheduler conditionnel |
 | Partitions calendaires contrôlées | ✅ création mensuelle bornée et idempotente, DEFAULT jamais déplacée, audit non destructif, ACL explicites |
-| Validation P5-A2 | ✅ PostgreSQL réel : 34 migrations, P5-A2 24/182, suite 740/5365, Pint 278, rollback/concurrence verts |
-| **P5-A3** read models et dashboard analytique | ⬜ PROCHAINE PHASE APRÈS REVUE/MERGE P5-A2 — non commencée |
+| Validation P5-A2 | ✅ POST-MERGE GREEN — 34 migrations, P5-A2 25/198, P5-A1 74/400, P5-A0 19/256, suite 741/5381, Pint 278, rollback/concurrence verts |
+| **P5-A3** audit read models/dashboard | ⚠️ BLOCAGE PRODUIT — implémentation non commencée; audience `admin`/`staff`, portée globale/tenant et ownership du gate UI P5-A3/P6 à trancher |
+| Autorisation Filament P5-A3 | ⚠️ aucun accès production actuel : `User` n'implémente pas `FilamentUser`; aucune policy/gate analytique |
+| Frontière PostgreSQL de lecture | ⚠️ migration/provisionnement préalable requis : runtime et worker sans SELECT; recommander un reader LOGIN restreint aux quatre rollups, jamais `events`/sessions/Commerce/opérations |
+| Portée analytique actuelle | ✅ globale uniquement; aucun vendeur, tenant, owner ou dimension propriétaire; dashboard vendeur impossible honnêtement sans évolution de schéma |
 | Campaigns, segments et affiliation | ⬜ P6 — explicitement hors P5-A0 |
 
 ## P6 — CRM & MARKETING
@@ -506,7 +509,7 @@ Foundation**.
 | customer_segments + membres (définition JSONB) | ⬜ TODO |
 | Rollups CRM maintenus par événement (orders_count, LTV) | ⬜ TODO |
 | Paniers abandonnés + relance | ⬜ TODO |
-| Widgets Filament (CA, tunnel, top produits) | ⬜ TODO |
+| Widgets Filament (CA, tunnel, top produits) | ⚠️ ownership de phase à trancher avec P5-A3 avant implémentation |
 | Export CSV des segments | ⬜ TODO |
 
 ## P7 — BLOG & SEO

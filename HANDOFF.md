@@ -8,19 +8,30 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-25
-- **Branche git active** : `p5-a2-authoritative-rollups-partitions`, basée sur
-  `d7c4d62ac21c66ad86d14d065957a44030bcb500`.
-- **P5-A2 AUTHORITATIVE ROLLUPS AND PARTITION OPERATIONS IMPLÉMENTÉ, EN
-  ATTENTE DE REVUE/MERGE** (D-039). La migration unique `000018` sépare
+- **Branche git active** : `p0-foundations-laravel13`, synchronisée sur
+  `17aaa4f43fcac0d3ef5e039897f0d30666b9d29d`.
+- **P5-A2 AUTHORITATIVE ROLLUPS AND PARTITION OPERATIONS TERMINÉ, MERGÉ ET
+  VALIDÉ** via [PR #28](https://github.com/mysterus44/DigiTrove/pull/28), head
+  `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
+  `17aaa4f43fcac0d3ef5e039897f0d30666b9d29d`, CI #35 success (D-039).
+  La migration unique `000018` sépare
   l'engagement sans devise (`daily_product_engagement_stats`) du commerce
   produit currency-safe, ajoute `order_items.purchased_product_id` immuable sans
   FK, et installe les autorités de rollup/partition. Worker LOGIN EXECUTE-only,
   executor NOLOGIN, trois fonctions SECURITY DEFINER, commandes rollup/ensure/
   audit et scheduler conditionnel. La partition DEFAULT n'est jamais déplacée
-  automatiquement. Validation finale : **34 migrations**, P5-A2 **24 tests /
-  182 assertions**, suite complète **740 / 5365**, Pint **278 fichiers**,
+  automatiquement. Validation post-merge : **34 migrations**, P5-A2 **25 tests /
+  198 assertions**, suite complète **741 / 5381**, Pint **278 fichiers**,
   `git diff --check` propre; rollback isolé et concurrence PostgreSQL verts.
-  P5-A3, P6 et P7 ne sont pas commencés.
+- **P5-A3 AUDITÉ, IMPLÉMENTATION NON COMMENCÉE — BLOCAGE PRODUIT**. Le dépôt
+  contient un seul panel Filament `admin`, mais `User` n'implémente pas
+  `FilamentUser` : en production, aucun rôle ne peut actuellement l'ouvrir. Les
+  rôles `admin` et `staff` existent, sans policy/gate analytique ni décision
+  explicite sur l'accès aux données financières. Les rollups sont globaux et
+  sans propriétaire/tenant; aucun vendeur n'existe dans le modèle. Enfin,
+  `digitrove_runtime` et `digitrove_analytics_worker` n'ont aucun `SELECT` sur
+  les rollups. Une frontière de lecture dédiée est donc requise avant toute UI.
+  P6 et P7 ne sont pas commencés.
 - **P5-A1 FIRST-PARTY ANALYTICS INGESTION TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #27](https://github.com/mysterus44/DigiTrove/pull/27), head
   `955cc34050daa4b8706e752fd9a82f579bebb02b`, merge
@@ -438,11 +449,34 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 Revue/Merge P5-A2, puis P5-A3 — Analytics Read Models and Dashboard
+## 🎯 Décisions produit P5-A3 — Analytics Read Models and Dashboard
 
-P5-A2 est implémenté sur `p5-a2-authoritative-rollups-partitions` et doit être
-revu puis mergé dans `p0-foundations-laravel13`. Après cette clôture seulement,
-la phase suivante sera P5-A3. Ne commencer ni P5-A3, ni P6, ni P7 avant ce gate.
+P5-A2 est clos. Avant toute branche ou implémentation P5-A3, une validation
+humaine doit trancher :
+
+1. accès analytique `admin` uniquement, ou `admin` + `staff` actif avec
+   permissions distinctes;
+2. dashboard global, seul périmètre honnête avec le schéma actuel, ou future
+   isolation vendeur/tenant exigeant d'abord ownership et dimensions dédiées;
+3. widgets Filament livrés en P5-A3 ou maintenus dans P6, où le tracker les
+   place encore.
+
+Le prochain gate technique recommandé commence par une autorisation Filament
+fail-closed et une identité PostgreSQL de lecture dédiée aux quatre rollups,
+sans accès à `events`, `analytics_sessions`, Commerce ou aux opérations P5-A2.
+Ne commencer ni P5-A3, ni P6, ni P7 avant ces décisions.
+
+### 2026-07-25 — Codex (clôture post-merge P5-A2 et audit P5-A3)
+
+- PR #28 mergée : head `03063db8`, merge `17aaa4f4`, parents `d7c4d62a` et
+  `03063db8`, CI #35 success; les quatre commits P5-A2 sont intégrés.
+- Validation post-merge : P5-A2 **25/198**, P5-A1 **74/400**, P5-A0 **19/256**,
+  P4-C **86/559**, P4-B **20/560**, P3-D2 **91/364**, P3-B **18/354**, suite
+  **741/5381**, Pint **278**, **34 migrations**, `git diff --check` propre.
+- Audit P5-A3 : un panel sans autorisation production, aucune policy analytique,
+  rollups globaux sans tenant, aucune connexion web autorisée à les lire,
+  ChartWidget/StatsOverviewWidget disponibles dans Filament, aucun widget
+  applicatif, aucun code P5-A3/P6/P7.
 
 ### 2026-07-25 — Codex (P5-A2 rollups et partitions autoritatifs)
 

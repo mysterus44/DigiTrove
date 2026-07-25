@@ -3049,8 +3049,9 @@ Safe Partition Operations**.
 
 ### D-039 — Dimensionally Correct Product Analytics and Authoritative Operations ✅
 
-**Date** : 2026-07-25. **Statut** : P5-A2 implémenté sur
-`p5-a2-authoritative-rollups-partitions`, en attente de revue/merge.
+**Date** : 2026-07-25. **Statut** : P5-A2 terminé, mergé et validé via PR #28,
+head `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
+`17aaa4f43fcac0d3ef5e039897f0d30666b9d29d`, CI #35 success.
 
 **PROBLÈMES CORRIGÉS** :
 
@@ -3117,11 +3118,48 @@ Le rollback isolé retire les autorités et l'engagement, restaure exactement le
 colonnes P5-A0, enlève le snapshot créé par ce gate et préserve P5-A0/P5-A1,
 événements, partitions déjà créées, Commerce et rôles globaux.
 
-**VALIDATION** : PostgreSQL 16 réel, **34 migrations**, P5-A2 **24 tests / 182
-assertions**, suite complète **740 / 5365**, Pint **278 fichiers**,
+**VALIDATION** : PostgreSQL 16 réel, **34 migrations**, P5-A2 **25 tests / 198
+assertions**, suite complète **741 / 5381**, Pint **278 fichiers**,
 `git diff --check` propre. Concurrence par connexions indépendantes, ACL,
 fonctions, partition DEFAULT, rollback et backfill fail-closed sont couverts.
 P5-A3, P6 et P7 ne sont pas commencés.
+
+**CLÔTURE POST-MERGE** : le merge a pour parents
+`d7c4d62ac21c66ad86d14d065957a44030bcb500` et
+`03063db8acf0b974ab9369f72d188f8cb52df71b`. Les commits
+`2016e025977073d8e09bd4ec489f398b892a4bd8`,
+`b36171d0a9553b6bfc639fc0701a49d78e0fa6cd`,
+`6b0191958419f199b51cd784fb34c9aa2fa0bba5` et
+`03063db8acf0b974ab9369f72d188f8cb52df71b` sont intégrés. Les validations
+post-merge confirment aussi P5-A1 **74/400**, P5-A0 **19/256**, P4-C **86/559**,
+P4-B **20/560**, P3-D2 **91/364** et P3-B **18/354**.
+
+**AUDIT P5-A3 — CONSTATS, PAS NOUVELLE DÉCISION** :
+
+1. Le dépôt enregistre un seul panel Filament, `admin`. `User` n'implémente pas
+   `FilamentUser` et aucun `canAccessPanel()` n'existe : Filament refuse donc
+   tout utilisateur en environnement non local. Les rôles formels sont
+   `customer`, `admin`, `staff`, mais aucune policy/gate analytique ne tranche
+   l'accès aux finances.
+2. Aucun vendeur, marchand, créateur, tenant ou owner n'existe dans les modèles
+   `Product`/`Order` ou les rollups. Les quatre rollups sont globaux. Un
+   dashboard vendeur serait faux sans ownership Commerce et dimensions
+   analytiques additives; le seul périmètre compatible aujourd'hui est global,
+   sous réserve d'une validation produit.
+3. `digitrove_runtime` et `digitrove_analytics_worker` reçoivent tous deux
+   `permission denied` sur `daily_sales_stats`; le worker demeure EXECUTE-only
+   et ne doit jamais servir les requêtes web. P5-A3 nécessite donc une frontière
+   additive dédiée, recommandée sous forme d'un rôle LOGIN read-only et d'une
+   connexion Laravel limités aux quatre rollups, sans `events`,
+   `analytics_sessions`, Commerce ni fonctions d'opération.
+4. Filament fournit déjà `ChartWidget`, `StatsOverviewWidget` et Chart.js, mais
+   aucun widget/resource/page applicatif, filtre, empty state ou skeleton
+   analytique n'existe. La locale applicative par défaut est `en`, tandis que
+   les guides métier emploient surtout le français.
+5. Le tracker place encore les widgets CA/tunnel/top produits en P6, alors que
+   le gate demandé les nomme P5-A3. L'audience (`admin` seul ou staff actif),
+   la portée globale/tenant et l'ownership P5-A3/P6 sont des décisions humaines
+   bloquantes. Aucun D-040 n'est créé artificiellement.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]
