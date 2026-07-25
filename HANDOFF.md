@@ -8,8 +8,19 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-07-25
-- **Branche git active** : `p0-foundations-laravel13`, synchronisée sur le merge
-  P5-A1 `c699c5b97d987ed7d5e23c99edebf66ba2053f99`.
+- **Branche git active** : `p5-a2-authoritative-rollups-partitions`, basée sur
+  `d7c4d62ac21c66ad86d14d065957a44030bcb500`.
+- **P5-A2 AUTHORITATIVE ROLLUPS AND PARTITION OPERATIONS IMPLÉMENTÉ, EN
+  ATTENTE DE REVUE/MERGE** (D-039). La migration unique `000018` sépare
+  l'engagement sans devise (`daily_product_engagement_stats`) du commerce
+  produit currency-safe, ajoute `order_items.purchased_product_id` immuable sans
+  FK, et installe les autorités de rollup/partition. Worker LOGIN EXECUTE-only,
+  executor NOLOGIN, trois fonctions SECURITY DEFINER, commandes rollup/ensure/
+  audit et scheduler conditionnel. La partition DEFAULT n'est jamais déplacée
+  automatiquement. Validation finale : **34 migrations**, P5-A2 **24 tests /
+  182 assertions**, suite complète **740 / 5365**, Pint **278 fichiers**,
+  `git diff --check` propre; rollback isolé et concurrence PostgreSQL verts.
+  P5-A3, P6 et P7 ne sont pas commencés.
 - **P5-A1 FIRST-PARTY ANALYTICS INGESTION TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #27](https://github.com/mysterus44/DigiTrove/pull/27), head
   `955cc34050daa4b8706e752fd9a82f579bebb02b`, merge
@@ -427,12 +438,23 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 P5-A2 — Authoritative Rollups and Partition Operations
+## 🎯 Revue/Merge P5-A2, puis P5-A3 — Analytics Read Models and Dashboard
 
-P5-A1 est mergé et validé. La tâche active est P5-A2 : partitions calendaires
-contrôlées et rollups issus des tables transactionnelles autoritatives, sans
-transformer les événements client en source financière. P5-A3, P6 et P7 restent
-non commencés.
+P5-A2 est implémenté sur `p5-a2-authoritative-rollups-partitions` et doit être
+revu puis mergé dans `p0-foundations-laravel13`. Après cette clôture seulement,
+la phase suivante sera P5-A3. Ne commencer ni P5-A3, ni P6, ni P7 avant ce gate.
+
+### 2026-07-25 — Codex (P5-A2 rollups et partitions autoritatifs)
+
+- Diagnostic fermé : engagement produit sans devise séparé des achats/revenus
+  par devise; aucune devise sentinelle ni duplication des vues.
+- `purchased_product_id` conserve l'identité commerciale immuable, y compris
+  après suppression catalogue; un bundle reste attribué au bundle acheté.
+- Rollups UTC autoritatifs, worker/executor dédiés, ACL EXECUTE-only, partitions
+  mensuelles bornées et DEFAULT non déplacée.
+- Validation : **34 migrations**, P5-A2 **24/182**, suite **740/5365**, Pint
+  **278**, rollback isolé, ACL et concurrence PostgreSQL verts.
+- Laisse à : revue/merge P5-A2, puis plan P5-A3 dans une exécution séparée.
 
 ### 2026-07-25 — Codex (clôture post-merge P5-A1)
 

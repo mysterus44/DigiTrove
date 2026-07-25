@@ -1635,8 +1635,9 @@ CREATE INDEX download_logs_terminal_retention_index
 `8d9d8cc798e6a35ae74a36d1d9ae6a9d22bf171a`, merge
 `94a8c08c5a9d8448dd161665f69602d84715432b`, CI #32 success. L'ingestion
 P5-A1 est terminée, mergée et validée via PR #27, head `955cc340`, merge
-`c699c5b9`, CI #33 success (D-038). P5-A2 est la tâche active; P5-A3, P6 et P7
-ne sont pas commencés.
+`c699c5b9`, CI #33 success (D-038). P5-A2 est implémenté sur
+`p5-a2-authoritative-rollups-partitions`, en attente de revue/merge (D-039).
+P5-A3, P6 et P7 ne sont pas commencés.
 
 **Principe non négociable** : l'analytique ne pose aucune FK, aucun verrou et
 aucune dépendance de disponibilité sur les tables chaudes du commerce.
@@ -1650,8 +1651,8 @@ autoritatives et potentiellement livrées au moins une fois.
 2. `2026_07_14_000015_create_analytics_sessions_table.php`
 3. `2026_07_14_000016_create_analytics_rollups_tables.php`
 
-Chaque frontière possède un rollback PostgreSQL isolé. Aucun DDL automatique
-ne crée de partition calendaire en P5-A0.
+Chaque frontière possède un rollback PostgreSQL isolé. P5-A0 ne créait aucune
+partition calendaire; P5-A2 ajoute uniquement une opération explicite et bornée.
 
 ### `events` et `events_default`
 
@@ -1663,9 +1664,9 @@ HMAC IP optionnel versionné. La clé primaire est `(id, occurred_at)` et
 l'unicité publique `(public_id, occurred_at)`, conformément aux contraintes
 PostgreSQL des tables partitionnées.
 
-`events_default` est la seule partition P5-A0. Les futures partitions
-calendaires seront créées et attachées par une opération contrôlée; chacune
-devra recevoir explicitement les mêmes révocations ACL que le parent.
+`events_default` est la partition de repli. Les partitions calendaires sont
+créées par l'opération P5-A2 contrôlée; chacune reçoit explicitement les mêmes
+révocations ACL que le parent et aucune ligne DEFAULT n'est déplacée.
 
 Contraintes principales :
 
@@ -1697,13 +1698,16 @@ P5-A0 ne crée ni cookie, ni middleware de session, ni écriture runtime.
 
 ### Rollups journaliers
 
-Les rollups sont recalculables, sans FK, et utilisent exclusivement des entiers :
+Les rollups sont recalculables, sans FK, et utilisent exclusivement des entiers.
+P5-A2 corrige leur contrat dimensionnel :
 
 - `daily_sales_stats` : PK `(day, currency)`, compteurs et montants `BIGINT`;
   `net_revenue_minor = gross_revenue_minor - discount_minor + tax_minor -
   refunds_minor`; moyenne entière déterministe;
 - `daily_product_stats` : PK `(day, product_id, currency)`, identifiant produit
-  mou, vues/paniers/achats/revenu en `BIGINT`;
+  acheté immuable, achats/revenu en `BIGINT`; aucune vue ni ajout panier;
+- `daily_product_engagement_stats` : PK `(day, product_id)`, vues/ajouts panier
+  en `BIGINT`, aucune devise et aucune FK;
 - `daily_funnel_stats` : PK `day`, visiteurs, sessions, vues produit, ajouts
   panier, checkouts, achats et nouveaux clients en `BIGINT`.
 
@@ -1790,8 +1794,73 @@ Validation : P5-A1 **74 tests / 400 assertions**, suite complète **716 / 5183**
 Pint **254**, rollback isolé et concurrence PostgreSQL réelle verts. Les
 scénarios HTTP, les appels directs sous `digitrove_runtime` et les connexions
 concurrentes couvrent logout, changement de compte, upgrade anonyme et même
-compte. P5-A2 (partitions contrôlées et rollups autoritatifs), P6 et P7 ne sont
-pas commencés.
+compte.
+
+### P5-A2 — Rollups autoritatifs et partitions sûres (D-039)
+
+**État** : implémenté, en attente de revue/merge. Migration unique :
+`2026_07_14_000018_create_analytics_operations_authority.php`; total **34
+migrations**, aucune `000019`.
+
+#### Correction dimensionnelle et identité achetée
+
+`daily_product_engagement_stats(day, product_id)` contient uniquement `views`,
+`add_to_carts` et `updated_at`, sans devise, FK ou dépendance au catalogue.
+`views` compte les événements `product_view`; `add_to_carts` vaut zéro tant que
+cet événement n'est pas autorisé. `daily_product_stats(day, product_id,
+currency)` contient uniquement `purchases`, `revenue_minor` et `updated_at`.
+Aucune vue n'est dupliquée par devise et aucune devise sentinelle n'existe.
+
+`order_items.purchased_product_id BIGINT NOT NULL` est positif, sans FK et
+immuable après insertion. Il est alimenté par le checkout serveur, jamais par
+le client, et reste présent si la FK catalogue `product_id` devient NULL. Une
+ligne bundle conserve l'identité du bundle acheté; ses composants ne reçoivent
+pas le revenu commercial principal. Le rollup n'effectue aucun join catalogue.
+
+#### Formules autoritatives
+
+- ventes : commandes aux statuts payés groupées par jour UTC de `paid_at` et
+  devise; remboursements réussis groupés par leur jour UTC `succeeded_at`;
+- produit commercial : somme des quantités et totaux snapshots de ligne,
+  groupée par `purchased_product_id` et devise de commande;
+- engagement : nombre de `product_view` par produit et jour UTC, sans devise;
+- funnel : visiteurs, sessions, vues, checkouts, achats et nouveaux clients
+  depuis leurs tables autoritatives.
+
+Le recalcul supprime puis réinsère/upsert les quatre projections dans une
+transaction `REPEATABLE READ`, sous advisory lock par date. Il est atomique,
+idempotent, déterministe et ne modifie aucune table Commerce.
+
+#### Autorité, partitions et ACL
+
+`digitrove_analytics_worker` est un rôle LOGIN dédié : aucun DML/SELECT direct
+sur tables ou séquences, seulement EXECUTE sur :
+
+- `refresh_authoritative_daily_analytics(date)`;
+- `ensure_analytics_events_month_partition(date)`;
+- `audit_analytics_event_partitions()`.
+
+La première fonction SECURITY DEFINER appartient au rôle NOLOGIN
+`digitrove_analytics_rollup_executor`, dont les droits sont bornés aux sources
+en lecture et projections en écriture. Toutes les fonctions épinglent UTC et
+`search_path`; la connexion Laravel dédiée est `pgsql_analytics_worker`.
+
+Le provisionnement mensuel accepte seulement le premier jour d'un mois dans
+une fenêtre de ±60 mois, sérialise par advisory lock, vérifie parent et bornes,
+refuse une plage déjà occupée dans `events_default`, puis applique les
+révocations ACL. Il ne déplace, ne détache et ne supprime aucune ligne ou
+partition. L'audit retourne uniquement noms, bornes et volume DEFAULT.
+
+Commandes : `analytics:rollup`, `analytics:partitions:ensure` et
+`analytics:partitions:audit`. Le scheduler est désactivé par défaut, borné,
+`withoutOverlapping` et `onOneServer`.
+
+Le rollback isolé retire les autorités P5-A2 et la table d'engagement, restaure
+les colonnes P5-A0, retire le snapshot ajouté par `000018`, et préserve P5-A0,
+P5-A1, les événements, les partitions existantes, Commerce et les rôles
+globaux. Validation : P5-A2 **24/182**, suite complète **740/5365**, Pint
+**278**, concurrence et rollback PostgreSQL verts. P5-A3, P6 et P7 ne sont pas
+commencés.
 
 ---
 
