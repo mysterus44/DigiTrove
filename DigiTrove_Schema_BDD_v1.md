@@ -1741,8 +1741,13 @@ La fonction reçoit des valeurs déjà normalisées, génère l'heure serveur,
 verrouille le visiteur par advisory lock puis la session réutilisable
 `FOR UPDATE`, et insère atomiquement session/événement. Elle retourne uniquement
 l'UUID de session effectif. Une session n'est réutilisée que pour le même
-visiteur, avant expiration d'inactivité et d'âge maximal. `last_seen_at` ne
-recule pas; `page_views` augmente seulement pour `page_view`.
+visiteur, avant expiration d'inactivité et d'âge maximal, et si son identité est
+compatible : session anonyme, ou session du même utilisateur authentifié. Une
+session anonyme peut être enrichie au login. Une session identifiée A n'est
+jamais réutilisée après logout ni sous B; la fonction crée ou sélectionne une
+session compatible sans désidentifier ni muter l'ancienne session. Cette règle
+s'applique aux recherches par session demandée et par fallback visiteur.
+`last_seen_at` ne recule pas; `page_views` augmente seulement pour `page_view`.
 
 #### Consentement et identité
 
@@ -1780,9 +1785,12 @@ un HMAC IP et un digest visiteur, jamais les valeurs brutes. Toute panne interne
 répond `204` sans détail SQL et reste indépendante des transactions Commerce.
 Les événements sont at-least-once, non financiers et non autoritatifs.
 
-Validation : P5-A1 **67 tests / 342 assertions**, suite complète **709 / 5125**,
-Pint **254**, rollback isolé et concurrence PostgreSQL réelle verts. P5-A2
-(partitions contrôlées et rollups autoritatifs), P6 et P7 ne sont pas commencés.
+Validation : P5-A1 **74 tests / 400 assertions**, suite complète **716 / 5183**,
+Pint **254**, rollback isolé et concurrence PostgreSQL réelle verts. Les
+scénarios HTTP, les appels directs sous `digitrove_runtime` et les connexions
+concurrentes couvrent logout, changement de compte, upgrade anonyme et même
+compte. P5-A2 (partitions contrôlées et rollups autoritatifs), P6 et P7 ne sont
+pas commencés.
 
 ---
 

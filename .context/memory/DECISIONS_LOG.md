@@ -2995,10 +2995,14 @@ consentement et sans accepter une donnée financière venant du navigateur.
    sa séquence et SELECT/INSERT/UPDATE sur `analytics_sessions`.
 8. La sessionisation est atomique dans PostgreSQL. Un advisory lock par visiteur
    sérialise la première session; la session réutilisée est verrouillée
-   `FOR UPDATE`, vérifiée par visiteur, inactivité et âge maximal.
-   `last_seen_at` ne recule jamais et `page_views` n'augmente que pour
-   `page_view`. Le `user_id` serveur peut enrichir la session mais n'est pas
-   effacé arbitrairement.
+   `FOR UPDATE`, vérifiée par visiteur, inactivité, âge maximal et compatibilité
+   du contexte d'authentification. Une session anonyme peut être réutilisée puis
+   enrichie lors du login. Une session déjà identifiée n'est jamais réutilisée
+   après logout ni sous un autre compte : le changement de contexte crée ou
+   sélectionne une session compatible, tandis que l'identité de l'ancienne
+   session reste immuable. Cette règle est imposée par la fonction PostgreSQL,
+   pas seulement par Laravel. `last_seen_at` ne recule jamais et `page_views`
+   n'augmente que pour `page_view`.
 9. Les cookies `dt_analytics_consent`, `dt_analytics_visitor` et
    `dt_analytics_session` sont chiffrés/signés par Laravel, HttpOnly,
    SameSite Strict et Secure hors local/testing. L'identité visiteur analytique
@@ -3021,13 +3025,16 @@ tiers; queue; listener `OrderPaid`/refund; rollup ou DDL de partition pendant
 l'ingestion; connexion dédiée cosmétique.
 
 **IMPACT ET VALIDATION** : six suites P5-A1 couvrent autorité, consentement,
-ingestion, sessions, concurrence et contrat statique : **67 tests / 342
-assertions**. Deux processus PostgreSQL indépendants prouvent la sérialisation
-sans perte de page view, une seule première session par visiteur et l'absence de
-verrou global. Suite complète : **709 / 5125**; Pint : **254 fichiers**;
-**33 migrations**; rollback isolé `000017`, P5-A0 **19/256**, P4-C **86/559**,
-P4-B **20/560**, P3-B **18/354**, `git diff --check` propre. P5-A2, P6 et P7
-ne sont pas commencés.
+ingestion, sessions, concurrence et contrat statique : **74 tests / 400
+assertions**. Les scénarios HTTP et les appels directs sous
+`digitrove_runtime` prouvent logout A → session anonyme distincte, A → B →
+session B distincte, anonyme → A → session enrichie et A → A → session
+réutilisée. Deux processus PostgreSQL indépendants prouvent aussi la
+sérialisation d'une requête A puis anonyme sans mélange d'identité, perte de
+page view, deadlock, `25P02` ou `42501`. Suite complète : **716 / 5183**; Pint :
+**254 fichiers**; **33 migrations**; rollback isolé `000017`, P5-A0 **19/256**,
+P4-C **86/559**, P4-B **20/560**, P3-B **18/354**, `git diff --check` propre.
+P5-A2, P6 et P7 ne sont pas commencés.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

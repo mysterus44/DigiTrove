@@ -489,9 +489,9 @@ Foundation**.
 | ACL P5-A0 : aucun droit `PUBLIC`/`digitrove_runtime`, y compris partition DEFAULT, séquence et fonction | ✅ DONE — testé sous l'identité runtime réelle |
 | Rollbacks isolés `000014`/`000015`/`000016` | ✅ DONE — trois frontières testées, aucune base temporaire résiduelle |
 | Validation P5-A0 | ✅ DONE — 19 tests / 256 assertions ; suite complète 642 / 4779 ; Pint 235 ; 32 migrations |
-| **P5-A1** First-party Event & Session Ingestion | ✅ IMPLEMENTED — consentement versionné, cookies first-party chiffrés, `page_view`/`product_view`, fonction SECURITY DEFINER et sessionisation atomique ; en attente de revue/merge |
-| Autorité P5-A1 `000017` | ✅ IMPLEMENTED — rôle NOLOGIN `digitrove_analytics_executor`, runtime EXECUTE-only, rollback isolé ; 33 migrations |
-| Validation P5-A1 | ✅ GREEN — 67 tests / 342 assertions ; suite complète 709 / 5125 ; Pint 254 |
+| **P5-A1** First-party Event & Session Ingestion | ✅ IMPLEMENTED — consentement versionné, cookies first-party chiffrés, `page_view`/`product_view`, fonction SECURITY DEFINER et sessionisation atomique isolée par contexte d'authentification ; en attente de revue/merge |
+| Autorité P5-A1 `000017` | ✅ IMPLEMENTED — rôle NOLOGIN `digitrove_analytics_executor`, runtime EXECUTE-only, compatibilité session anonyme/même compte imposée dans les deux lookups SQL, rollback isolé ; 33 migrations |
+| Validation P5-A1 | ✅ GREEN — 74 tests / 400 assertions ; suite complète 716 / 5183 ; Pint 254 ; logout, changement de compte, upgrade anonyme, autorité directe et concurrence couverts |
 | **P5-A2** partitions et rollups autoritatifs | ⬜ TODO — prochaine étape après revue/merge P5-A1 |
 | Partitions calendaires contrôlées et maintenance | ⬜ P5-A2 — aucune DDL automatique en P5-A1 |
 | Jobs d'écriture financière et de rollup | ⬜ P5-A2 — aucun listener financier, job ou scheduler en P5-A1 |

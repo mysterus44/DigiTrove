@@ -355,10 +355,13 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   migration `000017`, executor PostgreSQL NOLOGIN, fonction SECURITY DEFINER,
   runtime EXECUTE-only, consentement versionné, cookies first-party chiffrés,
   `page_view`/`product_view` uniquement, HMAC IP, rate limiting et
-  sessionisation atomique. Ingestion désactivée par défaut; aucune écriture sans
-  consentement courant; aucune donnée financière cliente, queue, rollup ou
-  fournisseur tiers. Validation : **33 migrations**, P5-A1 **67/342**, suite
-  complète **709/5125**, Pint **254**.
+  sessionisation atomique isolée par contexte d'authentification dans
+  PostgreSQL. Une session anonyme peut être enrichie au login; une session
+  identifiée n'est jamais réutilisée après logout ni sous un autre compte.
+  Ingestion désactivée par défaut; aucune écriture sans consentement courant;
+  aucune donnée financière cliente, queue, rollup ou fournisseur tiers.
+  Validation : **33 migrations**, P5-A1 **74/400**, suite complète **716/5183**,
+  Pint **254**.
 
 **PROCHAINE TÂCHE APRÈS MERGE : P5-A2 — Authoritative Rollups and Partition
 Operations.** Ne pas commencer P6 ou P7. Invariants hérités :

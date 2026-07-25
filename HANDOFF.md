@@ -21,8 +21,11 @@
   IP/user-agent brut, queue ou rollup. La sessionisation est atomique sous
   advisory lock visiteur et verrou de ligne; les tests à connexions
   PostgreSQL indépendantes prouvent l'absence de perte de compteur et de double
-  première session. Validation : **33 migrations**, P5-A1 **67 tests / 342
-  assertions**, suite complète **709 / 5125**, Pint **254 fichiers**,
+  première session. L'autorité PostgreSQL isole désormais les sessions par
+  contexte d'authentification : une session anonyme peut être enrichie au
+  login, mais une session identifiée n'est réutilisée ni après logout ni sous
+  un autre compte. Validation finale : **33 migrations**, P5-A1 **74 tests /
+  400 assertions**, suite complète **716 / 5183**, Pint **254 fichiers**,
   `git diff --check` propre.
 - **P5-A0 ANALYTICS SCHEMA FOUNDATION TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #26](https://github.com/mysterus44/DigiTrove/pull/26), head
@@ -445,8 +448,14 @@ client en source financière. P6 et P7 restent non commencés.
 - Connexion Laravel dédiée refusée : le même rôle runtime n'apportait aucune
   isolation d'identité mesurable; garde stricte contre toute transaction
   Commerce ambiante et invocation préparée unique.
-- Validation réelle : P5-A1 **67/342**, P5-A0 **19/256**, P4-C **86/559**,
-  P4-B **20/560**, P3-B **18/354**, suite **709/5125**, Pint **254**,
+- Hardening confidentialité : les deux recherches SQL de session exigent une
+  session anonyme ou le même utilisateur authentifié. Logout A → anonyme et
+  A → B créent une session compatible sans muter la session A; anonyme → A
+  enrichit la même session; A → A la réutilise. Les appels directs sous
+  `digitrove_runtime` et un test concurrent à deux processus verrouillent cette
+  politique dans PostgreSQL.
+- Validation réelle : P5-A1 **74/400**, P5-A0 **19/256**, P4-C **86/559**,
+  P4-B **20/560**, P3-B **18/354**, suite **716/5183**, Pint **254**,
   **33 migrations**, rollback isolé et concurrence verts.
 - P5-A2, P6 et P7 non commencés.
 
