@@ -15,7 +15,7 @@ P3 COMMERCE         : ██████████  Schéma P3C-C refunds merg
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
-P5 ANALYTIQUE       : ████░░░░░░  P5-A0 mergé ; P5-A1 ingestion first-party implémentée sur `p5-a1-first-party-analytics-ingestion`, en attente de revue/merge (D-038)
+P5 ANALYTIQUE       : ██████░░░░  P5-A0 et P5-A1 mergés ; ingestion first-party validée via PR #27 (`c699c5b9`, CI #33, D-038) ; P5-A2 en cours
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
@@ -489,10 +489,10 @@ Foundation**.
 | ACL P5-A0 : aucun droit `PUBLIC`/`digitrove_runtime`, y compris partition DEFAULT, séquence et fonction | ✅ DONE — testé sous l'identité runtime réelle |
 | Rollbacks isolés `000014`/`000015`/`000016` | ✅ DONE — trois frontières testées, aucune base temporaire résiduelle |
 | Validation P5-A0 | ✅ DONE — 19 tests / 256 assertions ; suite complète 642 / 4779 ; Pint 235 ; 32 migrations |
-| **P5-A1** First-party Event & Session Ingestion | ✅ IMPLEMENTED — consentement versionné, cookies first-party chiffrés, `page_view`/`product_view`, fonction SECURITY DEFINER et sessionisation atomique isolée par contexte d'authentification ; en attente de revue/merge |
-| Autorité P5-A1 `000017` | ✅ IMPLEMENTED — rôle NOLOGIN `digitrove_analytics_executor`, runtime EXECUTE-only, compatibilité session anonyme/même compte imposée dans les deux lookups SQL, rollback isolé ; 33 migrations |
-| Validation P5-A1 | ✅ GREEN — 74 tests / 400 assertions ; suite complète 716 / 5183 ; Pint 254 ; logout, changement de compte, upgrade anonyme, autorité directe et concurrence couverts |
-| **P5-A2** partitions et rollups autoritatifs | ⬜ TODO — prochaine étape après revue/merge P5-A1 |
+| **P5-A1** First-party Event & Session Ingestion | ✅ DONE — mergé PR #27, head `955cc340`, merge `c699c5b9`, CI #33 ; consentement versionné, autorité SECURITY DEFINER et isolation des contextes d'authentification |
+| Autorité P5-A1 `000017` | ✅ DONE — rôle NOLOGIN `digitrove_analytics_executor`, runtime EXECUTE-only, compatibilité session anonyme/même compte imposée dans les deux lookups SQL, rollback isolé ; 33 migrations |
+| Validation P5-A1 | ✅ POST-MERGE GREEN — 74 tests / 400 assertions ; Pint 254 ; P5-A0/P4-C/P4-B/P3-B verts |
+| **P5-A2** partitions et rollups autoritatifs | 🔄 IN PROGRESS — Authoritative Rollups and Safe Partition Operations |
 | Partitions calendaires contrôlées et maintenance | ⬜ P5-A2 — aucune DDL automatique en P5-A1 |
 | Jobs d'écriture financière et de rollup | ⬜ P5-A2 — aucun listener financier, job ou scheduler en P5-A1 |
 | Campaigns, segments et affiliation | ⬜ P6 — explicitement hors P5-A0 |

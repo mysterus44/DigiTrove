@@ -1634,8 +1634,9 @@ CREATE INDEX download_logs_terminal_retention_index
 **État** : fondation PostgreSQL terminée, mergée et validée via PR #26, head
 `8d9d8cc798e6a35ae74a36d1d9ae6a9d22bf171a`, merge
 `94a8c08c5a9d8448dd161665f69602d84715432b`, CI #32 success. L'ingestion
-P5-A1 est désormais implémentée séparément par `000017` (D-038), en attente de
-revue/merge. Les campagnes/segments P6 et P7 ne sont pas commencés.
+P5-A1 est terminée, mergée et validée via PR #27, head `955cc340`, merge
+`c699c5b9`, CI #33 success (D-038). P5-A2 est la tâche active; P5-A3, P6 et P7
+ne sont pas commencés.
 
 **Principe non négociable** : l'analytique ne pose aucune FK, aucun verrou et
 aucune dépendance de disponibilité sur les tables chaudes du commerce.
@@ -1722,8 +1723,8 @@ segmentation client et affiliation sont reportés à P6.
 
 ### P5-A1 — First-party Event & Session Ingestion (D-038)
 
-**État** : implémenté sur `p5-a1-first-party-analytics-ingestion`, en attente de
-revue/merge. Migration unique :
+**État** : terminé, mergé et validé via PR #27, head `955cc340`, merge
+`c699c5b9`, CI #33 success. Migration unique :
 `2026_07_14_000017_create_analytics_ingestion_authority.php`. Elle ne crée
 aucune table métier et porte le total à 33 migrations.
 

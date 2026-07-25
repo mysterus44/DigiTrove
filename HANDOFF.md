@@ -7,11 +7,14 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Codex
-- **Date** : 2026-07-24
-- **Branche git active** : `p5-a1-first-party-analytics-ingestion`, créée depuis
-  la clôture P5-A0 `5bff49bf30dd76c193ce3a55207e007c52fd84b4`.
-- **P5-A1 FIRST-PARTY ANALYTICS INGESTION IMPLÉMENTÉ — EN ATTENTE DE
-  REVUE/MERGE** (D-038). Migration `000017`, rôle NOLOGIN
+- **Date** : 2026-07-25
+- **Branche git active** : `p0-foundations-laravel13`, synchronisée sur le merge
+  P5-A1 `c699c5b97d987ed7d5e23c99edebf66ba2053f99`.
+- **P5-A1 FIRST-PARTY ANALYTICS INGESTION TERMINÉ, MERGÉ ET VALIDÉ** via
+  [PR #27](https://github.com/mysterus44/DigiTrove/pull/27), head
+  `955cc34050daa4b8706e752fd9a82f579bebb02b`, merge
+  `c699c5b97d987ed7d5e23c99edebf66ba2053f99`, CI #33 success (D-038).
+  Migration `000017`, rôle NOLOGIN
   `digitrove_analytics_executor`, fonction SECURITY DEFINER
   `ingest_first_party_analytics_event`, runtime EXECUTE-only, consentement
   versionné et ingestion désactivée par défaut. Les cookies
@@ -426,11 +429,21 @@
 
 ## 🎯 P5-A2 — Authoritative Rollups and Partition Operations
 
-P5-A1 est implémenté sur `p5-a1-first-party-analytics-ingestion` et attend sa
-revue/son merge. Ne commencer P5-A2 qu'après ce merge. P5-A2 devra traiter les
-partitions calendaires contrôlées et les rollups issus des tables
-transactionnelles autoritatives; il ne devra pas transformer les événements
-client en source financière. P6 et P7 restent non commencés.
+P5-A1 est mergé et validé. La tâche active est P5-A2 : partitions calendaires
+contrôlées et rollups issus des tables transactionnelles autoritatives, sans
+transformer les événements client en source financière. P5-A3, P6 et P7 restent
+non commencés.
+
+### 2026-07-25 — Codex (clôture post-merge P5-A1)
+
+- PR #27 mergée : head `955cc340`, merge `c699c5b9`, parents `5bff49bf` et
+  `955cc340`, CI #33 success.
+- Les cinq commits P5-A1 sont ancêtres de la stable synchronisée `0/0`.
+- Validation post-merge : P5-A1 **74/400**, P5-A0 **19/256**, P4-C **86/559**,
+  P4-B **20/560**, P3-B **18/354**, Pint **254**, **33 migrations** et
+  `git diff --check` propre.
+- Prochaine tâche : **P5-A2 — Authoritative Rollups and Safe Partition
+  Operations**. P5-A3, P6 et P7 non commencés.
 
 ### 2026-07-24 — Codex (P5-A1 first-party analytics ingestion)
 

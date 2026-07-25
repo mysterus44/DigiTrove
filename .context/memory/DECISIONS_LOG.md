@@ -2950,8 +2950,10 @@ PostgreSQL confirme le parent RANGE, la partition DEFAULT, zéro FK, append-only
 et aucun DML analytique pour `digitrove_runtime`. D-037 reste inchangée.
 
 ### D-038 — Privacy-gated First-party Analytics Ingestion ✅
-**Date** : 2026-07-24. **Statut** : P5-A1 implémenté sur
-`p5-a1-first-party-analytics-ingestion`, en attente de revue/merge.
+**Date** : 2026-07-24. **Statut** : P5-A1 terminé, mergé et validé via
+[PR #27](https://github.com/mysterus44/DigiTrove/pull/27), head
+`955cc34050daa4b8706e752fd9a82f579bebb02b`, merge
+`c699c5b97d987ed7d5e23c99edebf66ba2053f99`, CI #33 success.
 
 **CONTEXTE** : D-037 interdit tout DML analytique direct au runtime métier.
 P5-A1 doit collecter deux observations comportementales first-party sans faire
@@ -3035,6 +3037,15 @@ page view, deadlock, `25P02` ou `42501`. Suite complète : **716 / 5183**; Pint 
 **254 fichiers**; **33 migrations**; rollback isolé `000017`, P5-A0 **19/256**,
 P4-C **86/559**, P4-B **20/560**, P3-B **18/354**, `git diff --check` propre.
 P5-A2, P6 et P7 ne sont pas commencés.
+
+**CLÔTURE POST-MERGE** : les parents du merge sont
+`5bff49bf30dd76c193ce3a55207e007c52fd84b4` et
+`955cc34050daa4b8706e752fd9a82f579bebb02b`. Les cinq commits P5-A1 sont
+intégrés à la stable. Les validations post-merge confirment P5-A1 **74/400**,
+P5-A0 **19/256**, P4-C **86/559**, P4-B **20/560**, P3-B **18/354**, Pint
+**254**, **33 migrations** et `git diff --check` propre. D-037 et D-038 restent
+intégralement applicables. Prochaine tâche : **P5-A2 — Authoritative Rollups and
+Safe Partition Operations**.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]
