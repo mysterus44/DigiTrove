@@ -25,9 +25,16 @@ class ProvisionRuntimeRoles extends Command
     public function handle(): int
     {
         $runtimePassword = (string) config('database.connections.pgsql.password');
+        $analyticsWorkerPassword = (string) config('database.connections.pgsql_analytics_worker.password');
 
         if ($runtimePassword === '') {
             $this->error('The runtime connection (pgsql) has no password configured; refusing to provision an empty-password role.');
+
+            return self::FAILURE;
+        }
+
+        if ($analyticsWorkerPassword === '') {
+            $this->error('The analytics worker connection has no password configured; refusing to provision an empty-password role.');
 
             return self::FAILURE;
         }
@@ -50,15 +57,17 @@ class ProvisionRuntimeRoles extends Command
         // Bind the runtime password as a session GUC via a parameterized query;
         // the script reads it with current_setting('digitrove.runtime_password').
         $connection->statement("SELECT set_config('digitrove.runtime_password', ?, false)", [$runtimePassword]);
+        $connection->statement("SELECT set_config('digitrove.analytics_worker_password', ?, false)", [$analyticsWorkerPassword]);
 
         try {
             $connection->getPdo()->exec($sql);
         } finally {
             // Clear the secret from the session as soon as provisioning is done.
             $connection->statement("SELECT set_config('digitrove.runtime_password', '', false)");
+            $connection->statement("SELECT set_config('digitrove.analytics_worker_password', '', false)");
         }
 
-        $this->info('Runtime roles provisioned (digitrove_runtime, digitrove_download_executor, digitrove_analytics_executor).');
+        $this->info('Runtime roles provisioned (runtime, download/ingestion/rollup executors, analytics worker).');
 
         return self::SUCCESS;
     }

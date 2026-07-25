@@ -23,11 +23,16 @@ final class PhaseMigrationHarness
     /** @var array<string, mixed> */
     private array $runtimeConnection;
 
+    /** @var array<string, mixed> */
+    private array $analyticsWorkerConnection;
+
     private PDO $admin;
 
     private ?PDO $connectionPdo = null;
 
     private ?PDO $runtimePdoInstance = null;
+
+    private ?PDO $analyticsWorkerPdoInstance = null;
 
     public function __construct(private readonly string $databaseName)
     {
@@ -36,6 +41,7 @@ final class PhaseMigrationHarness
         // runtime PDO so boundary probes run under the real restricted role.
         $this->connection = config('database.connections.pgsql_migration');
         $this->runtimeConnection = config('database.connections.pgsql');
+        $this->analyticsWorkerConnection = config('database.connections.pgsql_analytics_worker');
         $this->admin = $this->makePdo('postgres');
     }
 
@@ -55,6 +61,7 @@ final class PhaseMigrationHarness
     {
         $this->connectionPdo = null;
         $this->runtimePdoInstance = null;
+        $this->analyticsWorkerPdoInstance = null;
         $quoted = '"'.$this->databaseName.'"';
         $this->admin->exec("DROP DATABASE IF EXISTS {$quoted} WITH (FORCE)");
     }
@@ -265,6 +272,21 @@ final class PhaseMigrationHarness
         return $this->pdo();
     }
 
+    public function analyticsWorkerPdo(): PDO
+    {
+        return $this->analyticsWorkerPdoInstance ??= new PDO(
+            sprintf(
+                'pgsql:host=%s;port=%s;dbname=%s',
+                $this->analyticsWorkerConnection['host'],
+                $this->analyticsWorkerConnection['port'] ?? 5432,
+                $this->databaseName,
+            ),
+            $this->analyticsWorkerConnection['username'],
+            $this->analyticsWorkerConnection['password'],
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
+        );
+    }
+
     private function makePdo(string $database): PDO
     {
         $dsn = sprintf(
@@ -301,6 +323,8 @@ final class PhaseMigrationHarness
                 'DB_PASSWORD' => (string) $this->runtimeConnection['password'],
                 'DB_MIGRATION_USERNAME' => (string) $this->connection['username'],
                 'DB_MIGRATION_PASSWORD' => (string) $this->connection['password'],
+                'ANALYTICS_WORKER_DB_USERNAME' => (string) $this->analyticsWorkerConnection['username'],
+                'ANALYTICS_WORKER_DB_PASSWORD' => (string) $this->analyticsWorkerConnection['password'],
             ],
         );
         $process->setTimeout(120);

@@ -38,6 +38,11 @@
         <!-- Migration/owner connection: schema + RefreshDatabase migrate as this. -->
         <env name="DB_MIGRATION_USERNAME" value="digitrove"/>
         <env name="DB_MIGRATION_PASSWORD" value="digitrove_local"/>
+        <env name="ANALYTICS_WORKER_DB_USERNAME" value="digitrove_analytics_worker"/>
+        <env name="ANALYTICS_WORKER_DB_PASSWORD" value="digitrove_analytics_worker_local"/>
+        <env name="ANALYTICS_OPERATIONS_ENABLED" value="true"/>
+        <env name="ANALYTICS_ROLLUPS_ENABLED" value="true"/>
+        <env name="ANALYTICS_PARTITIONS_ENABLED" value="true"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

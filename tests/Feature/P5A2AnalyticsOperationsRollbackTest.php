@@ -20,6 +20,12 @@ it('rolls back only the P5-A2 boundary and restores the exact P5-A1 analytics sc
                 "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='order_items' AND column_name='purchased_product_id'",
             )->fetchColumn())->toBe(1);
 
+        $worker = $harness->analyticsWorkerPdo();
+        $partitionMonth = now('UTC')->startOfMonth()->addMonths(9)->toDateString();
+        $partitionName = 'events_y'.now('UTC')->startOfMonth()->addMonths(9)->format('Y').'m'.now('UTC')->startOfMonth()->addMonths(9)->format('m');
+        $statement = $worker->prepare('SELECT public.ensure_analytics_events_month_partition(:month::date)');
+        $statement->execute(['month' => $partitionMonth]);
+
         expect($harness->rollbackExactMigrations([P5A2_MIGRATION]))->toBe([
             '2026_07_14_000018_create_analytics_operations_authority',
         ])
@@ -34,6 +40,12 @@ it('rolls back only the P5-A2 boundary and restores the exact P5-A1 analytics sc
                 "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='order_items' AND column_name='purchased_product_id'",
             )->fetchColumn())->toBe(0)
             ->and($harness->countFunctions(['ingest_first_party_analytics_event']))->toBe(1)
+            ->and($harness->countFunctions([
+                'refresh_authoritative_daily_analytics',
+                'ensure_analytics_events_month_partition',
+                'audit_analytics_event_partitions',
+            ]))->toBe(0)
+            ->and($harness->hasTable($partitionName))->toBeTrue()
             ->and($harness->ranMigrations())->toHaveCount(33);
     } finally {
         $harness->drop();

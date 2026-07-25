@@ -31,6 +31,9 @@ uses(RefreshDatabase::class);
  * under `app/Services` fails the guard, whatever its name or namespace.
  */
 const P4B_ALLOWED_SERVICE_FILES = [
+    // P5-A2 (D-039) — EXECUTE-only rollup and partition operation clients.
+    'Analytics/AuthoritativeRollupService.php',
+    'Analytics/EventPartitionService.php',
     // P5-A1 (D-038) — single privacy-gated analytics ingestion authority.
     'Analytics/FirstPartyAnalyticsIngestionService.php',
     // P3-D2 (D-031) — checkout transaction. Commerce only, no delivery.

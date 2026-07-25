@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\AnalyticsOperationsConfig;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -22,5 +23,26 @@ foreach ($deliverySchedules as $event) {
     // deliberately remain single-process only.
     if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
         $event->onOneServer();
+    }
+}
+
+if (AnalyticsOperationsConfig::enabled()) {
+    $analyticsSchedules = [];
+
+    if (AnalyticsOperationsConfig::rollupsEnabled()) {
+        $analyticsSchedules[] = Schedule::command('analytics:rollup')->dailyAt('00:15');
+    }
+
+    if (AnalyticsOperationsConfig::partitionsEnabled()) {
+        $analyticsSchedules[] = Schedule::command('analytics:partitions:ensure')->dailyAt('00:30');
+        $analyticsSchedules[] = Schedule::command('analytics:partitions:audit')->dailyAt('00:45');
+    }
+
+    foreach ($analyticsSchedules as $event) {
+        $event->withoutOverlapping();
+
+        if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
+            $event->onOneServer();
+        }
     }
 }
