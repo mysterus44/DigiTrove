@@ -5,13 +5,13 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 use Tests\Support\PhaseMigrationHarness;
 
-function p5a1ConcurrencyCall(PDO $pdo, string $visitorId, ?string $sessionId, string $eventId, string $path): string
+function p5a1ConcurrencyCall(PDO $pdo, string $visitorId, ?string $sessionId, string $eventId, string $path, ?int $authenticatedUserId = null): string
 {
     $statement = $pdo->prepare(<<<'SQL'
         SELECT public.ingest_first_party_analytics_event(
             :visitor::uuid,
             :session::uuid,
-            NULL::bigint,
+            :user_id::bigint,
             :event::uuid,
             'page_view'::varchar,
             NULL::varchar,
@@ -34,6 +34,7 @@ function p5a1ConcurrencyCall(PDO $pdo, string $visitorId, ?string $sessionId, st
     $statement->execute([
         'visitor' => $visitorId,
         'session' => $sessionId,
+        'user_id' => $authenticatedUserId,
         'event' => $eventId,
         'path' => $path,
         'ip_hash' => hash('sha256', $visitorId),
@@ -59,7 +60,7 @@ function p5a1ConcurrencyPdo(string $database, bool $runtime = true): PDO
     );
 }
 
-function p5a1ConcurrencyChild(string $database, string $visitorId, ?string $sessionId, string $path): Process
+function p5a1ConcurrencyChild(string $database, string $visitorId, ?string $sessionId, string $path, ?int $authenticatedUserId = null): Process
 {
     $code = <<<'PHP'
         $pdo = new PDO(
@@ -72,7 +73,7 @@ function p5a1ConcurrencyChild(string $database, string $visitorId, ?string $sess
         try {
             $stmt = $pdo->prepare(<<<'SQL'
                 SELECT public.ingest_first_party_analytics_event(
-                    :visitor::uuid, :session::uuid, NULL::bigint, :event::uuid,
+                    :visitor::uuid, :session::uuid, :user_id::bigint, :event::uuid,
                     'page_view'::varchar, NULL::varchar, NULL::bigint, '{}'::jsonb,
                     :path::varchar, NULL::varchar, NULL::varchar, NULL::varchar,
                     NULL::varchar, 'desktop'::varchar, NULL::varchar, :ip_hash::varchar,
@@ -82,6 +83,7 @@ function p5a1ConcurrencyChild(string $database, string $visitorId, ?string $sess
             $stmt->execute([
                 'visitor' => getenv('TEST_VISITOR_ID'),
                 'session' => getenv('TEST_SESSION_ID') ?: null,
+                'user_id' => getenv('TEST_USER_ID') ?: null,
                 'event' => getenv('TEST_EVENT_ID'),
                 'path' => getenv('TEST_PATH'),
                 'ip_hash' => hash('sha256', getenv('TEST_VISITOR_ID')),
@@ -107,6 +109,7 @@ function p5a1ConcurrencyChild(string $database, string $visitorId, ?string $sess
         'TEST_DB_PASSWORD' => (string) $runtime['password'],
         'TEST_VISITOR_ID' => $visitorId,
         'TEST_SESSION_ID' => $sessionId ?? '',
+        'TEST_USER_ID' => $authenticatedUserId === null ? '' : (string) $authenticatedUserId,
         'TEST_EVENT_ID' => (string) Str::uuid(),
         'TEST_PATH' => $path,
     ]);
@@ -186,6 +189,70 @@ it('serialises first requests per visitor but leaves distinct visitors lock-free
             ->and(trim($child->getOutput()))->toBe($sessionId)
             ->and((int) $owner->query("SELECT count(*) FROM analytics_sessions WHERE visitor_id = '{$visitorId}'")->fetchColumn())->toBe(1)
             ->and((int) $owner->query("SELECT page_views FROM analytics_sessions WHERE id = '{$sessionId}'")->fetchColumn())->toBe(2);
+    } finally {
+        if (isset($first) && $first->inTransaction()) {
+            $first->rollBack();
+        }
+        if (isset($child) && $child->isRunning()) {
+            $child->stop(1);
+        }
+        $harness->drop();
+    }
+
+    expect(DB::connection('pgsql_migration')->table('pg_database')->where('datname', $harness->databaseName())->exists())->toBeFalse();
+});
+
+it('serialises an identified request before an anonymous request without sharing the identified session', function () {
+    $migration = '2026_07_14_000017_create_analytics_ingestion_authority.php';
+    $harness = new PhaseMigrationHarness('digitrove_p5a1_auth_context_'.strtolower(Str::random(10)));
+
+    try {
+        $harness->create();
+        $harness->applyMigrationsThrough($migration);
+        $first = $harness->runtimePdo();
+        $owner = p5a1ConcurrencyPdo($harness->databaseName(), false);
+        $visitorId = (string) Str::uuid();
+        $userA = 7001;
+
+        $first->beginTransaction();
+        $identifiedSession = p5a1ConcurrencyCall(
+            $first,
+            $visitorId,
+            null,
+            (string) Str::uuid(),
+            '/auth-context/concurrent/a',
+            $userA,
+        );
+        $child = p5a1ConcurrencyChild(
+            $harness->databaseName(),
+            $visitorId,
+            $identifiedSession,
+            '/auth-context/concurrent/anonymous',
+        );
+        $child->setTimeout(15);
+        $child->start();
+        usleep(500_000);
+
+        expect($child->isRunning())->toBeTrue('The anonymous request did not wait on the visitor advisory lock.');
+
+        $first->commit();
+        $child->wait();
+        $anonymousSession = trim($child->getOutput());
+
+        $identified = $owner->query("SELECT user_id, page_views FROM analytics_sessions WHERE id = '{$identifiedSession}'")->fetch(PDO::FETCH_OBJ);
+        $anonymous = $owner->query("SELECT user_id, page_views FROM analytics_sessions WHERE id = '{$anonymousSession}'")->fetch(PDO::FETCH_OBJ);
+        $anonymousEvent = $owner->query("SELECT user_id, session_id FROM events WHERE page_path = '/auth-context/concurrent/anonymous'")->fetch(PDO::FETCH_OBJ);
+
+        expect($child->isSuccessful())->toBeTrue($child->getErrorOutput())
+            ->and($anonymousSession)->toBeUuid()
+            ->and($anonymousSession)->not->toBe($identifiedSession)
+            ->and((int) $identified->user_id)->toBe($userA)
+            ->and((int) $identified->page_views)->toBe(1)
+            ->and($anonymous->user_id)->toBeNull()
+            ->and((int) $anonymous->page_views)->toBe(1)
+            ->and($anonymousEvent->user_id)->toBeNull()
+            ->and($anonymousEvent->session_id)->toBe($anonymousSession)
+            ->and((int) $owner->query("SELECT count(*) FROM events WHERE visitor_id = '{$visitorId}'")->fetchColumn())->toBe(2);
     } finally {
         if (isset($first) && $first->inTransaction()) {
             $first->rollBack();

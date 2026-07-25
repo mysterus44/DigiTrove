@@ -29,6 +29,21 @@ it('keeps the application behind one prepared analytics authority and outside am
         ->and($service)->not->toContain('dispatch(');
 });
 
+it('pins authentication compatibility inside both PostgreSQL session lookups', function () use ($root) {
+    $migration = file_get_contents($root.'/database/migrations/2026_07_14_000017_create_analytics_ingestion_authority.php');
+    $compatible = <<<'SQL'
+        s.user_id IS NULL
+                                      OR (
+                                          p_authenticated_user_id IS NOT NULL
+                                          AND s.user_id = p_authenticated_user_id
+                                      )
+        SQL;
+
+    expect($migration)->not->toContain('OR p_authenticated_user_id IS NULL')
+        ->and(substr_count($migration, $compatible))->toBe(2)
+        ->and($migration)->toContain('user_id = COALESCE(user_id, p_authenticated_user_id)');
+});
+
 it('contains no third-party tracker, browser storage, financial event or raw identity field', function () use ($root) {
     $paths = [
         $root.'/app/Http/Controllers/AnalyticsConsentController.php',

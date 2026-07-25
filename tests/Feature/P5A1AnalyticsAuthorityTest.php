@@ -14,6 +14,7 @@ function callP5A1Authority(
     ?string $entityType = null,
     ?int $entityId = null,
     array $properties = [],
+    ?int $authenticatedUserId = null,
 ): string {
     $result = DB::selectOne(
         <<<'SQL'
@@ -43,7 +44,7 @@ function callP5A1Authority(
         [
             $visitorId,
             $requestedSessionId,
-            null,
+            $authenticatedUserId,
             (string) Str::uuid(),
             $eventName,
             $entityType,
@@ -183,6 +184,57 @@ it('appends a valid event and atomically reuses its effective session', function
         ->and($reused)->toBe($sessionId)
         ->and((int) $owner->table('analytics_sessions')->where('id', $sessionId)->value('page_views'))->toBe(1)
         ->and($owner->table('events')->where('session_id', $sessionId)->count())->toBe(2);
+});
+
+it('enforces requested-session authentication compatibility inside the runtime authority', function () {
+    $owner = DB::connection('pgsql_migration');
+
+    $logoutVisitor = (string) Str::uuid();
+    $logoutSession = callP5A1Authority($logoutVisitor, authenticatedUserId: 1001);
+    $logoutBefore = $owner->table('analytics_sessions')->where('id', $logoutSession)->first();
+    $anonymousSession = callP5A1Authority($logoutVisitor, $logoutSession);
+
+    $accountVisitor = (string) Str::uuid();
+    $accountASession = callP5A1Authority($accountVisitor, authenticatedUserId: 2001);
+    $accountABefore = $owner->table('analytics_sessions')->where('id', $accountASession)->first();
+    $accountBSession = callP5A1Authority($accountVisitor, $accountASession, authenticatedUserId: 2002);
+
+    $sameAccountVisitor = (string) Str::uuid();
+    $sameAccountSession = callP5A1Authority($sameAccountVisitor, authenticatedUserId: 3001);
+    $sameAccountReused = callP5A1Authority($sameAccountVisitor, $sameAccountSession, authenticatedUserId: 3001);
+
+    $upgradeVisitor = (string) Str::uuid();
+    $upgradeSession = callP5A1Authority($upgradeVisitor);
+    $upgraded = callP5A1Authority($upgradeVisitor, $upgradeSession, authenticatedUserId: 4001);
+
+    expect($anonymousSession)->not->toBe($logoutSession)
+        ->and($owner->table('analytics_sessions')->where('id', $anonymousSession)->value('user_id'))->toBeNull()
+        ->and((array) $owner->table('analytics_sessions')->where('id', $logoutSession)->first())->toBe((array) $logoutBefore)
+        ->and($accountBSession)->not->toBe($accountASession)
+        ->and($owner->table('analytics_sessions')->where('id', $accountBSession)->value('user_id'))->toBe(2002)
+        ->and((array) $owner->table('analytics_sessions')->where('id', $accountASession)->first())->toBe((array) $accountABefore)
+        ->and($sameAccountReused)->toBe($sameAccountSession)
+        ->and($upgraded)->toBe($upgradeSession)
+        ->and($owner->table('analytics_sessions')->where('id', $upgradeSession)->value('user_id'))->toBe(4001);
+});
+
+it('does not fallback to an identified session for an anonymous or different-account request', function () {
+    $owner = DB::connection('pgsql_migration');
+
+    $anonymousVisitor = (string) Str::uuid();
+    $identifiedForLogout = callP5A1Authority($anonymousVisitor, authenticatedUserId: 5001);
+    $anonymousFallback = callP5A1Authority($anonymousVisitor);
+
+    $differentAccountVisitor = (string) Str::uuid();
+    $identifiedForA = callP5A1Authority($differentAccountVisitor, authenticatedUserId: 6001);
+    $accountBFallback = callP5A1Authority($differentAccountVisitor, authenticatedUserId: 6002);
+
+    expect($anonymousFallback)->not->toBe($identifiedForLogout)
+        ->and($owner->table('analytics_sessions')->where('id', $anonymousFallback)->value('user_id'))->toBeNull()
+        ->and($accountBFallback)->not->toBe($identifiedForA)
+        ->and($owner->table('analytics_sessions')->where('id', $accountBFallback)->value('user_id'))->toBe(6002)
+        ->and($owner->table('events')->where('session_id', $anonymousFallback)->value('user_id'))->toBeNull()
+        ->and($owner->table('events')->where('session_id', $accountBFallback)->value('user_id'))->toBe(6002);
 });
 
 it('rejects public financial and malformed event contracts inside PostgreSQL itself', function (string $event, ?string $entityType, ?int $entityId, array $properties) {

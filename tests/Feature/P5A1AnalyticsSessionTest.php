@@ -22,12 +22,12 @@ function enableP5A1SessionAnalytics(): void
     ]);
 }
 
-function p5a1InsertSession(string $sessionId, string $visitorId, $startedAt, $lastSeenAt): void
+function p5a1InsertSession(string $sessionId, string $visitorId, $startedAt, $lastSeenAt, ?int $userId = null): void
 {
     DB::connection('pgsql_migration')->table('analytics_sessions')->insert([
         'id' => $sessionId,
         'visitor_id' => $visitorId,
-        'user_id' => null,
+        'user_id' => $userId,
         'started_at' => $startedAt,
         'last_seen_at' => $lastSeenAt,
         'ended_at' => null,
@@ -188,6 +188,136 @@ it('derives user_id only from the authenticated server context and never erases 
     $event = DB::connection('pgsql_migration')->table('events')->where('page_path', $path)->first();
     expect($event->user_id)->toBe($user->id)
         ->and(DB::connection('pgsql_migration')->table('analytics_sessions')->where('id', $event->session_id)->value('user_id'))->toBe($user->id);
+});
+
+it('starts an anonymous session after logout without mutating the identified session', function () {
+    enableP5A1SessionAnalytics();
+    $owner = DB::connection('pgsql_migration');
+    $user = User::factory()->create();
+    $visitorId = (string) Str::uuid();
+    $identifiedPath = '/auth-context/logout/identified/'.Str::lower(Str::random(8));
+    $anonymousPath = '/auth-context/logout/anonymous/'.Str::lower(Str::random(8));
+
+    $this->actingAs($user)
+        ->withCredentials()
+        ->withCookie(AnalyticsConfig::CONSENT_COOKIE, AnalyticsConsent::encode(AnalyticsConsent::GRANTED))
+        ->withCookie(AnalyticsConfig::VISITOR_COOKIE, $visitorId)
+        ->postJson('/analytics/events', [
+            'event_name' => 'page_view',
+            'page_path' => $identifiedPath,
+            'properties' => [],
+        ])->assertNoContent();
+
+    $identifiedEvent = $owner->table('events')->where('page_path', $identifiedPath)->first();
+    $identifiedBefore = $owner->table('analytics_sessions')->where('id', $identifiedEvent->session_id)->first();
+    $this->app['auth']->guard()->logout();
+    $this->app['auth']->forgetGuards();
+
+    $response = $this->withCredentials()
+        ->withCookie(AnalyticsConfig::CONSENT_COOKIE, AnalyticsConsent::encode(AnalyticsConsent::GRANTED))
+        ->withCookie(AnalyticsConfig::VISITOR_COOKIE, $visitorId)
+        ->withCookie(AnalyticsConfig::SESSION_COOKIE, $identifiedEvent->session_id)
+        ->postJson('/analytics/events', [
+            'event_name' => 'page_view',
+            'page_path' => $anonymousPath,
+            'properties' => [],
+        ])->assertNoContent();
+
+    $anonymousEvent = $owner->table('events')->where('page_path', $anonymousPath)->first();
+    $anonymousSession = $owner->table('analytics_sessions')->where('id', $anonymousEvent->session_id)->first();
+    $identifiedAfter = $owner->table('analytics_sessions')->where('id', $identifiedEvent->session_id)->first();
+    $sessionCookie = p5a1SessionResponseCookie($response->baseResponse, AnalyticsConfig::SESSION_COOKIE);
+
+    expect($anonymousEvent->user_id)->toBeNull()
+        ->and($anonymousEvent->session_id)->not->toBe($identifiedEvent->session_id)
+        ->and($anonymousSession->user_id)->toBeNull()
+        ->and((array) $identifiedAfter)->toBe((array) $identifiedBefore)
+        ->and($sessionCookie)->not->toBeNull()
+        ->and($sessionCookie->getValue())->not->toBe($identifiedEvent->session_id)
+        ->and($sessionCookie->getValue())->not->toContain($anonymousEvent->session_id);
+});
+
+it('starts a session for the new account without mutating the previous account session', function () {
+    enableP5A1SessionAnalytics();
+    $owner = DB::connection('pgsql_migration');
+    $userA = User::factory()->create();
+    $userB = User::factory()->create();
+    $visitorId = (string) Str::uuid();
+    $pathA = '/auth-context/account-a/'.Str::lower(Str::random(8));
+    $pathB = '/auth-context/account-b/'.Str::lower(Str::random(8));
+
+    $this->actingAs($userA)
+        ->withCredentials()
+        ->withCookie(AnalyticsConfig::CONSENT_COOKIE, AnalyticsConsent::encode(AnalyticsConsent::GRANTED))
+        ->withCookie(AnalyticsConfig::VISITOR_COOKIE, $visitorId)
+        ->postJson('/analytics/events', [
+            'event_name' => 'page_view',
+            'page_path' => $pathA,
+            'properties' => [],
+        ])->assertNoContent();
+
+    $eventA = $owner->table('events')->where('page_path', $pathA)->first();
+    $sessionABefore = $owner->table('analytics_sessions')->where('id', $eventA->session_id)->first();
+
+    $this->actingAs($userB)
+        ->withCredentials()
+        ->withCookie(AnalyticsConfig::CONSENT_COOKIE, AnalyticsConsent::encode(AnalyticsConsent::GRANTED))
+        ->withCookie(AnalyticsConfig::VISITOR_COOKIE, $visitorId)
+        ->withCookie(AnalyticsConfig::SESSION_COOKIE, $eventA->session_id)
+        ->postJson('/analytics/events', [
+            'event_name' => 'page_view',
+            'page_path' => $pathB,
+            'properties' => [],
+        ])->assertNoContent();
+
+    $eventB = $owner->table('events')->where('page_path', $pathB)->first();
+    $sessionB = $owner->table('analytics_sessions')->where('id', $eventB->session_id)->first();
+    $sessionAAfter = $owner->table('analytics_sessions')->where('id', $eventA->session_id)->first();
+
+    expect($eventB->user_id)->toBe($userB->id)
+        ->and($eventB->session_id)->not->toBe($eventA->session_id)
+        ->and($sessionB->user_id)->toBe($userB->id)
+        ->and((array) $sessionAAfter)->toBe((array) $sessionABefore);
+});
+
+it('reuses and enriches an anonymous session exactly once after login', function () {
+    enableP5A1SessionAnalytics();
+    $owner = DB::connection('pgsql_migration');
+    $user = User::factory()->create();
+    $visitorId = (string) Str::uuid();
+    $anonymousPath = '/auth-context/pre-login/'.Str::lower(Str::random(8));
+    $authenticatedPath = '/auth-context/post-login/'.Str::lower(Str::random(8));
+
+    $this->withCredentials()
+        ->withCookie(AnalyticsConfig::CONSENT_COOKIE, AnalyticsConsent::encode(AnalyticsConsent::GRANTED))
+        ->withCookie(AnalyticsConfig::VISITOR_COOKIE, $visitorId)
+        ->postJson('/analytics/events', [
+            'event_name' => 'page_view',
+            'page_path' => $anonymousPath,
+            'properties' => [],
+        ])->assertNoContent();
+
+    $anonymousEvent = $owner->table('events')->where('page_path', $anonymousPath)->first();
+
+    $this->actingAs($user)
+        ->withCredentials()
+        ->withCookie(AnalyticsConfig::CONSENT_COOKIE, AnalyticsConsent::encode(AnalyticsConsent::GRANTED))
+        ->withCookie(AnalyticsConfig::VISITOR_COOKIE, $visitorId)
+        ->withCookie(AnalyticsConfig::SESSION_COOKIE, $anonymousEvent->session_id)
+        ->postJson('/analytics/events', [
+            'event_name' => 'page_view',
+            'page_path' => $authenticatedPath,
+            'properties' => [],
+        ])->assertNoContent();
+
+    $authenticatedEvent = $owner->table('events')->where('page_path', $authenticatedPath)->first();
+    $session = $owner->table('analytics_sessions')->where('id', $anonymousEvent->session_id)->first();
+
+    expect($anonymousEvent->user_id)->toBeNull()
+        ->and($authenticatedEvent->user_id)->toBe($user->id)
+        ->and($authenticatedEvent->session_id)->toBe($anonymousEvent->session_id)
+        ->and($session->user_id)->toBe($user->id)
+        ->and($session->page_views)->toBe(2);
 });
 
 it('blocks an existing analytics session immediately after consent revocation', function () {

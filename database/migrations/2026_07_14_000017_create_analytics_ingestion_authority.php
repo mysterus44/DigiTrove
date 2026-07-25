@@ -176,8 +176,10 @@ return new class extends Migration
                           AND s.started_at > v_occurred_at - make_interval(hours => p_session_max_hours)
                           AND (
                               s.user_id IS NULL
-                              OR p_authenticated_user_id IS NULL
-                              OR s.user_id = p_authenticated_user_id
+                              OR (
+                                  p_authenticated_user_id IS NOT NULL
+                                  AND s.user_id = p_authenticated_user_id
+                              )
                           )
                         FOR UPDATE;
 
@@ -194,8 +196,10 @@ return new class extends Migration
                           AND s.started_at > v_occurred_at - make_interval(hours => p_session_max_hours)
                           AND (
                               s.user_id IS NULL
-                              OR p_authenticated_user_id IS NULL
-                              OR s.user_id = p_authenticated_user_id
+                              OR (
+                                  p_authenticated_user_id IS NOT NULL
+                                  AND s.user_id = p_authenticated_user_id
+                              )
                           )
                         ORDER BY s.last_seen_at DESC, s.id
                         LIMIT 1
