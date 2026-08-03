@@ -114,6 +114,16 @@ jobs:
               IF has_function_privilege('digitrove_runtime', 'public.enforce_download_grants_immutability()', 'EXECUTE') THEN
                 RAISE EXCEPTION 'digitrove_runtime must not hold EXECUTE on the protected trigger functions';
               END IF;
+              IF (SELECT rolcanlogin FROM pg_roles WHERE rolname = 'digitrove_crm_executor') THEN
+                RAISE EXCEPTION 'digitrove_crm_executor must be NOLOGIN';
+              END IF;
+              IF has_table_privilege('digitrove_runtime', 'crm_contacts', 'SELECT')
+                 OR has_table_privilege('digitrove_runtime', 'crm_marketing_consent_events', 'INSERT') THEN
+                RAISE EXCEPTION 'digitrove_runtime must not hold direct CRM table privileges';
+              END IF;
+              IF NOT has_function_privilege('digitrove_runtime', 'public.resolve_crm_contact(character varying,character varying,bigint,bigint)', 'EXECUTE') THEN
+                RAISE EXCEPTION 'digitrove_runtime must execute the CRM contact authority';
+              END IF;
               IF EXISTS (
                 SELECT 1 FROM pg_auth_members m
                 JOIN pg_roles member ON member.oid = m.member
