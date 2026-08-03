@@ -388,15 +388,32 @@ UTC courant provisoire, sans données brutes, Commerce, worker, opération, API
 ou export. Validation historique : **35 migrations**, P5-A3 **32/193**, suite
 complète **773/5575**, Pint **302**.
 
-**P5-A3C PRODUCT AND FUNNEL ANALYTICS VIEWS IMPLÉMENTÉ, EN ATTENTE DE
-REVUE/MERGE** sur `p5-a3c-product-funnel-analytics` depuis `c6790e6`
-(**D-041**). Produits : engagement global sans devise, commerce par devise,
+**P5-A3C PRODUCT AND FUNNEL ANALYTICS VIEWS TERMINÉ, MERGÉ ET VALIDÉ** via
+[PR #30](https://github.com/mysterus44/DigiTrove/pull/30), head `642f8e35`,
+merge `87bf8399`, CI #37 success (**D-041**). Produits : engagement global sans
+devise, commerce par devise,
 libellé `Produit #<id>`, aucun join catalogue ni faux ratio de cohorte. Tunnel :
 volumes calendaires et ratios agrégés non cohortés, trous à `NULL`, jour UTC
 courant provisoire. Même reader D-040, transactions read-only et cache scalaire
-compatible Redis; aucune migration/ACL supplémentaire. Validation : P5-A3C
-**18/123**, P5-A3 agrégé **50/316**, suite **791/5698**, Pint **318**, **35
-migrations**. P5-A3D, P6 et P7 ne sont pas commencés.
+compatible Redis; aucune migration/ACL supplémentaire. Validation post-merge :
+P5-A3C **22/178**, P5-A3 agrégé **54/371**, P5-A2 **25/198**, P5-A1 **74/400**,
+P5-A0 **19/256**, suite **795/5753**, Pint **318**, **35 migrations**.
+
+**P5 ANALYTIQUE TERMINÉ, MERGÉ ET VALIDÉ** (**D-042**). P5-A3D est reporté au
+durcissement préproduction, non bloquant pour P6; les opérations restent
+CLI/scheduler, désactivées par défaut, et aucune opération n'est exposée dans
+Filament.
+
+**P6 CRM & MARKETING : AUDIT D'ARCHITECTURE DOCUMENTÉ, IMPLÉMENTATION NON
+COMMENCÉE.** Réalité à conserver : checkout invité et paniers persistants
+existent, mais aucun contact CRM unifié, stitching applicatif, lifecycle de
+panier public, campagne ou affiliation. `customer_profiles.marketing_consent`
+n'est pas une preuve versionnée et `lifetime_value_minor` sans devise n'est pas
+autoritatif. Ordre proposé : P6-A0 identité/consentement/autorisation → P6-A1
+rollups commerce par contact/devise → P6-A2 segments typés + membres
+matérialisés → vues/export → paniers/relances → affiliation. P6-A0 reste bloqué
+avant code par les décisions humaines de déduplication compte-invité, contrat
+de consentement et rétention/anonymisation. P7 n'est pas commencé.
 Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —

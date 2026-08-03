@@ -15,8 +15,8 @@ P3 COMMERCE         : ██████████  Schéma P3C-C refunds merg
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
-P5 ANALYTIQUE       : ██████████  P5-A0/P5-A1/P5-A2/P5-A3A/B mergés ; P5-A3C implémenté, en attente de revue/merge
-P6 CRM & MARKETING  : ░░░░░░░░░░  0%
+P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
+P6 CRM & MARKETING  : ░░░░░░░░░░  audit d'architecture documenté ; implémentation 0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
@@ -502,22 +502,35 @@ Foundation**.
 | Frontière PostgreSQL de lecture | ✅ reader LOGIN dédié, transaction read-only, SELECT uniquement sur quatre rollups; runtime/worker/PUBLIC et données brutes refusés |
 | Queries/UI P5-A3A/B | ✅ DTO immuables, cache borné et global, Vue d'ensemble/Ventes, devises séparées, trous/provisoire explicites, aucune API/export/opération |
 | Validation P5-A3A/B | ✅ 35 migrations, P5-A3 32/193, suite 773/5575, Pint 302, rollback ACL isolé vert |
-| **P5-A3C** produits et tunnel | ✅ IMPLÉMENTÉ — branche `p5-a3c-product-funnel-analytics`, D-041; en attente de revue/merge |
+| **P5-A3C** produits et tunnel | ✅ TERMINÉ, MERGÉ ET VALIDÉ — [PR #30](https://github.com/mysterus44/DigiTrove/pull/30), head `642f8e35`, merge `87bf8399`, CI #37 success, D-041 |
 | Queries/UI P5-A3C | ✅ Produits (`Produit #id`, engagement global + commerce par devise) et Tunnel agrégé non cohorté; trous/provisoire explicites, `add_to_carts` non suivi |
 | Cache P5-A3C | ✅ payloads scalaires réhydratés en DTO immuables, compatibles Redis sans désérialisation d'objets |
-| Validation P5-A3C | ✅ 18/123; P5-A3 agrégé 50/316; suite 791/5698; Pint 318; 35 migrations, aucune `000020` |
-| **P5-A3D** | ⬜ optionnel; non commencé |
+| Validation P5-A3C | ✅ POST-MERGE — P5-A3C 22/178; P5-A3 agrégé 54/371; P5-A2 25/198; P5-A1 74/400; P5-A0 19/256; suite 795/5753; Pint 318; 35 migrations, aucune `000020` |
+| **P5-A3D** | ⏸️ optionnel, reporté au durcissement préproduction; non bloquant pour P6 (D-042) |
 | Portée analytique actuelle | ✅ globale uniquement; aucun vendeur, tenant, owner ou dimension propriétaire; aucun dashboard vendeur |
 | Campaigns, segments et affiliation | ⬜ P6 — explicitement hors P5-A0 |
+| **Clôture P5** | ✅ P5 ANALYTIQUE TERMINÉ, MERGÉ ET VALIDÉ — opérations CLI/scheduler désactivées par défaut, aucune commande opérationnelle Filament |
 
 ## P6 — CRM & MARKETING
+Statut : **AUDIT D'ARCHITECTURE DOCUMENTÉ; IMPLÉMENTATION NON COMMENCÉE**.
+Le brouillon historique `customer_profiles`/segments n'est pas encore un contrat
+CRM exploitable : les choix humains d'identité, consentement et rétention doivent
+être validés avant la migration `000020`.
+
 | Tâche | Statut |
 |-------|--------|
-| customer_segments + membres (définition JSONB) | ⬜ TODO |
-| Rollups CRM maintenus par événement (orders_count, LTV) | ⬜ TODO |
-| Paniers abandonnés + relance | ⬜ TODO |
-| Widgets Filament CRM/marketing | ⬜ P6 uniquement; les widgets analytiques de rollups appartiennent à P5-A3 |
-| Export CSV des segments | ⬜ TODO |
+| Identité réelle | ⚠️ `users.email` CITEXT unique, achats invités via `visitors` + `orders.customer_email`; aucun contact unifié ni règle de déduplication, aucun stitching applicatif `visitor→user` |
+| Profil historique | ⚠️ `customer_profiles.marketing_consent` est un booléen sans version/source/finalité/preuve; `lifetime_value_minor` n'a pas de devise et ne doit pas devenir autoritatif |
+| Consentement | ⬜ ledger marketing explicite à concevoir; le cookie P5 analytique n'est jamais une autorisation marketing; transactionnel et promotionnel restent séparés |
+| Rollups CRM | ⬜ reconstruire depuis `orders`/`payments`/`refunds`, une ligne par contact et devise; `OrderPaid` peut signaler mais ne doit pas être l'unique autorité |
+| Segments | ⬜ modèle recommandé C : définition dynamique allowlistée/versionnée + membres matérialisés; aucun SQL, colonne, opérateur, JSONPath ou PHP libre |
+| Paniers abandonnés | ⏸️ tables `carts`/`cart_items` présentes et checkout transactionnel existant, mais aucun flux public de création/abandon, aucune identité e-mail sur panier invité, aucun job/consentement/frequency cap |
+| Affiliation | ⏸️ **AFFILIATION NON FONDÉE — HORS PREMIER GATE P6**; aucune table/service, D-014 impose plus tard un compte et des tables dédiées |
+| Autorisation CRM | ⬜ Gate distincte `manageCustomerRelationships`; recommandation fail-closed : admin actif/non supprimé uniquement, aucun besoin staff prouvé |
+| Exports | ⏸️ après identité, consentement, segments et membership fiables; futur job privé audité, borné, expirant et protégé contre les formules CSV |
+| Découpage proposé | ⬜ P6-A0 identité/consentement/autorisation → A1 rollups commerce currency-safe → A2 segments/memberships → B0 vues CRM → B1 exports → C0/C1/C2 paniers/relances → D affiliation après contrat produit |
+| Prochain gate recommandé | ⬜ `P6-A0 — CRM Identity, Consent and Authorization Foundation`, branche future `p6-a0-crm-identity-consent-auth`; aucune campagne ni envoi |
+| Décisions humaines bloquantes | ⚠️ règle de contact/déduplication compte-invité; contrat de consentement (canal/finalité/version/source/preuve); suppression/anonymisation et durées de rétention |
 
 ## P7 — BLOG & SEO
 | Tâche | Statut |

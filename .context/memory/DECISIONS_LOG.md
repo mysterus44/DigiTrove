@@ -3216,10 +3216,12 @@ de D-040, P5-A3C, P5-A3D, P6 et P7 n'étaient pas commencés. La tâche suivante
 
 ### D-041 — Global Product and Funnel Analytics Views ✅
 
-**Date** : 2026-08-03. **Statut** : **P5-A3C IMPLÉMENTÉ SUR
-`p5-a3c-product-funnel-analytics`, EN ATTENTE DE REVUE/MERGE**. Base exacte :
-commit documentaire stable `c6790e6ec4171034050d91202e758971881f5aa0`, après
-le merge P5-A3A/B `2bbf2b5260bb97c7981cf84a13c84910062a21cc`.
+**Date** : 2026-08-03. **Statut** : **P5-A3C TERMINÉ, MERGÉ ET VALIDÉ** via
+[PR #30](https://github.com/mysterus44/DigiTrove/pull/30), head
+`642f8e359348ca6d65c0dad1e14418d1400a8ff2`, merge
+`87bf83999712360fdacab4537ebc96d81506a543`, CI #37 success. Base exacte avant
+merge : `c6790e6ec4171034050d91202e758971881f5aa0`, après le merge P5-A3A/B
+`2bbf2b5260bb97c7981cf84a13c84910062a21cc`.
 
 **PRODUITS** : `AnalyticsProductQuery` agrège séparément
 `daily_product_stats` (achats et revenu dans la devise sélectionnée) et
@@ -3247,14 +3249,38 @@ compatibles avec Redis lorsque la désérialisation d'objets est désactivée.
 **UI ET SÉCURITÉ** : les widgets Filament Produits et Tunnel restent réservés à
 l'admin actif global de D-040. Ils n'exposent aucune donnée brute, personnelle
 ou Commerce, aucune API, export, opération analytique, vendeur, tenant ou
-ownership. P5-A3D reste optionnel et non commencé; P6 et P7 ne sont pas
-commencés.
+ownership. P5-A3D reste optionnel et non commencé; l'implémentation P6 et P7
+reste non commencée.
 
-**VALIDATION** : PostgreSQL 16 et Redis réels, P5-A3C **18 tests / 123
-assertions**; P5-A3 agrégé **50 / 316** (baseline historique 32/193 + P5-A3C
-18/123); suite complète **791 / 5698**; Pint **318 fichiers**; **35 migrations**
-appliquées; `git diff --check` propre. P5-A2/P5-A1/P5-A0, P4-C/P4-B et
-P3-D2/P3-B restent verts.
+**VALIDATION** : PostgreSQL 16 et Redis réels, P5-A3C **22 tests / 178
+assertions**; P5-A3 agrégé **54 / 371**; suite complète **795 / 5753**; Pint
+**318 fichiers**; **35 migrations** appliquées; `git diff --check` propre.
+P5-A2/P5-A1/P5-A0, P4-C/P4-B et P3-D2/P3-B restent verts. Les compteurs
+précédemment inscrits (18/123, 50/316 et 791/5698) précédaient le durcissement
+final des tests intégré au head de la PR.
+
+### D-042 — P5 Completion and Operational Status Deferral ✅
+
+**Date** : 2026-08-03. **Statut** : **P5 ANALYTIQUE TERMINÉ, MERGÉ ET VALIDÉ**.
+
+**CHOIX** : P5-A0 (fondations), P5-A1 (ingestion first-party), P5-A2 (rollups et
+partitions), P5-A3A/B (frontière de lecture, vue d'ensemble et ventes) et P5-A3C
+(produits et tunnel) sont terminés. P5-A3D, interface read-only de statut
+opérationnel analytique, est explicitement reporté au durcissement
+préproduction et ne bloque pas P6.
+
+Les opérations de rollup et de partitions restent accessibles uniquement par
+CLI/scheduler, désactivées par défaut et protégées par leur identité PostgreSQL
+dédiée. Aucune commande opérationnelle n'est exposée dans Filament. Cette
+clôture ne crée ni code P6/P7, ni campagne, ni segmentation, ni export.
+
+**RAISON** : P5-A2 fournit déjà les commandes opérationnelles auditées et
+l'interface métier P5-A3 couvre les besoins analytiques courants. Ajouter P5-A3D
+maintenant retarderait le CRM sans fermer un risque bloquant.
+
+**IMPACT** : P5 est clos. L'audit d'architecture P6 CRM & Marketing est documenté;
+son implémentation reste non commencée et toute nouvelle décision d'identité, de
+consentement ou de rétention doit encore être validée humainement.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

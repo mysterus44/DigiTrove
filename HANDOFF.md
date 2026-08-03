@@ -8,8 +8,8 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-08-03
-- **Branche git active** : `p5-a3c-product-funnel-analytics`, créée depuis le
-  commit documentaire stable `c6790e6ec4171034050d91202e758971881f5aa0`.
+- **Branche git active** : `p0-foundations-laravel13`, synchronisée sur le merge
+  P5-A3C `87bf83999712360fdacab4537ebc96d81506a543` avant le commit de clôture.
 - **P5-A2 AUTHORITATIVE ROLLUPS AND PARTITION OPERATIONS TERMINÉ, MERGÉ ET
   VALIDÉ** via [PR #28](https://github.com/mysterus44/DigiTrove/pull/28), head
   `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
@@ -36,17 +36,29 @@
   Validation : **35 migrations**, P5-A3 **32 tests / 193 assertions**, suite
   complète **773 / 5575**, Pint **302 fichiers**, rollback ACL isolé vert.
   P5-A3A/B est clos sur la stable par le commit documentaire `c6790e6`.
-- **P5-A3C PRODUCT AND FUNNEL ANALYTICS VIEWS IMPLÉMENTÉ, EN ATTENTE DE
-  REVUE/MERGE** (D-041). `AnalyticsProductQuery` réunit engagement global sans
+- **P5-A3C PRODUCT AND FUNNEL ANALYTICS VIEWS TERMINÉ, MERGÉ ET VALIDÉ** via
+  [PR #30](https://github.com/mysterus44/DigiTrove/pull/30), head
+  `642f8e359348ca6d65c0dad1e14418d1400a8ff2`, merge
+  `87bf83999712360fdacab4537ebc96d81506a543`, CI #37 success (D-041).
+  `AnalyticsProductQuery` réunit engagement global sans
   devise et commerce dans la devise choisie sans lire le catalogue; l'UI affiche
   `Produit #<id>` et `add_to_carts` « Non suivi ». `AnalyticsFunnelQuery`
   restitue les volumes calendaires et ratios agrégés non cohortés, sans plafond,
   avec division par zéro à `NULL`, trous non calculés et jour UTC courant
   provisoire. Les caches stockent des tableaux scalaires réhydratés en DTO afin
   de fonctionner avec Redis sans désérialisation d'objets. Aucune migration ni
-  ACL : **35 migrations**, aucune `000020`. Validation : P5-A3C **18/123**,
-  P5-A3 agrégé **50/316**, suite **791/5698**, Pint **318**, PostgreSQL/Redis
-  réels et `git diff --check` propre. P5-A3D, P6 et P7 ne sont pas commencés.
+  ACL : **35 migrations**, aucune `000020`. Validation post-merge : P5-A3C
+  **22/178**, P5-A3 agrégé **54/371**, P5-A2 **25/198**, P5-A1 **74/400**,
+  P5-A0 **19/256**, suite **795/5753**, Pint **318**, PostgreSQL/Redis réels et
+  `git diff --check` propre.
+- **P5 ANALYTIQUE TERMINÉ, MERGÉ ET VALIDÉ** (D-042). P5-A3D est reporté au
+  durcissement préproduction et ne bloque pas P6; les opérations restent
+  CLI/scheduler, désactivées par défaut, sans commande Filament.
+- **P6 CRM & MARKETING** : audit d'architecture documenté, implémentation non
+  commencée. Le premier gate recommandé est P6-A0 identité/consentement/
+  autorisation, mais trois décisions humaines restent requises : déduplication
+  compte-invité, contrat de consentement et rétention/anonymisation. Aucun code
+  P6/P7, aucune migration `000020`, campagne, export ou affiliation n'existe.
 - **P5-A1 FIRST-PARTY ANALYTICS INGESTION TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #27](https://github.com/mysterus44/DigiTrove/pull/27), head
   `955cc34050daa4b8706e752fd9a82f579bebb02b`, merge
@@ -464,11 +476,38 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 Review et merge P5-A3C — Product and Funnel Analytics Views
+## 🎯 Validation humaine du contrat P6-A0 — CRM Identity, Consent and Authorization
 
-P5-A3C est implémenté sur `p5-a3c-product-funnel-analytics` depuis la base
-`c6790e6`. La prochaine tâche est sa review puis son merge éventuel. Ne pas
-commencer P5-A3D, P6 ou P7 pendant ce gate.
+P5 est clos. Avant toute branche ou migration P6, valider les trois décisions
+identifiées par l'audit : règle de résolution/déduplication des contacts compte
+et invité; canal/finalité/version/source/preuve du consentement marketing;
+suppression/anonymisation et durées de rétention. Le plan proposé réserve la
+branche `p6-a0-crm-identity-consent-auth` et les migrations `000020` à `000022`,
+mais rien ne doit être créé avant cette validation. Aucune campagne ni envoi ne
+fait partie de P6-A0.
+
+### 2026-08-03 — Codex (clôture P5 et audit d'architecture P6)
+
+- PR #30 prouvée : parents `c6790e6` + `642f8e35`, merge `87bf8399`, CI #37
+  success; les six commits P5-A3C sont ancêtres de la stable.
+- Validation post-merge : P5-A3C **22/178**, P5-A3 **54/371**, P5-A2
+  **25/198**, P5-A1 **74/400**, P5-A0 **19/256**, suite **795/5753**, Pint
+  **318**, 35 migrations et diff-check propre.
+- D-042 clôt P5 et reporte P5-A3D au durcissement préproduction. Aucun contrôle
+  opérationnel analytique n'est exposé dans Filament.
+- Identité : achats invités réels, e-mail de commande immuable, compte/email
+  mutable séparé, profil compte seulement, aucun contact unifié ni stitching
+  applicatif. Le booléen `marketing_consent` et la LTV sans devise du profil ne
+  sont pas des autorités P6.
+- Consentement analytique P5 distinct du marketing; seul l'e-mail de livraison
+  transactionnel existe. Segments recommandés : définition allowlistée/
+  versionnée + membership matérialisé, après rollups par contact et devise.
+- Paniers persistants présents, mais aucun flux public de création/abandon ni
+  e-mail d'invité avant checkout; relances reportées. **AFFILIATION NON FONDÉE
+  — HORS PREMIER GATE P6**.
+- Gate CRM futur réservé aux admins actifs via une autorisation distincte
+  `manageCustomerRelationships`; exports privés/audités seulement après identité,
+  consentement et membership fiables.
 
 ### 2026-08-03 — Codex (P5-A3C produits et tunnel)
 
