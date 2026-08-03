@@ -14,6 +14,14 @@ return [
         'statement_timeout_ms' => env('ANALYTICS_STATEMENT_TIMEOUT_MS', 30000),
         'lock_timeout_ms' => env('ANALYTICS_LOCK_TIMEOUT_MS', 5000),
     ],
+    'dashboard' => [
+        'enabled' => env('ANALYTICS_DASHBOARD_ENABLED', false),
+        'max_days' => env('ANALYTICS_DASHBOARD_MAX_DAYS', 366),
+        'default_days' => env('ANALYTICS_DASHBOARD_DEFAULT_DAYS', 30),
+        'cache_seconds' => env('ANALYTICS_DASHBOARD_CACHE_SECONDS', 60),
+        'statement_timeout_ms' => env('ANALYTICS_READER_STATEMENT_TIMEOUT_MS', 5000),
+        'lock_timeout_ms' => env('ANALYTICS_READER_LOCK_TIMEOUT_MS', 1000),
+    ],
     'consent' => [
         'version' => env('ANALYTICS_CONSENT_VERSION', 1),
     ],

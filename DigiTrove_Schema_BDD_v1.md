@@ -1638,7 +1638,8 @@ P5-A1 est terminée, mergée et validée via PR #27, head `955cc340`, merge
 `c699c5b9`, CI #33 success (D-038). P5-A2 est terminée, mergée et validée via
 PR #28, head `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
 `17aaa4f43fcac0d3ef5e039897f0d30666b9d29d`, CI #35 success (D-039).
-P5-A3 est auditée mais non commencée; P6 et P7 ne sont pas commencés.
+P5-A3A/B est implémentée sur sa branche dédiée et attend revue/merge (D-040);
+P5-A3C, P5-A3D, P6 et P7 ne sont pas commencés.
 
 **Principe non négociable** : l'analytique ne pose aucune FK, aucun verrou et
 aucune dépendance de disponibilité sur les tables chaudes du commerce.
@@ -1863,23 +1864,24 @@ globaux. Validation post-merge : P5-A2 **25/198**, P5-A1 **74/400**, P5-A0
 **19/256**, suite complète **741/5381**, Pint **278**, concurrence et rollback
 PostgreSQL verts.
 
-### Audit P5-A3 — frontière des read models et du dashboard
+### P5-A3A/B — Admin Analytics Read Boundary, Overview et Ventes (D-040)
 
-**État** : audit terminé; aucune classe, branche, migration, page ou widget P5-A3
-n'est créé. L'implémentation est bloquée jusqu'aux décisions produit ci-dessous.
+**État** : implémenté sur `p5-a3ab-admin-analytics-dashboard`, en attente de
+revue/merge. La migration `000019` porte le total à **35 migrations** sans
+ajouter de table métier ni d'index.
 
 - Le schéma et les rollups sont **globaux**. Ni `products`, ni `orders`, ni les
   quatre projections ne portent vendeur, owner ou tenant. Un dashboard vendeur
   exige d'abord un contrat d'ownership Commerce et des dimensions analytiques;
   aucune agrégation existante ne permet de le reconstruire honnêtement.
-- Le panel Filament unique est `admin`, mais `User` n'implémente pas
-  `FilamentUser`; en production, Filament refuse donc tous les rôles. Les enums
-  connaissent `admin` et `staff`, sans policy/gate analytique. Les exigences
-  attribuent les finances à l'admin, alors que le guide générique autorise le
-  staff actif au panel : le public exact doit être validé.
-- Les ACL empêchent `digitrove_runtime` et `digitrove_analytics_worker` de lire
-  les rollups. Le worker P5-A2 reste strictement EXECUTE-only. Le premier gate
-  P5-A3 doit ajouter une identité PostgreSQL read-only dédiée aux tables
+- Le panel Filament unique `admin` est accessible uniquement à un admin actif et
+  non supprimé via `FilamentUser::canAccessPanel()`. La Gate indépendante
+  `viewGlobalAnalytics` applique les mêmes invariants. Staff, customer,
+  suspended, blocked, soft-deleted et tout autre panel sont refusés.
+- Les ACL empêchent `digitrove_runtime`, `digitrove_analytics_worker` et
+  `PUBLIC` de lire les rollups. Le worker P5-A2 reste strictement EXECUTE-only.
+  La migration `000019` accorde au reader LOGIN restreint
+  `digitrove_analytics_reader` uniquement `USAGE` sur `public` et `SELECT` sur
   `daily_sales_stats`, `daily_product_stats`,
   `daily_product_engagement_stats` et `daily_funnel_stats`, sans accès à
   `events`, `analytics_sessions`, Commerce ou aux fonctions d'opération.
@@ -1894,39 +1896,34 @@ n'est créé. L'implémentation est bloquée jusqu'aux décisions produit ci-des
   être marqué provisoire/indisponible. Un net négatif reste signé. La métrique
   `add_to_carts` reste indisponible tant que son événement n'est pas autorisé.
 
-**Read models proposés, sans implémentation** :
+**Read models implémentés dans P5-A3A/B** :
 
 1. `AnalyticsOverviewQuery` : plage UTC validée, devise explicite pour l'argent,
    DTO par devise + funnel, fraîcheur `updated_at`, états disabled/missing.
 2. `AnalyticsSalesQuery` : série quotidienne currency-safe, plage bornée, ordre
    stable, jamais de moyenne de moyennes.
-3. `AnalyticsProductQuery` : commerce par devise séparé de l'engagement sans
-   devise, classement paginé et borné, libellé catalogue optionnel avec fallback
-   sur l'identifiant historique.
-4. `AnalyticsFunnelQuery` : compteurs journaliers globaux, trous explicites,
-   aucune lecture de `events`.
+3. `AnalyticsProductQuery` et `AnalyticsFunnelQuery` sont réservés à P5-A3C et
+   ne sont pas créés dans ce gate.
 
-Toutes utilisent la future connexion reader, des DTO immuables et un cache Redis
-court dont la clé inclut version, rôle/scope, UTC, plage, devise, filtres et page.
-Fenêtre proposée : 30 jours par défaut, maximum 366; tableaux limités à 100
-lignes par page. Les widgets ne requêtent jamais directement plusieurs tables.
+Les deux queries utilisent la connexion `pgsql_analytics_reader`, vérifient
+`session_user` et `current_user`, refusent toute transaction ambiante puis
+ouvrent une transaction read-only. Elles retournent des DTO immuables et
+utilisent un cache Laravel court dont la clé inclut `analytics:v1`, rôle admin,
+scope global, UTC, query, plage, devise, page et taille. Fenêtre : 30 jours par
+défaut, maximum 366; tableaux limités à 100 lignes par page.
 
-**Écrans candidats** : Vue d'ensemble, Ventes, Produits, Tunnel et, en option,
-État analytique read-only limité à la fraîcheur/configuration. Aucun écran ne
-déclenche rollup, partition, backfill ou activation. Aucun identifiant
-visiteur/utilisateur/session, `properties`, `ip_hash`, webhook ou secret n'est
-exposé.
+**Écrans implémentés** : Vue d'ensemble et Ventes. Les montants sont séparés par
+devise, les trous restent « non calculés », le jour UTC courant présent est
+provisoire, le net négatif reste signé et `add_to_carts` affiche « Non suivi ».
+Aucun écran ne déclenche rollup, partition, backfill ou activation. Aucun
+identifiant visiteur/utilisateur/session, `properties`, `ip_hash`, webhook,
+secret, API ou export n'est exposé.
 
-**Décisions humaines requises** :
-
-1. `admin` uniquement ou `admin + staff` actif avec permissions distinctes;
-2. dashboard global maintenant ou future isolation vendeur/tenant;
-3. widgets livrés en P5-A3 ou conservés en P6 comme l'indique encore le tracker.
-
-Découpage recommandé après validation : P5-A3A autorisation + rôle reader +
-queries/tests; P5-A3B overview/ventes; P5-A3C produits/tunnel; P5-A3D état
-opérationnel read-only optionnel. Priorité : autorisation, read models, tests,
-UI, puis optimisation mesurée. P6 et P7 restent non commencés.
+**Décisions humaines appliquées** : admin actif uniquement, staff refusé,
+portée globale uniquement et widgets analytiques dans P5-A3. P6 reste CRM et
+marketing. Validation : P5-A3 **32/193**, suite complète **773/5575**, Pint
+**302**, rollback ACL isolé vert. Prochaine tâche après merge : P5-A3C produits
+et tunnel. P5-A3C, P5-A3D, P6 et P7 restent non commencés.
 
 ---
 

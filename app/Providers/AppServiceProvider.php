@@ -7,11 +7,13 @@ use App\Contracts\Payments\PaymentProvider;
 use App\Events\OrderPaid;
 use App\Listeners\QueueSecureDelivery;
 use App\Payments\PaymentProviderFactory;
+use App\Policies\AnalyticsPolicy;
 use App\Support\AnalyticsConfig;
 use App\Support\DeliveryConfig;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
@@ -51,6 +53,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Gate::define('viewGlobalAnalytics', [AnalyticsPolicy::class, 'viewGlobalAnalytics']);
+
         RateLimiter::for('analytics-ingestion', function (Request $request): Limit {
             try {
                 $secret = AnalyticsConfig::ipHashKey();
