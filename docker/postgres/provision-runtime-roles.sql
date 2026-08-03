@@ -67,6 +67,21 @@ $$;
 ALTER ROLE digitrove_analytics_rollup_executor
     NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
 
+-- --- digitrove_crm_executor ------------------------------------------------------
+-- NOLOGIN owner of the P6-A0 CRM identity and consent authorities. Direct table
+-- access remains unavailable to the application runtime; only the three audited
+-- SECURITY DEFINER entry points are executable.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'digitrove_crm_executor') THEN
+        CREATE ROLE digitrove_crm_executor
+            NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+    END IF;
+END
+$$;
+ALTER ROLE digitrove_crm_executor
+    NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+
 -- --- digitrove_analytics_worker --------------------------------------------------
 -- Dedicated LOGIN for scheduled P5-A2 operations. It can execute the audited
 -- authorities only; migrations revoke all direct source/projection access.
@@ -154,6 +169,7 @@ $$;
 GRANT digitrove_download_executor TO digitrove WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT digitrove_analytics_executor TO digitrove WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT digitrove_analytics_rollup_executor TO digitrove WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
+GRANT digitrove_crm_executor TO digitrove WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 
 -- --- Fail-closed guardrails ------------------------------------------------------
 DO $$
@@ -172,6 +188,10 @@ BEGIN
 
     IF (SELECT rolcanlogin FROM pg_roles WHERE rolname = 'digitrove_analytics_rollup_executor') THEN
         RAISE EXCEPTION 'P5-A2 provisioning: digitrove_analytics_rollup_executor must be NOLOGIN';
+    END IF;
+
+    IF (SELECT rolcanlogin FROM pg_roles WHERE rolname = 'digitrove_crm_executor') THEN
+        RAISE EXCEPTION 'P6-A0 provisioning: digitrove_crm_executor must be NOLOGIN';
     END IF;
 
     IF NOT (SELECT rolcanlogin FROM pg_roles WHERE rolname = 'digitrove_analytics_worker') THEN
@@ -193,7 +213,8 @@ BEGIN
               'digitrove',
               'digitrove_download_executor',
               'digitrove_analytics_executor',
-              'digitrove_analytics_rollup_executor'
+              'digitrove_analytics_rollup_executor',
+              'digitrove_crm_executor'
           )
     ) THEN
         RAISE EXCEPTION 'P5-A2 provisioning: runtime identities must not be members of migrator or executor roles';

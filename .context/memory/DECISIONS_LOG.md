@@ -3282,5 +3282,52 @@ maintenant retarderait le CRM sans fermer un risque bloquant.
 son implémentation reste non commencée et toute nouvelle décision d'identité, de
 consentement ou de rétention doit encore être validée humainement.
 
+### D-043 — CRM Identity and Consent Foundation ✅
+
+**Date** : 2026-08-03. **Statut** : **P6-A0 IMPLÉMENTÉ — EN ATTENTE DE
+REVUE/MERGE** sur `p6-a0-crm-identity-consent-auth`, base stable exacte
+`a11de061232a9195f95b96ab428d87c499ae7cfe`.
+
+**IDENTITÉ** : la seule clé de déduplication CRM est l'e-mail exact après `trim`,
+comparé selon le contrat CITEXT. Aucun retrait de `+alias`, point, ni fusion par
+nom, téléphone, IP, appareil, cookie, Visitor ou similarité. `user_id` n'est pas
+une clé CRM et plusieurs contacts historiques peuvent référencer un même compte.
+Un compte n'est lié que s'il est actif, non supprimé, vérifié et porte exactement
+le même e-mail. Un achat invité est résolu uniquement depuis
+`orders.customer_email`; aucun stitching Visitor ni backfill n'est autorisé.
+
+**CONSENTEMENT** : l'achat ne vaut jamais consentement. Le ledger append-only ne
+couvre que `channel=email` et `purpose=promotional`, avec actions
+`granted|withdrawn`. La source `checkout` exige un Order exact et autorise
+seulement `granted`; `account_settings` exige un User actif, vérifié et exact et
+autorise grant/withdraw. Version de politique non vide, ordre serveur et digest
+SHA-256 d'idempotence sont obligatoires; aucune clé brute ou date navigateur
+n'est persistée. Le consentement analytique P5 et les colonnes legacy
+`customer_profiles.marketing_consent|consent_updated_at` restent distincts et
+non autoritatifs.
+
+**ANONYMISATION ET PÉRIMÈTRE** : le schéma supporte un état irréversible
+`anonymized` avec e-mail/user effacés et retourne alors toujours faux. Aucune
+durée légale, purge, rétention automatique ou workflow public n'est inventé.
+Une nouvelle relation au même e-mail crée un contact neuf sans hériter du ledger.
+Aucune route, UI Filament, listener, observer, job, mail, campagne, segment,
+rollup, export, affiliation ou intégration automatique n'appartient à P6-A0.
+
+**BDD ET AUTORISATION** : la migration unique
+`2026_07_14_000020_create_crm_identity_and_consent_foundation.php` crée seulement
+`crm_contacts` et `crm_marketing_consent_events`. Le rôle cluster-global
+`digitrove_crm_executor` est NOLOGIN, NOINHERIT, sans privilège élevé ni mot de
+passe. Il possède `resolve_crm_contact`, `record_crm_marketing_consent` et
+`has_current_marketing_consent`, trois SECURITY DEFINER à `search_path` fixe.
+`digitrove_runtime` n'a aucun droit direct sur tables/séquences et seulement
+EXECUTE sur ces autorités; PUBLIC n'a aucun accès. La Gate distincte
+`manageCustomerRelationships` autorise uniquement un admin actif et non supprimé.
+
+**VALIDATION** : PostgreSQL 16 réel, 36 migrations, P6-A0 **33 tests / 211
+assertions**, deux scénarios de concurrence et rollback isolé verts; suite
+complète **828 / 5964**; Pint **347 fichiers**; `git diff --check` propre. P5,
+P4 et P3 restent verts. P6-A1 rollups commerce currency-safe, P6-A1+, P7 et
+P5-A3D ne sont pas commencés.
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

@@ -8,8 +8,8 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-08-03
-- **Branche git active** : `p0-foundations-laravel13`, synchronisée sur le merge
-  P5-A3C `87bf83999712360fdacab4537ebc96d81506a543` avant le commit de clôture.
+- **Branche git active** : `p6-a0-crm-identity-consent-auth`, créée depuis la
+  stable `a11de061232a9195f95b96ab428d87c499ae7cfe`.
 - **P5-A2 AUTHORITATIVE ROLLUPS AND PARTITION OPERATIONS TERMINÉ, MERGÉ ET
   VALIDÉ** via [PR #28](https://github.com/mysterus44/DigiTrove/pull/28), head
   `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
@@ -54,11 +54,15 @@
 - **P5 ANALYTIQUE TERMINÉ, MERGÉ ET VALIDÉ** (D-042). P5-A3D est reporté au
   durcissement préproduction et ne bloque pas P6; les opérations restent
   CLI/scheduler, désactivées par défaut, sans commande Filament.
-- **P6 CRM & MARKETING** : audit d'architecture documenté, implémentation non
-  commencée. Le premier gate recommandé est P6-A0 identité/consentement/
-  autorisation, mais trois décisions humaines restent requises : déduplication
-  compte-invité, contrat de consentement et rétention/anonymisation. Aucun code
-  P6/P7, aucune migration `000020`, campagne, export ou affiliation n'existe.
+- **P6-A0 CRM IDENTITY, CONSENT AND AUTHORIZATION FOUNDATION IMPLÉMENTÉ — EN
+  ATTENTE DE REVUE/MERGE** (D-043). La migration unique `000020` crée
+  `crm_contacts` et `crm_marketing_consent_events`; l'identité repose uniquement
+  sur l'e-mail exact normalisé, sans Visitor ni fusion approximative. Le ledger
+  promotionnel e-mail est append-only, servi par trois fonctions SECURITY
+  DEFINER détenues par `digitrove_crm_executor` NOLOGIN; le runtime est
+  EXECUTE-only. La Gate `manageCustomerRelationships` reste admin actif et non
+  supprimé uniquement. Aucun flux utilisateur, route, UI, job, mail, campagne,
+  segment, rollup, backfill ou rétention automatique n'est livré.
 - **P5-A1 FIRST-PARTY ANALYTICS INGESTION TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #27](https://github.com/mysterus44/DigiTrove/pull/27), head
   `955cc34050daa4b8706e752fd9a82f579bebb02b`, merge
@@ -476,15 +480,33 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 Validation humaine du contrat P6-A0 — CRM Identity, Consent and Authorization
+## 🎯 P6-A1 — Currency-safe Customer Commerce Rollups
 
-P5 est clos. Avant toute branche ou migration P6, valider les trois décisions
-identifiées par l'audit : règle de résolution/déduplication des contacts compte
-et invité; canal/finalité/version/source/preuve du consentement marketing;
-suppression/anonymisation et durées de rétention. Le plan proposé réserve la
-branche `p6-a0-crm-identity-consent-auth` et les migrations `000020` à `000022`,
-mais rien ne doit être créé avant cette validation. Aucune campagne ni envoi ne
-fait partie de P6-A0.
+P6-A0 est implémenté sur `p6-a0-crm-identity-consent-auth` et attend sa revue et
+son merge. Ne pas commencer P6-A1 avant ce merge et une validation humaine de
+son contrat. P6-A1 devra reconstruire les agrégats Commerce par contact et par
+devise depuis les sources autoritatives, sans conversion FX, campagne, segment,
+export, relance ou affiliation.
+
+### 2026-08-03 — Codex (P6-A0 identité, consentement et autorisation)
+
+- Migration unique `000020` : `crm_contacts` et ledger append-only
+  `crm_marketing_consent_events`; 36 migrations au total, aucune `000021`.
+- Identité exacte `trim` + CITEXT, achats invités prouvés par l'e-mail figé de
+  l'Order, comptes liés seulement si actifs/vérifiés et e-mail exact; aucun
+  Visitor, alias folding, backfill ou fusion approximative.
+- Consentement limité à `email/promotional`; checkout = grant avec Order exact,
+  account settings = grant/withdraw avec User vérifié; version de politique
+  configurée, idempotence SHA-256, timestamp serveur, legacy et analytics ignorés.
+- Autorité PostgreSQL : executor NOLOGIN/NOINHERIT, trois SECURITY DEFINER à
+  search_path fixe, runtime EXECUTE-only et PUBLIC sans accès direct.
+- Config désactivée par défaut, services fail-closed, paramètres sensibles,
+  erreurs sanitizées et Gate CRM admin actif/non supprimé uniquement.
+- Validation : P6-A0 **33/211**, P5-A3 **54/371**, P5-A2 **25/198**, P5-A1
+  **74/400**, P4-C **86/559**, P4-B **20/560**, P3-D2 **91/364**, P3-B
+  **18/354**, suite complète **828/5964**, Pint **347**, 36 migrations et
+  `git diff --check` propre. Rollback et deux concurrences PostgreSQL verts.
+- P6-A1+, P7 et P5-A3D non commencés; aucun flux utilisateur CRM ni envoi.
 
 ### 2026-08-03 — Codex (clôture P5 et audit d'architecture P6)
 

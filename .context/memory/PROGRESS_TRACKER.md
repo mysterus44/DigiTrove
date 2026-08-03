@@ -16,7 +16,7 @@ P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (P
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
-P6 CRM & MARKETING  : ░░░░░░░░░░  audit d'architecture documenté ; implémentation 0%
+P6 CRM & MARKETING  : ██░░░░░░░░  P6-A0 implémenté, en attente de revue/merge (D-043) ; P6-A1+ non commencés
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
@@ -512,25 +512,28 @@ Foundation**.
 | **Clôture P5** | ✅ P5 ANALYTIQUE TERMINÉ, MERGÉ ET VALIDÉ — opérations CLI/scheduler désactivées par défaut, aucune commande opérationnelle Filament |
 
 ## P6 — CRM & MARKETING
-Statut : **AUDIT D'ARCHITECTURE DOCUMENTÉ; IMPLÉMENTATION NON COMMENCÉE**.
-Le brouillon historique `customer_profiles`/segments n'est pas encore un contrat
-CRM exploitable : les choix humains d'identité, consentement et rétention doivent
-être validés avant la migration `000020`.
+Statut : **P6-A0 CRM IDENTITY, CONSENT AND AUTHORIZATION FOUNDATION IMPLÉMENTÉ —
+EN ATTENTE DE REVUE/MERGE** (D-043). P6-A1+ restent non commencés.
 
 | Tâche | Statut |
 |-------|--------|
-| Identité réelle | ⚠️ `users.email` CITEXT unique, achats invités via `visitors` + `orders.customer_email`; aucun contact unifié ni règle de déduplication, aucun stitching applicatif `visitor→user` |
-| Profil historique | ⚠️ `customer_profiles.marketing_consent` est un booléen sans version/source/finalité/preuve; `lifetime_value_minor` n'a pas de devise et ne doit pas devenir autoritatif |
-| Consentement | ⬜ ledger marketing explicite à concevoir; le cookie P5 analytique n'est jamais une autorisation marketing; transactionnel et promotionnel restent séparés |
+| **P6-A0 migration `000020`** | ✅ Deux tables uniquement : `crm_contacts`, `crm_marketing_consent_events`; 36 migrations, aucune `000021` |
+| Identité CRM | ✅ E-mail exact normalisé par `trim` + CITEXT; aucune fusion alias/nom/IP/appareil/cookie/Visitor; `user_id` non autoritatif |
+| Achats invités et comptes | ✅ Order invité exact supporté; compte lié seulement s'il est actif, vérifié et de même e-mail; aucune liaison Visitor ni backfill |
+| Consentement | ✅ Ledger append-only `email/promotional`; checkout grant seulement; compte vérifié grant/withdraw; policy version et idempotence SHA-256 obligatoires |
+| Anonymisation | ✅ État irréversible supporté par le schéma; workflow et durée de rétention différés, aucune purge automatique |
+| Autorité PostgreSQL | ✅ `digitrove_crm_executor` NOLOGIN/NOINHERIT; 3 SECURITY DEFINER; runtime EXECUTE-only; PUBLIC sans accès |
+| Frontière applicative | ✅ Config fail-closed, 3 services, DTO minimaux, paramètres sensibles, erreurs sanitizées; aucune transaction ambiante |
+| Autorisation CRM | ✅ Gate `manageCustomerRelationships`, admin actif/non supprimé uniquement, indépendante de l'analytics |
+| Validation P6-A0 | ✅ 33 tests / 211 assertions; rollback isolé et 2 tests de concurrence; suite 828/5964; Pint 347; diff-check propre |
+| Profil historique | ✅ `marketing_consent`, `consent_updated_at`, `orders_count` et `lifetime_value_minor` inchangés et non autoritatifs |
 | Rollups CRM | ⬜ reconstruire depuis `orders`/`payments`/`refunds`, une ligne par contact et devise; `OrderPaid` peut signaler mais ne doit pas être l'unique autorité |
 | Segments | ⬜ modèle recommandé C : définition dynamique allowlistée/versionnée + membres matérialisés; aucun SQL, colonne, opérateur, JSONPath ou PHP libre |
 | Paniers abandonnés | ⏸️ tables `carts`/`cart_items` présentes et checkout transactionnel existant, mais aucun flux public de création/abandon, aucune identité e-mail sur panier invité, aucun job/consentement/frequency cap |
 | Affiliation | ⏸️ **AFFILIATION NON FONDÉE — HORS PREMIER GATE P6**; aucune table/service, D-014 impose plus tard un compte et des tables dédiées |
-| Autorisation CRM | ⬜ Gate distincte `manageCustomerRelationships`; recommandation fail-closed : admin actif/non supprimé uniquement, aucun besoin staff prouvé |
 | Exports | ⏸️ après identité, consentement, segments et membership fiables; futur job privé audité, borné, expirant et protégé contre les formules CSV |
-| Découpage proposé | ⬜ P6-A0 identité/consentement/autorisation → A1 rollups commerce currency-safe → A2 segments/memberships → B0 vues CRM → B1 exports → C0/C1/C2 paniers/relances → D affiliation après contrat produit |
-| Prochain gate recommandé | ⬜ `P6-A0 — CRM Identity, Consent and Authorization Foundation`, branche future `p6-a0-crm-identity-consent-auth`; aucune campagne ni envoi |
-| Décisions humaines bloquantes | ⚠️ règle de contact/déduplication compte-invité; contrat de consentement (canal/finalité/version/source/preuve); suppression/anonymisation et durées de rétention |
+| Découpage | ✅ P6-A0 identité/consentement/autorisation → A1 rollups commerce currency-safe → A2 segments/memberships → B0 vues CRM → B1 exports → C0/C1/C2 paniers/relances → D affiliation après contrat produit |
+| Prochain gate | ⬜ `P6-A1 — Currency-safe Customer Commerce Rollups`, non commencé; attendre revue/merge P6-A0 et validation humaine du contrat |
 
 ## P7 — BLOG & SEO
 | Tâche | Statut |

@@ -43,6 +43,8 @@
         <env name="ANALYTICS_READER_DB_USERNAME" value="digitrove_analytics_reader"/>
         <env name="ANALYTICS_READER_DB_PASSWORD" value="digitrove_analytics_reader_local"/>
         <env name="ANALYTICS_DASHBOARD_ENABLED" value="true"/>
+        <env name="CRM_FOUNDATION_ENABLED" value="true"/>
+        <env name="CRM_MARKETING_POLICY_VERSION" value="2026-08-v1"/>
         <env name="ANALYTICS_OPERATIONS_ENABLED" value="true"/>
         <env name="ANALYTICS_ROLLUPS_ENABLED" value="true"/>
         <env name="ANALYTICS_PARTITIONS_ENABLED" value="true"/>

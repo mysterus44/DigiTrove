@@ -57,6 +57,12 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Checkout/CheckoutException.php',
     'Checkout/CheckoutRefusalReason.php',
     'Checkout/OrderService.php',
+    // P6-A0 (D-043) — EXECUTE-only CRM identity and consent authorities.
+    'Crm/Concerns/UsesCrmAuthority.php',
+    'Crm/CrmContactResolver.php',
+    'Crm/CrmOperationException.php',
+    'Crm/MarketingConsentRecorder.php',
+    'Crm/MarketingConsentStatusQuery.php',
     // P4-C1/P4-C2 (D-035) — grant issuance and refund revocation.
     'Delivery/ByteRangeParser.php',
     'Delivery/DownloadAuthorizationService.php',
@@ -436,7 +442,7 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(35)
+        ->and(DB::table('migrations')->count())->toBe(36)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')
