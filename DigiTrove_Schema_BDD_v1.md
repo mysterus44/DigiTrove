@@ -123,12 +123,13 @@ CREATE INDEX ON visitors (user_id);
 -- `customer_profiles`, `visitors`. Aucun catalogue, commerce, affiliation ou
 -- événement analytique ne doit être migré en P1.
 
--- P6 n'est pas encore migré. Le brouillon historique ci-dessous est remplacé
--- par l'audit P6 du 2026-08-03 : un JSONB libre et des membres `user_id` seuls
--- excluraient les acheteurs invités et ouvriraient un DSL SQL dangereux.
+-- P6-A0 est implémenté par la migration unique `000020` (D-043). Le brouillon
+-- historique reste ci-dessous comme trace d'audit; un JSONB libre et des membres
+-- `user_id` seuls excluraient les acheteurs invités et ouvriraient un DSL SQL
+-- dangereux.
 ```
 
-### Audit d'architecture P6 — CRM & Marketing (sans implémentation)
+### Audit historique d'architecture P6 — CRM & Marketing
 
 #### Identité réellement disponible
 
@@ -309,49 +310,54 @@ Les rollups précèdent les segments afin que le DSL n'expose que des critères
 stables et currency-safe. Campagnes générales, SMS et affiliation restent hors
 MVP tant que leurs contrats ne sont pas validés.
 
-#### Premier gate recommandé — proposition à valider, non implémentée
+#### P6-A0 implémenté — identité, consentement et autorisation (D-043)
 
-Branche future : `p6-a0-crm-identity-consent-auth`.
+Branche : `p6-a0-crm-identity-consent-auth`, depuis la stable `a11de061`.
+Migration unique :
+`2026_07_14_000020_create_crm_identity_and_consent_foundation.php`. Aucune
+migration `000021` et aucune table de liaison commande/contact ne sont créées.
 
-Ordre de migrations envisagé à partir de la prochaine séquence libre :
+`crm_contacts` contient `id BIGINT`, `public_id UUID UNIQUE`, `email CITEXT
+NULL`, `user_id BIGINT NULL ON DELETE SET NULL`, `origin VARCHAR(32)`, `status
+VARCHAR(16)`, `anonymized_at TIMESTAMPTZ` et timestamps. L'index partiel unique
+sur `email WHERE email IS NOT NULL` applique la déduplication exacte CITEXT.
+L'e-mail persisté doit être égal à `lower(trim(email))`, faire au plus 254
+caractères et rester immuable tant que le contact est actif. `origin` est
+`guest_order|verified_account`; `status` est `active|anonymized`. Un contact
+actif exige un e-mail et aucune date d'anonymisation; un contact anonymisé exige
+e-mail et user NULL avec date présente, puis devient entièrement immuable.
 
-1. `2026_07_14_000020_create_crm_contacts_table.php`;
-2. `2026_07_14_000021_create_crm_contact_orders_table.php`;
-3. `2026_07_14_000022_create_marketing_consent_events_table.php`.
+`crm_marketing_consent_events` contient `id BIGINT`, `public_id UUID UNIQUE`,
+`contact_id BIGINT ON DELETE RESTRICT`, `channel`, `purpose`, `action`, `source`,
+`policy_version VARCHAR(64)`, `user_id BIGINT NULL ON DELETE SET NULL`,
+`order_id BIGINT NULL ON DELETE RESTRICT`, `idempotency_hash VARCHAR(64) UNIQUE`
+et `recorded_at TIMESTAMPTZ DEFAULT now()`. Le canal est uniquement `email`, la
+finalité `promotional`, les actions `granted|withdrawn` et les sources
+`checkout|account_settings`. Checkout exige un Order et un grant; account
+settings est validé à l'insertion par l'autorité avec un User actif, vérifié et
+d'e-mail exact. Le ledger est append-only et son état courant est le dernier ID
+pour `(contact_id, channel, purpose)`.
 
-`crm_contacts` porterait `id BIGINT`, `public_id UUID UNIQUE`, `user_id BIGINT
-NULL UNIQUE ON DELETE SET NULL`, `email CITEXT NOT NULL`, origine/statut fermés,
-date éventuelle de vérification et timestamps. Aucun nom, téléphone, attribution
-analytique ou agrégat monétaire n'y serait copié. Par prudence, aucune unicité
-globale e-mail ni fusion automatique n'est décidée avant le choix humain.
+Le rôle NOLOGIN/NOINHERIT `digitrove_crm_executor` possède les fonctions
+SECURITY DEFINER `resolve_crm_contact`, `record_crm_marketing_consent` et
+`has_current_marketing_consent`, toutes à `search_path` fixe et sans SQL
+dynamique. Le runtime n'a aucun droit direct sur les tables ou séquences et
+reçoit uniquement EXECUTE; PUBLIC n'a aucun accès. Résolution d'e-mail et
+idempotence utilisent des advisory locks transactionnels et sont couvertes par
+deux tests multi-processus. Le rollback retire objets P6-A0 mais conserve le
+rôle cluster-global.
 
-`crm_contact_orders` porterait `order_id BIGINT UNIQUE ON DELETE RESTRICT`,
-`contact_id BIGINT ON DELETE RESTRICT`, méthode/version de résolution fermées et
-`linked_at`; le lien serait immuable et auditable.
+La configuration est désactivée par défaut; policy version obligatoire. Les
+services refusent transaction ambiante et identité DB autre que runtime,
+marquent e-mail/clé brute sensibles et retournent des erreurs sanitizées. La
+Gate `manageCustomerRelationships` autorise uniquement l'admin actif et non
+supprimé. Validation : 36 migrations, P6-A0 **33/211**, suite **828/5964**,
+Pint **347**, diff-check, ACL, rollback et concurrence verts.
 
-`marketing_consent_events` serait append-only : UUID public, contact, canal,
-finalité, décision, version de politique, source fermée, date d'effet, hash
-d'idempotence strict unique et éventuelle preuve HMAC versionnée. Index principal
-`(contact_id, channel, purpose, occurred_at DESC, id DESC)`. Aucun payload, IP,
-user-agent ou secret brut.
-
-Enums envisagés : origine/statut du contact, canal/finalité/décision/source du
-consentement. Policy/Gate : `manageCustomerRelationships`, admin actif/non
-supprimé uniquement. Services limités à la résolution explicite de contact et à
-l'écriture/lecture transactionnelle du ledger; aucun événement ou job n'est
-nécessaire tant qu'il n'a pas de consommateur. Tests PostgreSQL : formats/FK/
-unicités/immutabilité, achat invité et compte, absence de fusion implicite,
-retrait concurrent, idempotence, SoftDelete/SET NULL, policy et rollback isolé.
-
-Hors P6-A0 : segment, rollup, UI client, export, campagne, e-mail/SMS, panier
-abandonné, affiliation, fournisseur, route publique et analytics PII.
-
-Décisions humaines bloquant l'implémentation :
-
-1. identité compte/invité et règle de déduplication ou de fusion vérifiée;
-2. contrat de consentement (canal, finalité, version, source et preuve);
-3. suppression/anonymisation et durées de rétention des contacts, consentements
-   et futurs exports.
+Hors P6-A0 : segment, rollup, UI client/Filament, export, campagne, e-mail/SMS,
+panier abandonné, affiliation, fournisseur, route publique, backfill, purge et
+rétention automatique. Prochain gate : **P6-A1 — Currency-safe Customer
+Commerce Rollups**, non commencé et soumis à validation séparée.
 
 ---
 
@@ -1854,8 +1860,9 @@ P5-A3A/B est terminée, mergée et validée via PR #29, head `31f986dc`, merge
 `2bbf2b52`, CI #36 success (D-040). P5-A3C est terminée, mergée et validée via
 PR #30, head `642f8e359348ca6d65c0dad1e14418d1400a8ff2`, merge
 `87bf83999712360fdacab4537ebc96d81506a543`, CI #37 success (D-041). P5-A3D
-est reporté au durcissement préproduction et ne bloque pas P6 (D-042). P5 est
-terminé; P6 est audité mais non implémenté, P7 n'est pas commencé.
+est reporté au durcissement préproduction et ne bloque pas P6 (D-042). À cette
+clôture historique de P5, P6 était audité mais non implémenté; P6-A0 est depuis
+implémenté par D-043 et P7 n'est pas commencé.
 
 **Principe non négociable** : l'analytique ne pose aucune FK, aucun verrou et
 aucune dépendance de disponibilité sur les tables chaudes du commerce.
@@ -2183,7 +2190,8 @@ Validation post-merge : P5-A3C **22/178**; P5-A3 agrégé **54/371**; P5-A2
 **25/198**; P5-A1 **74/400**; P5-A0 **19/256**; suite complète **795/5753**;
 Pint **318**; PostgreSQL 16 et Redis réels; **35 migrations** appliquées;
 `git diff --check` propre. P5-A3D est optionnel et reporté au durcissement
-préproduction; P6 est audité sans code et P7 reste non commencé.
+préproduction. Ces compteurs décrivent la clôture P5; P6-A0 est depuis
+implémenté par D-043 et P7 reste non commencé.
 
 ---
 
@@ -2193,8 +2201,7 @@ préproduction; P6 est audité sans code et P7 reste non commencé.
 visitors ──(login)──> users ──1:1──> customer_profiles
    │                    ├──1:N──> orders ──1:N──> order_items ──1:N──> download_grants
    │                    │            └──1:N──> payments                    └──1:N──> download_logs
-   │                    └──0:1──> crm_contacts [P6 proposé, non migré]
-   │                                      └──N:M──> customer_segments [P6 proposé, non migré]
+   │                    └──0:N──> crm_contacts ──1:N──> crm_marketing_consent_events
    └──1:N──> analytics_sessions ──1:N──> events
 
 products ──1:N──> product_prices
@@ -2202,7 +2209,7 @@ products ──1:N──> product_prices
    ├──N:M──> categories
    └──N:M──> product_bundles (self)
 
-campaigns / affiliation [P6 futurs] : contrats absents, aucun objet migré
+customer_segments / campaigns / affiliation [P6 futurs] : aucun objet migré
 ```
 
 ---

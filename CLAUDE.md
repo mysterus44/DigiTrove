@@ -404,16 +404,24 @@ durcissement préproduction, non bloquant pour P6; les opérations restent
 CLI/scheduler, désactivées par défaut, et aucune opération n'est exposée dans
 Filament.
 
-**P6 CRM & MARKETING : AUDIT D'ARCHITECTURE DOCUMENTÉ, IMPLÉMENTATION NON
-COMMENCÉE.** Réalité à conserver : checkout invité et paniers persistants
-existent, mais aucun contact CRM unifié, stitching applicatif, lifecycle de
-panier public, campagne ou affiliation. `customer_profiles.marketing_consent`
-n'est pas une preuve versionnée et `lifetime_value_minor` sans devise n'est pas
-autoritatif. Ordre proposé : P6-A0 identité/consentement/autorisation → P6-A1
-rollups commerce par contact/devise → P6-A2 segments typés + membres
-matérialisés → vues/export → paniers/relances → affiliation. P6-A0 reste bloqué
-avant code par les décisions humaines de déduplication compte-invité, contrat
-de consentement et rétention/anonymisation. P7 n'est pas commencé.
+**P6-A0 CRM IDENTITY, CONSENT AND AUTHORIZATION FOUNDATION IMPLÉMENTÉ — EN
+ATTENTE DE REVUE/MERGE** (**D-043**) sur
+`p6-a0-crm-identity-consent-auth`, base `a11de061`. La migration unique `000020`
+crée `crm_contacts` et le ledger append-only
+`crm_marketing_consent_events`. Déduplication par e-mail exact normalisé
+(`trim` + CITEXT) seulement; aucun Visitor, alias folding ou rapprochement
+approximatif. Les achats invités utilisent le snapshot e-mail de l'Order; un
+compte n'est lié que s'il est actif, vérifié et de même e-mail. Consentement
+limité à `email/promotional`, checkout grant seulement, compte vérifié
+grant/withdraw, version de politique obligatoire et idempotence SHA-256.
+`digitrove_crm_executor` est NOLOGIN/NOINHERIT; trois fonctions SECURITY DEFINER
+à search_path fixe donnent au runtime un accès EXECUTE-only. Config désactivée
+par défaut, services fail-closed et Gate `manageCustomerRelationships` réservée
+à l'admin actif non supprimé. Validation : **36 migrations**, P6-A0 **33/211**,
+suite **828/5964**, Pint **347**, rollback/concurrence verts. Aucun flux
+utilisateur, route, UI, job, mail, campagne, segment, rollup ou rétention
+automatique. P6-A1 rollups commerce currency-safe est non commencé; P7 reste
+non commencé.
 Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —
