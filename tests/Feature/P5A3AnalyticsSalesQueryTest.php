@@ -27,7 +27,7 @@ it('returns stable paginated daily sales and calculated zero-sales days', functi
     Fixture::sales('2026-08-03', 'XOF', 1, 5_000, 0, 0, 0, 5_000, 5_000);
     Fixture::sales('2026-08-03', 'USD', 1, 200, 0, 0, 0, 200, 200);
 
-    $result = app(AnalyticsSalesQuery::class)->get('xof', '2026-08-01', '2026-08-03', 1, 2);
+    $result = app(AnalyticsSalesQuery::class)->get('XOF', '2026-08-01', '2026-08-03', 1, 2);
 
     expect($result->currency)->toBe('XOF')
         ->and($result->totalRows)->toBe(3)
@@ -55,7 +55,8 @@ it('does not fabricate data for uncalculated days', function () {
 it('validates currency range and pagination before any query', function () {
     $query = app(AnalyticsSalesQuery::class);
 
-    expect(fn () => $query->get('x0f'))->toThrow(InvalidArgumentException::class)
+    expect(fn () => $query->get('xof'))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => $query->get('x0f'))->toThrow(InvalidArgumentException::class)
         ->and(fn () => $query->get('XOF', page: 0))->toThrow(InvalidArgumentException::class)
         ->and(fn () => $query->get('XOF', perPage: 101))->toThrow(InvalidArgumentException::class)
         ->and(fn () => $query->get('XOF', '2026-08-04', '2026-08-04'))->toThrow(InvalidArgumentException::class);

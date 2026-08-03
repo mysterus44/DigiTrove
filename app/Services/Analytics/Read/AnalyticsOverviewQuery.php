@@ -17,7 +17,18 @@ final class AnalyticsOverviewQuery
     public function get(?string $from = null, ?string $to = null): AnalyticsOverview
     {
         $range = AnalyticsDateRange::make($from, $to);
-        $key = 'analytics-dashboard|scope=global|view=overview|from='.$range->fromString().'|to='.$range->toString();
+        $key = implode('|', [
+            'analytics:v1',
+            'role=admin',
+            'scope=global',
+            'timezone=UTC',
+            'query=overview',
+            'from='.$range->fromString(),
+            'to='.$range->toString(),
+            'currency=none',
+            'page=none',
+            'per_page=none',
+        ]);
         $load = fn (): AnalyticsOverview => $this->reader->run(
             fn (Connection $connection): AnalyticsOverview => $this->load($connection, $range),
         );
@@ -44,7 +55,6 @@ final class AnalyticsOverviewQuery
                 coalesce(sum(visitors), 0)::bigint AS visitors,
                 coalesce(sum(sessions), 0)::bigint AS sessions,
                 coalesce(sum(product_views), 0)::bigint AS product_views,
-                coalesce(sum(add_to_carts), 0)::bigint AS add_to_carts,
                 coalesce(sum(checkouts), 0)::bigint AS checkouts,
                 coalesce(sum(purchases), 0)::bigint AS purchases,
                 coalesce(sum(new_customers), 0)::bigint AS new_customers
@@ -92,7 +102,6 @@ final class AnalyticsOverviewQuery
             (int) $funnel->visitors,
             (int) $funnel->sessions,
             (int) $funnel->product_views,
-            (int) $funnel->add_to_carts,
             (int) $funnel->checkouts,
             (int) $funnel->purchases,
             (int) $funnel->new_customers,

@@ -36,7 +36,7 @@ final class AnalyticsOverviewStats extends StatsOverviewWidget
             Stat::make('Visiteurs', $this->integer($overview->visitors))->description($description),
             Stat::make('Sessions', $this->integer($overview->sessions)),
             Stat::make('Vues produit', $this->integer($overview->productViews)),
-            Stat::make('Ajouts au panier', $this->integer($overview->addToCarts)),
+            Stat::make('Ajouts au panier', 'Non suivi'),
             Stat::make('Achats', $this->integer($overview->purchases)),
             Stat::make('Nouveaux clients', $this->integer($overview->newCustomers)),
         ];
@@ -68,14 +68,20 @@ final class AnalyticsOverviewStats extends StatsOverviewWidget
 
     private function periodDescription(AnalyticsOverview $overview): string
     {
+        $coverage = sprintf(
+            'Couverture du %s au %s.',
+            $overview->coverageStart,
+            $overview->coverageEnd,
+        );
+
         if ($overview->currentDayProvisional) {
-            return 'Période en cours, données provisoires.';
+            return $coverage.' Période en cours, données provisoires.';
         }
 
         if ($overview->missingDays !== []) {
-            return count($overview->missingDays).' jour(s) non calculé(s).';
+            return $coverage.' '.count($overview->missingDays).' jour(s) non calculé(s).';
         }
 
-        return 'Période calculée.';
+        return $coverage.' Période calculée.';
     }
 }

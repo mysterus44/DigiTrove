@@ -18,7 +18,6 @@ final readonly class AnalyticsOverview
         public int $visitors,
         public int $sessions,
         public int $productViews,
-        public int $addToCarts,
         public int $checkouts,
         public int $purchases,
         public int $newCustomers,

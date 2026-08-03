@@ -36,6 +36,15 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Analytics/EventPartitionService.php',
     // P5-A1 (D-038) — single privacy-gated analytics ingestion authority.
     'Analytics/FirstPartyAnalyticsIngestionService.php',
+    // P5-A3A/B (D-040) — projection-only global analytics readers and DTOs.
+    'Analytics/Read/AnalyticsOverviewQuery.php',
+    'Analytics/Read/AnalyticsReader.php',
+    'Analytics/Read/AnalyticsSalesQuery.php',
+    'Analytics/Read/Data/AnalyticsDateRange.php',
+    'Analytics/Read/Data/AnalyticsOverview.php',
+    'Analytics/Read/Data/AnalyticsSales.php',
+    'Analytics/Read/Data/AnalyticsSalesCurrencySummary.php',
+    'Analytics/Read/Data/AnalyticsSalesDay.php',
     // P3-D2 (D-031) — checkout transaction. Commerce only, no delivery.
     'Checkout/CheckoutException.php',
     'Checkout/CheckoutRefusalReason.php',
@@ -419,7 +428,7 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(34)
+        ->and(DB::table('migrations')->count())->toBe(35)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')

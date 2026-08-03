@@ -23,22 +23,22 @@ final class AnalyticsSalesQuery
         int $page = 1,
         int $perPage = 30,
     ): AnalyticsSales {
-        $currency = strtoupper($currency);
-
         if (! preg_match('/^[A-Z]{3}$/', $currency) || $page < 1 || $perPage < 1 || $perPage > 100) {
             throw new InvalidArgumentException('Invalid analytics sales filters.');
         }
 
         $range = AnalyticsDateRange::make($from, $to);
         $key = implode('|', [
-            'analytics-dashboard',
+            'analytics:v1',
+            'role=admin',
             'scope=global',
-            'view=sales',
+            'timezone=UTC',
+            'query=sales',
             'currency='.$currency,
             'from='.$range->fromString(),
             'to='.$range->toString(),
             'page='.$page,
-            'perPage='.$perPage,
+            'per_page='.$perPage,
         ]);
         $load = fn (): AnalyticsSales => $this->reader->run(
             fn (Connection $connection): AnalyticsSales => $this->load($connection, $range, $currency, $page, $perPage),

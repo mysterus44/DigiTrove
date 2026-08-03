@@ -40,11 +40,16 @@ it('renders the French overview and sales dashboard for an active admin', functi
     $filters = ['from' => '2026-08-03', 'to' => '2026-08-03', 'currency' => 'XOF'];
     Livewire::test(AnalyticsOverviewStats::class, ['pageFilters' => $filters])
         ->assertSee('Vue d’ensemble')
+        ->assertSee('Non suivi')
+        ->assertSee('Couverture du 2026-08-03 au 2026-08-03')
         ->assertSee('Période en cours');
     Livewire::test(AnalyticsSalesChart::class, ['pageFilters' => $filters])
         ->assertSee('Ventes');
     Livewire::test(AnalyticsSalesTable::class, ['pageFilters' => $filters])
         ->assertSee('Détail des ventes')
+        ->assertSee('Réduction')
+        ->assertSee('Taxe')
+        ->assertSee('Moyenne')
         ->assertSee('20 000');
 });
 

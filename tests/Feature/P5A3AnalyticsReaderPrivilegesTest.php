@@ -91,6 +91,17 @@ it('does not widen runtime or worker access to analytics projections', function 
             ))->toBeFalse();
         }
     }
+
+    foreach (P5A3_ROLLUPS as $table) {
+        expect((int) $owner->scalar(<<<SQL
+            SELECT count(*)
+            FROM pg_class c
+            CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) acl
+            WHERE c.oid = 'public.{$table}'::regclass
+              AND acl.grantee = 0
+              AND acl.privilege_type = 'SELECT'
+            SQL))->toBe(0);
+    }
 });
 
 function expectSqlState(Closure $operation, string $state): void

@@ -48,7 +48,8 @@ it('keeps dashboard queries projection-only read-only and identity-free', functi
     expect($reader)->toContain('AnalyticsDashboardConfig::CONNECTION')
         ->toContain('transactionLevel() !== 0')
         ->toContain('SET TRANSACTION READ ONLY')
-        ->toContain("SHOW transaction_read_only")
+        ->toContain('SELECT session_user, current_user')
+        ->toContain('SHOW transaction_read_only')
         ->not->toContain("DB::connection('pgsql')")
         ->and($queries)->toContain('public.daily_funnel_stats')
         ->toContain('public.daily_sales_stats')
@@ -57,7 +58,28 @@ it('keeps dashboard queries projection-only read-only and identity-free', functi
         ->not->toContain(' public.events')
         ->not->toContain('customer_email')
         ->not->toContain('order_number')
+        ->toContain('analytics:v1')
+        ->toContain('role=admin')
         ->toContain('scope=global')
+        ->toContain('timezone=UTC')
         ->not->toContain('user_id=')
         ->not->toContain('visitor_id=');
+});
+
+it('keeps the Filament surface read-only and free of operations or exports', function () use ($root) {
+    $files = array_merge(
+        glob($root.'/app/Filament/Pages/*.php') ?: [],
+        glob($root.'/app/Filament/Widgets/*.php') ?: [],
+        glob($root.'/resources/views/filament/widgets/*.blade.php') ?: [],
+    );
+    $surface = implode("\n", array_map('file_get_contents', $files));
+
+    expect($surface)->not->toContain('Artisan::call')
+        ->not->toContain('Process::run')
+        ->not->toContain('analytics:rollup')
+        ->not->toContain('partitions:ensure')
+        ->not->toContain('export')
+        ->not->toContain('csv')
+        ->not->toContain('digitrove_analytics_worker')
+        ->not->toContain('SQLSTATE');
 });

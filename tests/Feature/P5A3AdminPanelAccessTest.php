@@ -4,6 +4,7 @@ use App\Enums\UserRole;
 use App\Enums\UserStatus;
 use App\Models\User;
 use Filament\Facades\Filament;
+use Filament\Panel;
 use Illuminate\Support\Facades\Gate;
 use Tests\Concerns\RefreshesDatabaseAsMigrator as RefreshDatabase;
 
@@ -45,4 +46,14 @@ it('enforces the Filament boundary over HTTP', function () {
     $this->actingAs($admin)->get('/admin')->assertSuccessful();
     auth()->logout();
     $this->actingAs($staff)->get('/admin')->assertForbidden();
+});
+
+it('refuses an active administrator on any non-admin panel', function () {
+    $admin = User::factory()->create([
+        'role' => UserRole::Admin,
+        'status' => UserStatus::Active,
+    ]);
+
+    expect($admin->canAccessPanel(Panel::make()->id('other')))->toBeFalse()
+        ->and(Gate::forUser($admin)->allows('viewGlobalAnalytics'))->toBeTrue();
 });

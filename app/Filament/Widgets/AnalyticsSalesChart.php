@@ -41,6 +41,13 @@ final class AnalyticsSalesChart extends ChartWidget
                 'data' => array_column($result->series, 'netRevenueMinor'),
                 'borderColor' => '#0f766e',
                 'backgroundColor' => '#99f6e4',
+                'yAxisID' => 'money',
+            ], [
+                'label' => 'Commandes',
+                'data' => array_column($result->series, 'ordersCount'),
+                'borderColor' => '#b45309',
+                'backgroundColor' => '#fde68a',
+                'yAxisID' => 'orders',
             ]],
             'labels' => array_column($result->series, 'day'),
         ];

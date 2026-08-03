@@ -19,7 +19,10 @@ final class AnalyticsReader
             throw new RuntimeException('Analytics reader refuses an ambient transaction.');
         }
 
-        if ($connection->scalar('SELECT current_user') !== AnalyticsDashboardConfig::READER_ROLE) {
+        $identity = $connection->selectOne('SELECT session_user, current_user');
+
+        if ($identity->session_user !== AnalyticsDashboardConfig::READER_ROLE
+            || $identity->current_user !== AnalyticsDashboardConfig::READER_ROLE) {
             throw new RuntimeException('Analytics reader identity mismatch.');
         }
 

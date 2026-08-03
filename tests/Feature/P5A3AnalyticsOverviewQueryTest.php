@@ -75,6 +75,27 @@ it('uses the dedicated reader cache scope and can disable caching', function () 
         ->and(DB::connection('pgsql_analytics_reader')->transactionLevel())->toBe(0);
 });
 
+it('refuses an ambient reader transaction', function () {
+    config()->set('analytics.dashboard.cache_seconds', 0);
+    $reader = DB::connection('pgsql_analytics_reader');
+    $reader->beginTransaction();
+
+    try {
+        expect(fn () => app(AnalyticsOverviewQuery::class)->get())
+            ->toThrow(RuntimeException::class, 'Analytics reader refuses an ambient transaction.');
+    } finally {
+        $reader->rollBack();
+    }
+});
+
+it('preserves a negative per-currency net without clamping', function () {
+    Fixture::funnel('2026-08-01', 1, 1, 1, 1, 1, 0, 0);
+    Fixture::sales('2026-08-01', 'XOF', 0, 0, 0, 0, 500, -500, 0);
+
+    expect(app(AnalyticsOverviewQuery::class)->get('2026-08-01', '2026-08-01')
+        ->salesByCurrency['XOF']->netRevenueMinor)->toBe(-500);
+});
+
 it('fails closed before connecting when the reader identity is incomplete', function () {
     config()->set('database.connections.pgsql_analytics_reader.password', '');
     DB::purge('pgsql_analytics_reader');

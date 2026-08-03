@@ -21,8 +21,11 @@
                             <th class="px-3 py-2 font-medium">Devise</th>
                             <th class="px-3 py-2 text-right font-medium">Commandes</th>
                             <th class="px-3 py-2 text-right font-medium">Brut</th>
+                            <th class="px-3 py-2 text-right font-medium">Réduction</th>
+                            <th class="px-3 py-2 text-right font-medium">Taxe</th>
                             <th class="px-3 py-2 text-right font-medium">Remboursements</th>
                             <th class="px-3 py-2 text-right font-medium">Net</th>
+                            <th class="px-3 py-2 text-right font-medium">Moyenne</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -32,8 +35,11 @@
                                 <td class="px-3 py-2">{{ $row->currency }}</td>
                                 <td class="px-3 py-2 text-right tabular-nums">{{ $this->formatInteger($row->ordersCount) }}</td>
                                 <td class="px-3 py-2 text-right tabular-nums">{{ $this->formatInteger($row->grossRevenueMinor) }}</td>
+                                <td class="px-3 py-2 text-right tabular-nums">{{ $this->formatInteger($row->discountMinor) }}</td>
+                                <td class="px-3 py-2 text-right tabular-nums">{{ $this->formatInteger($row->taxMinor) }}</td>
                                 <td class="px-3 py-2 text-right tabular-nums">{{ $this->formatInteger($row->refundsMinor) }}</td>
                                 <td class="px-3 py-2 text-right tabular-nums">{{ $this->formatInteger($row->netRevenueMinor) }}</td>
+                                <td class="px-3 py-2 text-right tabular-nums">{{ $this->formatInteger($row->averageOrderMinor) }}</td>
                             </tr>
                         @endforeach
                     </tbody>
