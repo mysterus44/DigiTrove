@@ -36,12 +36,20 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Analytics/EventPartitionService.php',
     // P5-A1 (D-038) — single privacy-gated analytics ingestion authority.
     'Analytics/FirstPartyAnalyticsIngestionService.php',
-    // P5-A3A/B (D-040) — projection-only global analytics readers and DTOs.
+    // P5-A3A/B and P5-A3C (D-040/D-041) — projection-only global readers.
+    'Analytics/Read/AnalyticsFunnelQuery.php',
     'Analytics/Read/AnalyticsOverviewQuery.php',
+    'Analytics/Read/AnalyticsProductQuery.php',
     'Analytics/Read/AnalyticsReader.php',
     'Analytics/Read/AnalyticsSalesQuery.php',
     'Analytics/Read/Data/AnalyticsDateRange.php',
+    'Analytics/Read/Data/AnalyticsFunnel.php',
+    'Analytics/Read/Data/AnalyticsFunnelDay.php',
+    'Analytics/Read/Data/AnalyticsFunnelRatios.php',
     'Analytics/Read/Data/AnalyticsOverview.php',
+    'Analytics/Read/Data/AnalyticsProductResult.php',
+    'Analytics/Read/Data/AnalyticsProductRow.php',
+    'Analytics/Read/Data/AnalyticsProductSort.php',
     'Analytics/Read/Data/AnalyticsSales.php',
     'Analytics/Read/Data/AnalyticsSalesCurrencySummary.php',
     'Analytics/Read/Data/AnalyticsSalesDay.php',
