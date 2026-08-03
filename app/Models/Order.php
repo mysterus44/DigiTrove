@@ -109,6 +109,22 @@ class Order extends Model
     }
 
     /**
+     * @return HasOne<CrmOrderAttributionOutbox, $this>
+     */
+    public function crmAttributionOutbox(): HasOne
+    {
+        return $this->hasOne(CrmOrderAttributionOutbox::class);
+    }
+
+    /**
+     * @return HasOne<CrmOrderAttribution, $this>
+     */
+    public function crmAttribution(): HasOne
+    {
+        return $this->hasOne(CrmOrderAttribution::class);
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

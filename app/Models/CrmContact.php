@@ -30,6 +30,22 @@ class CrmContact extends Model
         return $this->hasMany(CrmMarketingConsentEvent::class, 'contact_id');
     }
 
+    /**
+     * @return HasMany<CrmOrderAttribution, $this>
+     */
+    public function orderAttributions(): HasMany
+    {
+        return $this->hasMany(CrmOrderAttribution::class, 'contact_id');
+    }
+
+    /**
+     * @return HasMany<CrmOrderAttributionOutbox, $this>
+     */
+    public function orderAttributionSnapshots(): HasMany
+    {
+        return $this->hasMany(CrmOrderAttributionOutbox::class, 'contact_id_snapshot');
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
