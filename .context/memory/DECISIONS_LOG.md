@@ -3163,8 +3163,9 @@ P4-B **20/560**, P3-D2 **91/364** et P3-B **18/354**.
 
 ### D-040 — Admin-only Global Analytics Read Model ✅
 
-**Date** : 2026-08-03. **Statut** : **P5-A3A/B IMPLÉMENTÉ — EN ATTENTE DE
-REVUE/MERGE** sur `p5-a3ab-admin-analytics-dashboard`.
+**Date** : 2026-08-03. **Statut** : **P5-A3A/B TERMINÉ, MERGÉ ET VALIDÉ** via
+PR #29, head `31f986dc84c05f15fb5f2e2f1f3db8ea496d01be`, merge
+`2bbf2b5260bb97c7981cf84a13c84910062a21cc`, CI #36 success.
 
 **ACCÈS ET PORTÉE** : seul un utilisateur authentifié, non supprimé, de rôle
 `admin` et statut `active` accède au panel Filament `admin` et à la Gate

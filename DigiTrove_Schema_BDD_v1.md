@@ -1638,7 +1638,8 @@ P5-A1 est terminée, mergée et validée via PR #27, head `955cc340`, merge
 `c699c5b9`, CI #33 success (D-038). P5-A2 est terminée, mergée et validée via
 PR #28, head `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
 `17aaa4f43fcac0d3ef5e039897f0d30666b9d29d`, CI #35 success (D-039).
-P5-A3A/B est implémentée sur sa branche dédiée et attend revue/merge (D-040);
+P5-A3A/B est terminée, mergée et validée via PR #29, head `31f986dc`, merge
+`2bbf2b52`, CI #36 success (D-040);
 P5-A3C, P5-A3D, P6 et P7 ne sont pas commencés.
 
 **Principe non négociable** : l'analytique ne pose aucune FK, aucun verrou et
@@ -1866,9 +1867,9 @@ PostgreSQL verts.
 
 ### P5-A3A/B — Admin Analytics Read Boundary, Overview et Ventes (D-040)
 
-**État** : implémenté sur `p5-a3ab-admin-analytics-dashboard`, en attente de
-revue/merge. La migration `000019` porte le total à **35 migrations** sans
-ajouter de table métier ni d'index.
+**État** : terminé, mergé et validé via PR #29, head `31f986dc`, merge
+`2bbf2b52`, CI #36 success. La migration `000019` porte le total à **35
+migrations** sans ajouter de table métier ni d'index.
 
 - Le schéma et les rollups sont **globaux**. Ni `products`, ni `orders`, ni les
   quatre projections ne portent vendeur, owner ou tenant. Un dashboard vendeur

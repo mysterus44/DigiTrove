@@ -376,9 +376,9 @@ post-merge sur la stable `0854a393` : P3-D1 **48/167**, P3-D2 **66/323**, P4-B
   **34 migrations**, P5-A2 **25/198**, suite complète **741/5381**, Pint
   **278**, rollback isolé, ACL et concurrence PostgreSQL verts.
 
-**TÂCHE ACTIVE : P5-A3A/B ADMIN ANALYTICS READ BOUNDARY, OVERVIEW AND SALES
-IMPLÉMENTÉ — EN ATTENTE DE REVUE/MERGE** sur
-`p5-a3ab-admin-analytics-dashboard` (**D-040**). Seul un admin actif et non
+**P5-A3A/B ADMIN ANALYTICS READ BOUNDARY, OVERVIEW AND SALES TERMINÉ, MERGÉ ET
+VALIDÉ** via PR #29, head `31f986dc`, merge `2bbf2b52`, CI #36 success
+(**D-040**). Seul un admin actif et non
 supprimé accède au panel et à l'analytique globale; `staff`, `customer` et les
 comptes inactifs sont refusés. Le rôle PostgreSQL
 `digitrove_analytics_reader` et la connexion `pgsql_analytics_reader` lisent
@@ -386,8 +386,8 @@ uniquement les quatre rollups en transaction read-only. Vue d'ensemble et
 Ventes séparent strictement les devises, exposent les trous de calcul et le jour
 UTC courant provisoire, sans données brutes, Commerce, worker, opération, API
 ou export. Validation : **35 migrations**, P5-A3 **32/193**, suite complète
-**773/5575**, Pint **302**. Prochaine tâche après merge : **P5-A3C — Product
-and Funnel Analytics Views**. P5-A3C, P5-A3D, P6 et P7 ne sont pas commencés.
+**773/5575**, Pint **302**. **TÂCHE ACTIVE : P5-A3C — Product and Funnel
+Analytics Views, NON COMMENCÉE.** P5-A3D, P6 et P7 ne sont pas commencés.
 Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —

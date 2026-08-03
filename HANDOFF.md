@@ -8,9 +8,8 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-08-03
-- **Branche git active** : `p5-a3ab-admin-analytics-dashboard`, base stable
-  `51b8d4b4818621aa7d7812bc68c39da7c9717c16`, head fonctionnel audité
-  `8448964`.
+- **Branche git active** : `p0-foundations-laravel13`, synchronisée sur le merge
+  P5-A3A/B `2bbf2b5260bb97c7981cf84a13c84910062a21cc`.
 - **P5-A2 AUTHORITATIVE ROLLUPS AND PARTITION OPERATIONS TERMINÉ, MERGÉ ET
   VALIDÉ** via [PR #28](https://github.com/mysterus44/DigiTrove/pull/28), head
   `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
@@ -24,8 +23,10 @@
   automatiquement. Validation post-merge : **34 migrations**, P5-A2 **25 tests /
   198 assertions**, suite complète **741 / 5381**, Pint **278 fichiers**,
   `git diff --check` propre; rollback isolé et concurrence PostgreSQL verts.
-- **P5-A3A/B ADMIN ANALYTICS READ BOUNDARY, OVERVIEW AND SALES IMPLÉMENTÉ — EN
-  ATTENTE DE REVUE/MERGE** (D-040). Seul un admin actif et non supprimé accède
+- **P5-A3A/B ADMIN ANALYTICS READ BOUNDARY, OVERVIEW AND SALES TERMINÉ, MERGÉ
+  ET VALIDÉ** via PR #29, head `31f986dc84c05f15fb5f2e2f1f3db8ea496d01be`,
+  merge `2bbf2b5260bb97c7981cf84a13c84910062a21cc`, CI #36 success (D-040).
+  Seul un admin actif et non supprimé accède
   au panel `admin` et à la Gate `viewGlobalAnalytics`; `staff`, `customer` et
   les comptes inactifs sont refusés. La migration `000019` accorde au rôle
   `digitrove_analytics_reader` uniquement `SELECT` sur les quatre rollups. Les
@@ -454,10 +455,21 @@
 
 ## 🎯 P5-A3C — Product and Funnel Analytics Views
 
-P5-A3A/B est implémenté sur sa branche dédiée et attend revue/merge. La prochaine
-tâche, dans une exécution séparée après intégration, est P5-A3C : vues Produits
+P5-A3A/B est clos sur la stable via PR #29. La prochaine tâche, dans une
+exécution séparée, est P5-A3C : vues Produits
 et Tunnel à partir des rollups existants et de la même frontière reader. Ne pas
-commencer P5-A3C, P5-A3D, P6 ou P7 pendant la revue de ce gate.
+commencer P5-A3D, P6 ou P7 pendant ce gate.
+
+### 2026-08-03 — Codex (clôture post-merge P5-A3A/B)
+
+- PR #29 mergée : head `31f986dc`, merge `2bbf2b52`, parents `51b8d4b` et
+  `31f986dc`, CI #36 success; les quatre commits P5-A3A/B sont intégrés.
+- Validation post-merge : P5-A3 **32/193**, P5-A2 **25/198**, P5-A1/P5-A0,
+  P4-C **86/559**, P4-B **20/560**, P3-D2 **91/364**, P3-B **18/354**, suite
+  complète **773/5575**, Pint **302**, **35 migrations**, `000019` appliquée et
+  `git diff --check` propre.
+- Reader LOGIN/ACL, accès admin actif, transactions read-only, séparation des
+  devises, rollback isolé et contrat CI restent verts. P5-A3C est non commencé.
 
 ### 2026-08-03 — Codex (P5-A3A/B admin analytics read boundary et dashboard)
 

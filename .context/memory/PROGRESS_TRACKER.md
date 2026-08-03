@@ -15,7 +15,7 @@ P3 COMMERCE         : ██████████  Schéma P3C-C refunds merg
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
-P5 ANALYTIQUE       : ██████████  P5-A0/P5-A1/P5-A2 mergés ; P5-A3A/B implémenté, en attente de revue/merge ; P5-A3C non commencé
+P5 ANALYTIQUE       : ██████████  P5-A0/P5-A1/P5-A2/P5-A3A/B mergés ; P5-A3C non commencé
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
@@ -497,7 +497,7 @@ Foundation**.
 | Autorité de rollup | ✅ worker LOGIN EXECUTE-only, executor NOLOGIN, SECURITY DEFINER, recalcul UTC atomique/idempotent, commandes et scheduler conditionnel |
 | Partitions calendaires contrôlées | ✅ création mensuelle bornée et idempotente, DEFAULT jamais déplacée, audit non destructif, ACL explicites |
 | Validation P5-A2 | ✅ POST-MERGE GREEN — 34 migrations, P5-A2 25/198, P5-A1 74/400, P5-A0 19/256, suite 741/5381, Pint 278, rollback/concurrence verts |
-| **P5-A3A/B** read boundary, overview et ventes | ✅ IMPLÉMENTÉ — EN ATTENTE DE REVUE/MERGE sur `p5-a3ab-admin-analytics-dashboard`, D-040, migration `000019` |
+| **P5-A3A/B** read boundary, overview et ventes | ✅ TERMINÉ, MERGÉ ET VALIDÉ — PR #29, head `31f986dc`, merge `2bbf2b52`, CI #36, D-040, migration `000019` |
 | Autorisation Filament P5-A3 | ✅ admin actif/non supprimé uniquement; Gate `viewGlobalAnalytics`; staff/customer/suspended/blocked refusés |
 | Frontière PostgreSQL de lecture | ✅ reader LOGIN dédié, transaction read-only, SELECT uniquement sur quatre rollups; runtime/worker/PUBLIC et données brutes refusés |
 | Queries/UI P5-A3A/B | ✅ DTO immuables, cache borné et global, Vue d'ensemble/Ventes, devises séparées, trous/provisoire explicites, aucune API/export/opération |
