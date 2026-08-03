@@ -26,6 +26,7 @@ class ProvisionRuntimeRoles extends Command
     {
         $runtimePassword = (string) config('database.connections.pgsql.password');
         $analyticsWorkerPassword = (string) config('database.connections.pgsql_analytics_worker.password');
+        $analyticsReaderPassword = (string) config('database.connections.pgsql_analytics_reader.password');
 
         if ($runtimePassword === '') {
             $this->error('The runtime connection (pgsql) has no password configured; refusing to provision an empty-password role.');
@@ -35,6 +36,12 @@ class ProvisionRuntimeRoles extends Command
 
         if ($analyticsWorkerPassword === '') {
             $this->error('The analytics worker connection has no password configured; refusing to provision an empty-password role.');
+
+            return self::FAILURE;
+        }
+
+        if ($analyticsReaderPassword === '') {
+            $this->error('The analytics reader connection has no password configured; refusing to provision an empty-password role.');
 
             return self::FAILURE;
         }
@@ -58,6 +65,7 @@ class ProvisionRuntimeRoles extends Command
         // the script reads it with current_setting('digitrove.runtime_password').
         $connection->statement("SELECT set_config('digitrove.runtime_password', ?, false)", [$runtimePassword]);
         $connection->statement("SELECT set_config('digitrove.analytics_worker_password', ?, false)", [$analyticsWorkerPassword]);
+        $connection->statement("SELECT set_config('digitrove.analytics_reader_password', ?, false)", [$analyticsReaderPassword]);
 
         try {
             $connection->getPdo()->exec($sql);
@@ -65,9 +73,10 @@ class ProvisionRuntimeRoles extends Command
             // Clear the secret from the session as soon as provisioning is done.
             $connection->statement("SELECT set_config('digitrove.runtime_password', '', false)");
             $connection->statement("SELECT set_config('digitrove.analytics_worker_password', '', false)");
+            $connection->statement("SELECT set_config('digitrove.analytics_reader_password', '', false)");
         }
 
-        $this->info('Runtime roles provisioned (runtime, download/ingestion/rollup executors, analytics worker).');
+        $this->info('Runtime roles provisioned (runtime, executors, analytics worker and analytics reader).');
 
         return self::SUCCESS;
     }

@@ -26,6 +26,9 @@ final class PhaseMigrationHarness
     /** @var array<string, mixed> */
     private array $analyticsWorkerConnection;
 
+    /** @var array<string, mixed> */
+    private array $analyticsReaderConnection;
+
     private PDO $admin;
 
     private ?PDO $connectionPdo = null;
@@ -33,6 +36,8 @@ final class PhaseMigrationHarness
     private ?PDO $runtimePdoInstance = null;
 
     private ?PDO $analyticsWorkerPdoInstance = null;
+
+    private ?PDO $analyticsReaderPdoInstance = null;
 
     public function __construct(private readonly string $databaseName)
     {
@@ -42,6 +47,7 @@ final class PhaseMigrationHarness
         $this->connection = config('database.connections.pgsql_migration');
         $this->runtimeConnection = config('database.connections.pgsql');
         $this->analyticsWorkerConnection = config('database.connections.pgsql_analytics_worker');
+        $this->analyticsReaderConnection = config('database.connections.pgsql_analytics_reader');
         $this->admin = $this->makePdo('postgres');
     }
 
@@ -62,6 +68,7 @@ final class PhaseMigrationHarness
         $this->connectionPdo = null;
         $this->runtimePdoInstance = null;
         $this->analyticsWorkerPdoInstance = null;
+        $this->analyticsReaderPdoInstance = null;
         $quoted = '"'.$this->databaseName.'"';
         $this->admin->exec("DROP DATABASE IF EXISTS {$quoted} WITH (FORCE)");
     }
@@ -287,6 +294,21 @@ final class PhaseMigrationHarness
         );
     }
 
+    public function analyticsReaderPdo(): PDO
+    {
+        return $this->analyticsReaderPdoInstance ??= new PDO(
+            sprintf(
+                'pgsql:host=%s;port=%s;dbname=%s',
+                $this->analyticsReaderConnection['host'],
+                $this->analyticsReaderConnection['port'] ?? 5432,
+                $this->databaseName,
+            ),
+            $this->analyticsReaderConnection['username'],
+            $this->analyticsReaderConnection['password'],
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
+        );
+    }
+
     private function makePdo(string $database): PDO
     {
         $dsn = sprintf(
@@ -325,6 +347,8 @@ final class PhaseMigrationHarness
                 'DB_MIGRATION_PASSWORD' => (string) $this->connection['password'],
                 'ANALYTICS_WORKER_DB_USERNAME' => (string) $this->analyticsWorkerConnection['username'],
                 'ANALYTICS_WORKER_DB_PASSWORD' => (string) $this->analyticsWorkerConnection['password'],
+                'ANALYTICS_READER_DB_USERNAME' => (string) $this->analyticsReaderConnection['username'],
+                'ANALYTICS_READER_DB_PASSWORD' => (string) $this->analyticsReaderConnection['password'],
             ],
         );
         $process->setTimeout(120);
