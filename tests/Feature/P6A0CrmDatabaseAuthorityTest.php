@@ -8,6 +8,7 @@ use App\Enums\MarketingChannel;
 use App\Enums\MarketingConsentAction;
 use App\Enums\MarketingConsentSource;
 use App\Enums\MarketingPurpose;
+use App\Enums\UserStatus;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -135,6 +136,63 @@ it('links only an exact verified account and never uses visitor identity', funct
         fn () => p6a0ResolveContact('mismatch@example.test', 'verified_account', userId: $user->id),
         'CRM verified account evidence is invalid',
     );
+});
+
+it('refuses inactive account evidence before creating a CRM contact', function (UserStatus $status) {
+    $email = "authority-{$status->value}@example.test";
+    $user = User::factory()->create([
+        'email' => $email,
+        'status' => $status,
+    ]);
+
+    p6a0ExpectDatabaseRefusal(
+        fn () => p6a0ResolveContact($email, 'verified_account', userId: $user->id),
+        'CRM verified account evidence is invalid',
+    );
+
+    expect(DB::connection('pgsql_migration')->table('crm_contacts')->where('email', $email)->exists())
+        ->toBeFalse();
+})->with([
+    'suspended' => UserStatus::Suspended,
+    'blocked' => UserStatus::Blocked,
+]);
+
+it('refuses linking an existing guest contact to an inactive account', function (UserStatus $status) {
+    $email = "trigger-{$status->value}@example.test";
+    $order = $this->crmPendingOrder($email);
+    $contact = p6a0ResolveContact($email, 'guest_order', orderId: $order->id);
+    $user = User::factory()->create([
+        'email' => $email,
+        'status' => $status,
+    ]);
+    $owner = DB::connection('pgsql_migration');
+
+    p6a0ExpectDatabaseRefusal(
+        fn () => $owner->table('crm_contacts')->where('id', $contact->contact_id)->update([
+            'user_id' => $user->id,
+            'updated_at' => now(),
+        ]),
+        'CRM contact user link is invalid',
+    );
+
+    expect($owner->table('crm_contacts')->where('id', $contact->contact_id)->value('user_id'))
+        ->toBeNull();
+})->with([
+    'suspended' => UserStatus::Suspended,
+    'blocked' => UserStatus::Blocked,
+]);
+
+it('links an existing guest contact to an active verified account', function () {
+    $email = 'active-link@example.test';
+    $order = $this->crmPendingOrder($email);
+    $guest = p6a0ResolveContact($email, 'guest_order', orderId: $order->id);
+    $user = User::factory()->create(['email' => $email]);
+
+    $linked = p6a0ResolveContact($email, 'verified_account', userId: $user->id);
+
+    expect($linked->contact_id)->toBe($guest->contact_id)
+        ->and(DB::connection('pgsql_migration')->table('crm_contacts')->where('id', $guest->contact_id)->value('user_id'))
+        ->toBe($user->id);
 });
 
 it('keeps anonymization irreversible and permits a new clean contact for the old email', function () {

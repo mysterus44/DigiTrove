@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\UserStatus;
 use App\Models\User;
 use App\Services\Crm\CrmContactResolver;
 use App\Services\Crm\CrmOperationException;
@@ -40,6 +41,22 @@ it('fails closed with a sanitized error for disabled, malformed or mismatched in
         ->and(fn () => $resolver->resolveGuestOrder('other@example.test', $order->id))
         ->toThrow(CrmOperationException::class, 'The CRM operation could not be completed.');
 });
+
+it('fails closed for an inactive verified account without creating a contact', function (UserStatus $status) {
+    $email = "service-{$status->value}@example.test";
+    $user = User::factory()->create([
+        'email' => $email,
+        'status' => $status,
+    ]);
+
+    expect(fn () => (new CrmContactResolver)->resolveVerifiedAccount($email, $user->id))
+        ->toThrow(CrmOperationException::class, 'The CRM operation could not be completed.')
+        ->and(DB::connection('pgsql_migration')->table('crm_contacts')->where('email', $email)->exists())
+        ->toBeFalse();
+})->with([
+    'suspended' => UserStatus::Suspended,
+    'blocked' => UserStatus::Blocked,
+]);
 
 it('refuses ambient transactions and a non-runtime database identity', function () {
     $resolver = new CrmContactResolver;

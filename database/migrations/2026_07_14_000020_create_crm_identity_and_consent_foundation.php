@@ -160,6 +160,7 @@ return new class extends Migration
                             FROM public.users AS u
                             WHERE u.id = NEW.user_id
                               AND u.deleted_at IS NULL
+                              AND u.status = 'active'
                               AND u.email_verified_at IS NOT NULL
                               AND u.email = NEW.email
                         ) THEN
@@ -289,6 +290,7 @@ return new class extends Migration
                         SELECT 1 FROM public.users AS u
                         WHERE u.id = p_user_id
                           AND u.deleted_at IS NULL
+                          AND u.status = 'active'
                           AND u.email_verified_at IS NOT NULL
                           AND u.email = v_email
                     ) THEN
