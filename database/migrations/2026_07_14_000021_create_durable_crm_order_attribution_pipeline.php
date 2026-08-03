@@ -21,7 +21,10 @@ return new class extends Migration
             $table->string('status', 16)->default('pending');
             $table->string('reason', 32)->nullable();
             $table->unsignedInteger('attempt_count')->default(0);
-            $table->timestampTz('available_at')->useCurrent();
+            // Precision is security-relevant here: TIMESTAMPTZ(0) rounds up
+            // values in the latter half of a second and can hide a newly due
+            // row from the sweeper until the wall clock catches up.
+            $table->timestampTz('available_at', 6)->useCurrent();
             $table->timestampsTz();
         });
 

@@ -105,7 +105,8 @@ function p6a10ExpectRefusal(Closure $callback, string $message, string $sqlState
 it('installs exactly the P6-A1.0 tables with closed physical contracts', function () {
     $owner = DB::connection('pgsql_migration');
     $columns = collect($owner->select(<<<'SQL'
-        SELECT table_name, column_name, udt_name, character_maximum_length, is_nullable, column_default
+        SELECT table_name, column_name, udt_name, character_maximum_length,
+               datetime_precision, is_nullable, column_default
         FROM information_schema.columns
         WHERE table_schema = 'public'
           AND table_name IN ('crm_order_attribution_outbox', 'crm_order_attributions')
@@ -119,6 +120,7 @@ it('installs exactly the P6-A1.0 tables with closed physical contracts', functio
         ->and($columns['crm_order_attribution_outbox.contact_id_snapshot']->udt_name)->toBe('int8')
         ->and($columns['crm_order_attribution_outbox.attempt_count']->udt_name)->toBe('int4')
         ->and($columns['crm_order_attribution_outbox.available_at']->udt_name)->toBe('timestamptz')
+        ->and($columns['crm_order_attribution_outbox.available_at']->datetime_precision)->toBe(6)
         ->and($columns['crm_order_attributions.attributed_at']->udt_name)->toBe('timestamptz')
         ->and($columns->keys()->contains(fn (string $key): bool => str_contains($key, 'email')))->toBeFalse()
         ->and($columns->keys()->contains(fn (string $key): bool => str_contains($key, 'visitor')))->toBeFalse()
@@ -436,8 +438,12 @@ it('keeps attribution immutable and due listing bounded stable and terminal-awar
         ORDER BY available_at, order_id
         SQL, [$first->id, $second->id]);
 
-    expect($pending)->toHaveCount(2)
-        ->and(collect($pending)->every(fn (object $row): bool => $row->is_due === true))->toBeTrue();
+    expect($pending)->toHaveCount(2);
+    foreach ($pending as $row) {
+        expect($row->is_due)->toBeTrue(
+            "Outbox available_at {$row->available_at} was after PostgreSQL clock {$row->observed_at}.",
+        );
+    }
 
     $due = DB::select('SELECT * FROM public.list_due_crm_order_attributions(?::integer)', [1]);
     expect($due)->toHaveCount(1)
