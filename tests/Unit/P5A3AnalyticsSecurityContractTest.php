@@ -38,3 +38,26 @@ it('provisions all three login passwords in one CI psql session', function () us
         ->and($command)->toContain("set_config('digitrove.analytics_reader_password', ?, false)")
         ->toContain("set_config('digitrove.analytics_reader_password', '', false)");
 });
+
+it('keeps dashboard queries projection-only read-only and identity-free', function () use ($root) {
+    $reader = file_get_contents($root.'/app/Services/Analytics/Read/AnalyticsReader.php');
+    $overview = file_get_contents($root.'/app/Services/Analytics/Read/AnalyticsOverviewQuery.php');
+    $sales = file_get_contents($root.'/app/Services/Analytics/Read/AnalyticsSalesQuery.php');
+    $queries = $overview.$sales;
+
+    expect($reader)->toContain('AnalyticsDashboardConfig::CONNECTION')
+        ->toContain('transactionLevel() !== 0')
+        ->toContain('SET TRANSACTION READ ONLY')
+        ->toContain("SHOW transaction_read_only")
+        ->not->toContain("DB::connection('pgsql')")
+        ->and($queries)->toContain('public.daily_funnel_stats')
+        ->toContain('public.daily_sales_stats')
+        ->not->toContain(' public.orders')
+        ->not->toContain(' public.order_items')
+        ->not->toContain(' public.events')
+        ->not->toContain('customer_email')
+        ->not->toContain('order_number')
+        ->toContain('scope=global')
+        ->not->toContain('user_id=')
+        ->not->toContain('visitor_id=');
+});

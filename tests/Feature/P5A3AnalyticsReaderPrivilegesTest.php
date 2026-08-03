@@ -80,6 +80,19 @@ it('has no write ddl temporary or function execution privilege', function () {
     expectSqlState(fn () => $reader->select('SELECT public.audit_analytics_event_partitions()'), '42501');
 });
 
+it('does not widen runtime or worker access to analytics projections', function () {
+    $owner = DB::connection('pgsql_migration');
+
+    foreach (['digitrove_runtime', 'digitrove_analytics_worker'] as $role) {
+        foreach (P5A3_ROLLUPS as $table) {
+            expect($owner->scalar(
+                "SELECT has_table_privilege(?::name, 'public.{$table}', 'SELECT')",
+                [$role],
+            ))->toBeFalse();
+        }
+    }
+});
+
 function expectSqlState(Closure $operation, string $state): void
 {
     try {
