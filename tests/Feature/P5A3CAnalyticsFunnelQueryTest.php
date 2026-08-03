@@ -54,6 +54,29 @@ it('keeps missing days null while preserving measured zero and provisional today
         ->and($result->currentDayProvisional)->toBeTrue();
 });
 
+it('distinguishes a period without coverage from a calculated day containing real zeros', function () {
+    $uncovered = app(AnalyticsFunnelQuery::class)->get('2026-08-01', '2026-08-02');
+
+    expect($uncovered->coverageStart)->toBeNull()
+        ->and($uncovered->coverageEnd)->toBeNull()
+        ->and($uncovered->missingDays)->toBe(['2026-08-01', '2026-08-02'])
+        ->and(array_column($uncovered->dailySeries, 'sessions'))->toBe([null, null])
+        ->and(array_column($uncovered->dailySeries, 'productViews'))->toBe([null, null])
+        ->and($uncovered->visitors)->toBe(0)
+        ->and($uncovered->ratios->viewsPerSession)->toBeNull();
+
+    Fixture::funnel('2026-08-03', 0, 0, 0, 0, 0, 0, 0);
+    $measuredZero = app(AnalyticsFunnelQuery::class)->get('2026-08-03', '2026-08-03');
+
+    expect($measuredZero->coverageStart)->toBe('2026-08-03')
+        ->and($measuredZero->coverageEnd)->toBe('2026-08-03')
+        ->and($measuredZero->missingDays)->toBe([])
+        ->and($measuredZero->dailySeries[0]->sessions)->toBe(0)
+        ->and($measuredZero->dailySeries[0]->productViews)->toBe(0)
+        ->and($measuredZero->visitors)->toBe(0)
+        ->and($measuredZero->ratios->viewsPerSession)->toBeNull();
+});
+
 it('returns unavailable ratios for zero denominators and never caps ratios', function () {
     Fixture::funnel('2026-08-01', 10, 0, 4, 0, 0, 2, 5);
 

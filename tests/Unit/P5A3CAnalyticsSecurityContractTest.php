@@ -42,6 +42,22 @@ it('keeps the sort allowlist closed and user input out of SQL fragments', functi
         ->not->toContain('$sortValue');
 });
 
+it('keeps product identifiers non-metric and monetary and coverage semantics explicit', function () use ($root) {
+    $chart = file_get_contents($root.'/app/Filament/Widgets/AnalyticsProductChart.php');
+    $productTable = file_get_contents($root.'/resources/views/filament/widgets/analytics-product-table.blade.php');
+    $funnelStats = file_get_contents($root.'/resources/views/filament/widgets/analytics-funnel-stats.blade.php');
+
+    expect($chart)->toContain("AnalyticsProductSort::ProductIdAsc => ['Vues globales — tri par identifiant', 'views'")
+        ->not->toContain("AnalyticsProductSort::ProductIdAsc => ['Identifiant produit', 'productId'")
+        ->toContain('AnalyticsProductSort::RevenueDesc => [\'Revenu \'.$result->currency.\' — unités mineures\', \'revenueMinor\'')
+        ->and($productTable)->toContain('Revenu {{ $result->currency }} — unités mineures')
+        ->toContain('Moyenne par achat {{ $result->currency }} — unités mineures')
+        ->toContain('Aucune conversion de devise n’est appliquée.')
+        ->not->toContain('/ 100')
+        ->and($funnelStats)->toContain('$result->coverageStart === null')
+        ->toContain('Aucune donnée de tunnel calculée pour cette période.');
+});
+
 it('adds no migration operation API export or worker execution surface', function () use ($root) {
     $migrations = glob($root.'/database/migrations/*.php') ?: [];
     $surfaceFiles = array_merge(

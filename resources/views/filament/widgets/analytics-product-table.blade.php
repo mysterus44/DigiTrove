@@ -5,6 +5,9 @@
         <p class="mb-3 text-sm text-gray-600 dark:text-gray-300">
             Les vues sont globales ; les achats et revenus utilisent la devise sélectionnée.
         </p>
+        <p class="mb-3 text-sm text-gray-600 dark:text-gray-300">
+            Les montants sont affichés en unités mineures de la devise sélectionnée. Aucune conversion de devise n’est appliquée.
+        </p>
 
         @if ($result === null)
             <p class="text-sm text-gray-600 dark:text-gray-300">Les données ne peuvent pas être chargées.</p>
@@ -28,8 +31,8 @@
                             <th class="px-3 py-2 font-medium">Produit</th>
                             <th class="px-3 py-2 text-right font-medium">Vues globales</th>
                             <th class="px-3 py-2 text-right font-medium">Achats {{ $result->currency }}</th>
-                            <th class="px-3 py-2 text-right font-medium">Revenu {{ $result->currency }}</th>
-                            <th class="px-3 py-2 text-right font-medium">Moyenne par achat {{ $result->currency }}</th>
+                            <th class="px-3 py-2 text-right font-medium">Revenu {{ $result->currency }} — unités mineures</th>
+                            <th class="px-3 py-2 text-right font-medium">Moyenne par achat {{ $result->currency }} — unités mineures</th>
                             <th class="px-3 py-2 text-right font-medium">Ajouts au panier</th>
                         </tr>
                     </thead>

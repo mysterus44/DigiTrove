@@ -4,6 +4,8 @@
     <x-filament::section heading="Tunnel">
         @if ($result === null)
             <p class="text-sm text-gray-600 dark:text-gray-300">Les données ne peuvent pas être chargées.</p>
+        @elseif ($result->coverageStart === null)
+            <p class="text-sm text-gray-600 dark:text-gray-300">Aucune donnée de tunnel calculée pour cette période.</p>
         @else
             @if ($result->missingDays !== [])
                 <p class="mb-3 text-sm text-amber-700 dark:text-amber-300">

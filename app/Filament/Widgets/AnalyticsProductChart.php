@@ -15,8 +15,6 @@ final class AnalyticsProductChart extends ChartWidget
 
     protected ?string $heading = 'Produits';
 
-    protected ?string $description = 'Top 10 des identifiants présents dans les rollups.';
-
     protected ?string $pollingInterval = null;
 
     protected int|string|array $columnSpan = 'full';
@@ -26,11 +24,18 @@ final class AnalyticsProductChart extends ChartWidget
         return 'bar';
     }
 
+    public function getDescription(): ?string
+    {
+        return $this->productSort() === AnalyticsProductSort::ProductIdAsc
+            ? '10 premiers identifiants produit, avec leurs vues globales.'
+            : 'Top 10 produits selon la métrique sélectionnée.';
+    }
+
     /** @return array<string, mixed> */
     protected function getData(): array
     {
         try {
-            $sort = AnalyticsProductSort::tryFrom($this->sort()) ?? AnalyticsProductSort::RevenueDesc;
+            $sort = $this->productSort();
             $result = app(AnalyticsProductQuery::class)->get(
                 $this->currency(),
                 $this->from(),
@@ -44,10 +49,10 @@ final class AnalyticsProductChart extends ChartWidget
         }
 
         [$label, $property, $color] = match ($sort) {
-            AnalyticsProductSort::RevenueDesc => ['Revenu '.$result->currency, 'revenueMinor', '#0f766e'],
+            AnalyticsProductSort::RevenueDesc => ['Revenu '.$result->currency.' — unités mineures', 'revenueMinor', '#0f766e'],
             AnalyticsProductSort::PurchasesDesc => ['Achats '.$result->currency, 'purchases', '#b45309'],
             AnalyticsProductSort::ViewsDesc => ['Vues globales', 'views', '#2563eb'],
-            AnalyticsProductSort::ProductIdAsc => ['Identifiant produit', 'productId', '#52525b'],
+            AnalyticsProductSort::ProductIdAsc => ['Vues globales — tri par identifiant', 'views', '#52525b'],
         };
 
         return [
@@ -68,6 +73,11 @@ final class AnalyticsProductChart extends ChartWidget
     private function sort(): string
     {
         return is_string($this->pageFilters['product_sort'] ?? null) ? $this->pageFilters['product_sort'] : 'revenue_desc';
+    }
+
+    private function productSort(): AnalyticsProductSort
+    {
+        return AnalyticsProductSort::tryFrom($this->sort()) ?? AnalyticsProductSort::RevenueDesc;
     }
 
     private function from(): ?string
