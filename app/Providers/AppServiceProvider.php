@@ -8,6 +8,7 @@ use App\Events\OrderPaid;
 use App\Listeners\QueueSecureDelivery;
 use App\Payments\PaymentProviderFactory;
 use App\Policies\AnalyticsPolicy;
+use App\Policies\CrmPolicy;
 use App\Support\AnalyticsConfig;
 use App\Support\DeliveryConfig;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -54,6 +55,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::define('viewGlobalAnalytics', [AnalyticsPolicy::class, 'viewGlobalAnalytics']);
+        Gate::define('manageCustomerRelationships', [CrmPolicy::class, 'manageCustomerRelationships']);
 
         RateLimiter::for('analytics-ingestion', function (Request $request): Limit {
             try {
