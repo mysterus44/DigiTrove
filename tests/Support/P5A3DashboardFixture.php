@@ -62,4 +62,36 @@ final class P5A3DashboardFixture
             'updated_at' => now('UTC'),
         ]);
     }
+
+    public static function productEngagement(
+        string $day,
+        int $productId,
+        int $views,
+        int $carts = 0,
+    ): void {
+        DB::connection('pgsql_migration')->table('daily_product_engagement_stats')->insert([
+            'day' => $day,
+            'product_id' => $productId,
+            'views' => $views,
+            'add_to_carts' => $carts,
+            'updated_at' => now('UTC'),
+        ]);
+    }
+
+    public static function productSales(
+        string $day,
+        int $productId,
+        string $currency,
+        int $purchases,
+        int $revenueMinor,
+    ): void {
+        DB::connection('pgsql_migration')->table('daily_product_stats')->insert([
+            'day' => $day,
+            'product_id' => $productId,
+            'currency' => $currency,
+            'purchases' => $purchases,
+            'revenue_minor' => $revenueMinor,
+            'updated_at' => now('UTC'),
+        ]);
+    }
 }
