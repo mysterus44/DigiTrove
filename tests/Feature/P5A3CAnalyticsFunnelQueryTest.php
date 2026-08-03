@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\Analytics\Read\AnalyticsFunnelQuery;
+use App\Services\Analytics\Read\Data\AnalyticsFunnel;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Tests\Concerns\RefreshesDatabaseAsMigrator as RefreshDatabase;
@@ -71,7 +72,10 @@ it('uses the global currency-free cache scope and validates the UTC range', func
 
     $query->get('2026-08-01', '2026-08-01');
 
-    expect(Cache::has('analytics:v1|role=admin|scope=global|timezone=UTC|query=funnel|from=2026-08-01|to=2026-08-01|currency=none|page=none|per_page=none'))->toBeTrue()
+    $key = 'analytics:v1|role=admin|scope=global|timezone=UTC|query=funnel|from=2026-08-01|to=2026-08-01|currency=none|page=none|per_page=none';
+    expect(Cache::has($key))->toBeTrue()
+        ->and(Cache::get($key))->toBeArray()
+        ->and($query->get('2026-08-01', '2026-08-01'))->toBeInstanceOf(AnalyticsFunnel::class)
         ->and(fn () => $query->get('2026-08-04', '2026-08-04'))->toThrow(InvalidArgumentException::class)
         ->and(fn () => $query->get('2025-07-01', '2026-08-03'))->toThrow(InvalidArgumentException::class);
 });

@@ -35,7 +35,13 @@ final class AnalyticsFunnelQuery
         );
         $ttl = AnalyticsDashboardConfig::cacheSeconds();
 
-        return $ttl === 0 ? $load() : Cache::remember($key, $ttl, $load);
+        if ($ttl === 0) {
+            return $load();
+        }
+
+        $cached = Cache::remember($key, $ttl, fn (): array => $this->toCache($load()));
+
+        return $this->fromCache($cached);
     }
 
     private function load(Connection $connection, AnalyticsDateRange $range): AnalyticsFunnel
@@ -110,6 +116,81 @@ final class AnalyticsFunnelQuery
                 $totals->purchase_rate_per_session,
                 $totals->purchase_per_checkout,
                 $totals->new_customer_share,
+            ),
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private function toCache(AnalyticsFunnel $result): array
+    {
+        return [
+            'from' => $result->from,
+            'to' => $result->to,
+            'coverage_start' => $result->coverageStart,
+            'coverage_end' => $result->coverageEnd,
+            'missing_days' => $result->missingDays,
+            'current_day_provisional' => $result->currentDayProvisional,
+            'visitors' => $result->visitors,
+            'sessions' => $result->sessions,
+            'product_views' => $result->productViews,
+            'checkouts' => $result->checkouts,
+            'purchases' => $result->purchases,
+            'new_customers' => $result->newCustomers,
+            'add_to_carts_tracked' => $result->addToCartsTracked,
+            'daily_series' => array_map(static fn (AnalyticsFunnelDay $day): array => [
+                'day' => $day->day,
+                'visitors' => $day->visitors,
+                'sessions' => $day->sessions,
+                'product_views' => $day->productViews,
+                'checkouts' => $day->checkouts,
+                'purchases' => $day->purchases,
+                'new_customers' => $day->newCustomers,
+            ], $result->dailySeries),
+            'ratios' => [
+                'views_per_session' => $result->ratios->viewsPerSession,
+                'checkout_rate_per_session' => $result->ratios->checkoutRatePerSession,
+                'purchase_rate_per_session' => $result->ratios->purchaseRatePerSession,
+                'purchase_per_checkout' => $result->ratios->purchasePerCheckout,
+                'new_customer_share' => $result->ratios->newCustomerShare,
+            ],
+        ];
+    }
+
+    /** @param array<string, mixed> $cached */
+    private function fromCache(array $cached): AnalyticsFunnel
+    {
+        $series = array_map(static fn (array $day): AnalyticsFunnelDay => new AnalyticsFunnelDay(
+            (string) $day['day'],
+            is_int($day['visitors']) ? $day['visitors'] : null,
+            is_int($day['sessions']) ? $day['sessions'] : null,
+            is_int($day['product_views']) ? $day['product_views'] : null,
+            is_int($day['checkouts']) ? $day['checkouts'] : null,
+            is_int($day['purchases']) ? $day['purchases'] : null,
+            is_int($day['new_customers']) ? $day['new_customers'] : null,
+        ), $cached['daily_series']);
+        $ratios = $cached['ratios'];
+
+        return new AnalyticsFunnel(
+            (string) $cached['from'],
+            (string) $cached['to'],
+            is_string($cached['coverage_start']) ? $cached['coverage_start'] : null,
+            is_string($cached['coverage_end']) ? $cached['coverage_end'] : null,
+            $cached['missing_days'],
+            (bool) $cached['current_day_provisional'],
+            (int) $cached['visitors'],
+            (int) $cached['sessions'],
+            (int) $cached['product_views'],
+            (int) $cached['checkouts'],
+            (int) $cached['purchases'],
+            (int) $cached['new_customers'],
+            (bool) $cached['add_to_carts_tracked'],
+            $series,
+            new AnalyticsFunnelRatios(
+                is_string($ratios['views_per_session']) ? $ratios['views_per_session'] : null,
+                is_string($ratios['checkout_rate_per_session']) ? $ratios['checkout_rate_per_session'] : null,
+                is_string($ratios['purchase_rate_per_session']) ? $ratios['purchase_rate_per_session'] : null,
+                is_string($ratios['purchase_per_checkout']) ? $ratios['purchase_per_checkout'] : null,
+                is_string($ratios['new_customer_share']) ? $ratios['new_customer_share'] : null,
             ),
         );
     }

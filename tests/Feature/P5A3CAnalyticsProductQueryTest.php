@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\Analytics\Read\AnalyticsProductQuery;
+use App\Services\Analytics\Read\Data\AnalyticsProductResult;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -94,7 +95,11 @@ it('scopes cache by currency sort page and page size and refuses ambient reader 
     $query = app(AnalyticsProductQuery::class);
 
     $query->get('XOF', '2026-08-01', '2026-08-01', 'views_desc', 2, 10);
-    expect(Cache::has('analytics:v1|role=admin|scope=global|timezone=UTC|query=products|from=2026-08-01|to=2026-08-01|currency=XOF|sort=views_desc|page=2|per_page=10'))->toBeTrue();
+    $key = 'analytics:v1|role=admin|scope=global|timezone=UTC|query=products|from=2026-08-01|to=2026-08-01|currency=XOF|sort=views_desc|page=2|per_page=10';
+    expect(Cache::has($key))->toBeTrue()
+        ->and(Cache::get($key))->toBeArray()
+        ->and($query->get('XOF', '2026-08-01', '2026-08-01', 'views_desc', 2, 10))
+        ->toBeInstanceOf(AnalyticsProductResult::class);
 
     config()->set('analytics.dashboard.cache_seconds', 0);
     $reader = DB::connection('pgsql_analytics_reader');

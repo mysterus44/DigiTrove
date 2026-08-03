@@ -60,7 +60,13 @@ final class AnalyticsProductQuery
         );
         $ttl = AnalyticsDashboardConfig::cacheSeconds();
 
-        return $ttl === 0 ? $load() : Cache::remember($key, $ttl, $load);
+        if ($ttl === 0) {
+            return $load();
+        }
+
+        $cached = Cache::remember($key, $ttl, fn (): array => $this->toCache($load()));
+
+        return $this->fromCache($cached);
     }
 
     private function load(
@@ -149,6 +155,64 @@ final class AnalyticsProductQuery
             $page,
             $perPage,
             max(1, (int) ceil($total / $perPage)),
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private function toCache(AnalyticsProductResult $result): array
+    {
+        return [
+            'currency' => $result->currency,
+            'sort' => $result->sort,
+            'from' => $result->from,
+            'to' => $result->to,
+            'coverage_start' => $result->coverageStart,
+            'coverage_end' => $result->coverageEnd,
+            'missing_days' => $result->missingDays,
+            'current_day_provisional' => $result->currentDayProvisional,
+            'rows' => array_map(static fn (AnalyticsProductRow $row): array => [
+                'product_id' => $row->productId,
+                'label' => $row->label,
+                'views' => $row->views,
+                'purchases' => $row->purchases,
+                'revenue_minor' => $row->revenueMinor,
+                'average_revenue_per_purchase_minor' => $row->averageRevenuePerPurchaseMinor,
+            ], $result->rows),
+            'total' => $result->total,
+            'page' => $result->page,
+            'per_page' => $result->perPage,
+            'last_page' => $result->lastPage,
+        ];
+    }
+
+    /** @param array<string, mixed> $cached */
+    private function fromCache(array $cached): AnalyticsProductResult
+    {
+        $rows = array_map(static fn (array $row): AnalyticsProductRow => new AnalyticsProductRow(
+            (int) $row['product_id'],
+            (string) $row['label'],
+            (int) $row['views'],
+            (int) $row['purchases'],
+            (int) $row['revenue_minor'],
+            $row['average_revenue_per_purchase_minor'] === null
+                ? null
+                : (int) $row['average_revenue_per_purchase_minor'],
+        ), $cached['rows']);
+
+        return new AnalyticsProductResult(
+            (string) $cached['currency'],
+            (string) $cached['sort'],
+            (string) $cached['from'],
+            (string) $cached['to'],
+            is_string($cached['coverage_start']) ? $cached['coverage_start'] : null,
+            is_string($cached['coverage_end']) ? $cached['coverage_end'] : null,
+            $cached['missing_days'],
+            (bool) $cached['current_day_provisional'],
+            $rows,
+            (int) $cached['total'],
+            (int) $cached['page'],
+            (int) $cached['per_page'],
+            (int) $cached['last_page'],
         );
     }
 }
