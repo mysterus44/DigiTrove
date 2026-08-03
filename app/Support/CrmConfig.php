@@ -10,21 +10,7 @@ final class CrmConfig
 {
     public static function enabled(): bool
     {
-        $value = config('crm.foundation_enabled', false);
-
-        if (is_bool($value)) {
-            return $value;
-        }
-
-        if (in_array($value, [0, '0'], true)) {
-            return false;
-        }
-
-        if (in_array($value, [1, '1'], true)) {
-            return true;
-        }
-
-        throw new RuntimeException('The CRM foundation flag is invalid.');
+        return self::boolean('crm.foundation_enabled', 'The CRM foundation flag is invalid.');
     }
 
     public static function assertEnabled(): void
@@ -45,5 +31,60 @@ final class CrmConfig
         }
 
         return $version;
+    }
+
+    public static function orderAttributionProcessingEnabled(): bool
+    {
+        return self::boolean(
+            'crm.order_attribution.processing_enabled',
+            'The CRM order attribution processing flag is invalid.',
+        );
+    }
+
+    public static function assertOrderAttributionProcessingEnabled(): void
+    {
+        self::assertEnabled();
+
+        if (! self::orderAttributionProcessingEnabled()) {
+            throw new RuntimeException('CRM order attribution processing is disabled.');
+        }
+    }
+
+    public static function orderAttributionBatchSize(): int
+    {
+        $value = config('crm.order_attribution.batch_size', 50);
+        $valid = (is_int($value) && ! is_bool($value))
+            || (is_string($value) && preg_match('/\A[1-9][0-9]*\z/', $value) === 1);
+
+        if (! $valid) {
+            throw new RuntimeException('The CRM order attribution batch size is invalid.');
+        }
+
+        $batchSize = (int) $value;
+
+        if ($batchSize < 1 || $batchSize > 100) {
+            throw new RuntimeException('The CRM order attribution batch size is invalid.');
+        }
+
+        return $batchSize;
+    }
+
+    private static function boolean(string $key, string $message): bool
+    {
+        $value = config($key, false);
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (in_array($value, [0, '0'], true)) {
+            return false;
+        }
+
+        if (in_array($value, [1, '1'], true)) {
+            return true;
+        }
+
+        throw new RuntimeException($message);
     }
 }

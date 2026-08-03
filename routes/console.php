@@ -1,6 +1,7 @@
 <?php
 
 use App\Support\AnalyticsOperationsConfig;
+use App\Support\CrmConfig;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -23,6 +24,15 @@ foreach ($deliverySchedules as $event) {
     // deliberately remain single-process only.
     if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
         $event->onOneServer();
+    }
+}
+
+if (CrmConfig::orderAttributionProcessingEnabled()) {
+    $crmAttributionSchedule = Schedule::command('crm:dispatch-order-attributions')->everyFiveMinutes();
+    $crmAttributionSchedule->withoutOverlapping();
+
+    if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
+        $crmAttributionSchedule->onOneServer();
     }
 }
 

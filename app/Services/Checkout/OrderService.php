@@ -146,7 +146,7 @@ final class OrderService
         $email = $actor instanceof User ? (string) $actor->email : (string) $guestEmail;
         $email = trim($email);
 
-        if ($email === '' || mb_strlen($email) > 320 || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+        if ($email === '' || mb_strlen($email) > 254 || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
             throw CheckoutException::of(CheckoutRefusalReason::InvalidEmail, 'A valid email address is required.');
         }
 
