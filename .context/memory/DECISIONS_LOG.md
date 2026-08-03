@@ -3284,9 +3284,12 @@ consentement ou de rétention doit encore être validée humainement.
 
 ### D-043 — CRM Identity and Consent Foundation ✅
 
-**Date** : 2026-08-03. **Statut** : **P6-A0 IMPLÉMENTÉ — EN ATTENTE DE
-REVUE/MERGE** sur `p6-a0-crm-identity-consent-auth`, base stable exacte
-`a11de061232a9195f95b96ab428d87c499ae7cfe`.
+**Date** : 2026-08-03. **Statut** : **P6-A0 TERMINÉ, MERGÉ ET VALIDÉ** via
+[PR #31](https://github.com/mysterus44/DigiTrove/pull/31), head
+`3276fef12d94f25e91fe6386e153ae3130424eb1`, merge
+`47888d0992aa5664e82341e52f6c3a68c4b0b15a` (parents `a11de061` et
+`3276fef`). Aucun CI GitHub n'était visible avant le merge; la validation locale
+post-merge complète sur la stable est verte.
 
 **IDENTITÉ** : la seule clé de déduplication CRM est l'e-mail exact après `trim`,
 comparé selon le contrat CITEXT. Aucun retrait de `+alias`, point, ni fusion par
@@ -3295,6 +3298,10 @@ une clé CRM et plusieurs contacts historiques peuvent référencer un même com
 Un compte n'est lié que s'il est actif, non supprimé, vérifié et porte exactement
 le même e-mail. Un achat invité est résolu uniquement depuis
 `orders.customer_email`; aucun stitching Visitor ni backfill n'est autorisé.
+Le hardening final exige explicitement `UserStatus::Active` dans les deux
+frontières de preuve `verified_account` : l'autorité `resolve_crm_contact` et le
+trigger `enforce_crm_contacts_integrity` lors d'une liaison `user_id NULL -> id`.
+Les comptes `suspended` et `blocked` sont refusés avant toute création ou liaison.
 
 **CONSENTEMENT** : l'achat ne vaut jamais consentement. Le ledger append-only ne
 couvre que `channel=email` et `purpose=promotional`, avec actions
@@ -3323,11 +3330,131 @@ passe. Il possède `resolve_crm_contact`, `record_crm_marketing_consent` et
 EXECUTE sur ces autorités; PUBLIC n'a aucun accès. La Gate distincte
 `manageCustomerRelationships` autorise uniquement un admin actif et non supprimé.
 
-**VALIDATION** : PostgreSQL 16 réel, 36 migrations, P6-A0 **33 tests / 211
-assertions**, deux scénarios de concurrence et rollback isolé verts; suite
-complète **828 / 5964**; Pint **347 fichiers**; `git diff --check` propre. P5,
-P4 et P3 restent verts. P6-A1 rollups commerce currency-safe, P6-A1+, P7 et
+**VALIDATION** : PostgreSQL 16 et Redis réels, 36 migrations, P6-A0 **40 tests /
+235 assertions**, deux scénarios de concurrence et rollback isolé verts; suite
+complète **835 / 5988**; Pint **347 fichiers**; `git diff --check` propre. P5,
+P4 et P3 restent verts. P6-A1 est audité mais non implémenté; P6-A2+, P7 et
 P5-A3D ne sont pas commencés.
+
+### D-044 — Currency-safe CRM Commerce Rollup Architecture ⚠️
+
+**Date** : 2026-08-03. **Statut** : **AUDIT FINALISÉ, IMPLÉMENTATION NON
+COMMENCÉE - BLOCAGE D'ATTRIBUTION À LEVER**.
+
+**SOURCES FINANCIÈRES** : Commerce est l'unique autorité. Une acquisition est un
+`orders.status` parmi `paid|partially_refunded|refunded` avec `paid_at` présent;
+`payment_review`, `pending`, `cancelled` et `expired` sont exclus. La date
+commerciale uniforme est `orders.paid_at`. Pour une commande non gratuite,
+PostgreSQL garantit exactement un `payments.status = succeeded`, avec montant et
+devise identiques à l'Order; une commande gratuite `total_minor = 0` devient
+`paid` sans Payment. La valeur payée vient de l'immuable `orders.total_minor` et
+la devise de `orders.currency`; Payment sert de preuve croisée, pas de seconde
+source de montant. Seuls les `refunds.status = succeeded`, datés par
+`refunds.succeeded_at`, réduisent la valeur. Plusieurs remboursements réussis
+sont permis, mais leur somme ne peut dépasser l'unique Payment réussi. Aucun
+Payment `requires_review` ne contribue. Aucun FLOAT, FX, total multi-devise,
+événement Analytics ni prix catalogue courant n'est autorisé.
+Un Order portant l'unique Payment `succeeded` ne peut pas finir `cancelled` : la
+cohérence différée paiement/commande refuserait cet état et le Payment réussi est
+terminal.
+
+**ATTRIBUTION ORDER -> CONTACT** : l'option A, jointure dynamique
+`orders.customer_email = crm_contacts.email`, est rejetée : l'anonymisation
+efface l'e-mail de l'ancien contact et autorise un nouveau contact au même e-mail,
+ce qui réattribuerait l'histoire. L'option C, `contact_id` ajouté directement à
+`orders`, est rejetée car elle couple et réouvre le contrat Commerce immuable.
+L'option retenue est une table séparée immuable `crm_order_attributions` avec
+`order_id` unique/FK RESTRICT, `contact_id` FK RESTRICT, source fermée et
+`attributed_at TIMESTAMPTZ`. Elle ne contient aucune PII et n'implique aucun
+consentement. Les faits restent liés à l'ancien `contact_id` après anonymisation;
+l'UI future affiche seulement « Contact anonymisé ». Un nouveau contact au même
+e-mail repart à zéro et ne reçoit ni attribution, rollup ni consentement ancien.
+
+**POINT TRANSACTIONNEL RECOMMANDÉ** : l'attribution future doit être créée dans
+la même transaction que la première transition vers `OrderStatus::Paid`, sous
+verrou Order et verrou/advisory lock CRM, avec résolution exacte de
+`orders.customer_email`. Un User n'est lié que s'il est actif, non supprimé,
+vérifié et exact; sinon l'achat reste une preuve `guest_order`, jamais Visitor.
+`OrderPaid` est seulement un signal de recalcul : sa fenêtre COMMIT -> dispatch
+est explicitement non durable et ne peut pas porter l'identité historique.
+L'unicité `order_id` rend le replay idempotent; tout conflit de contact doit être
+refusé, jamais remplacé.
+
+**BLOCAGES D'ATTRIBUTION** : deux choix humains précèdent P6-A1.0. Premièrement,
+Commerce accepte actuellement `customer_email` jusqu'à 320 caractères et avec un
+contrat BDD moins strict, alors que CRM exige un e-mail canonique de 3 à 254
+caractères. Il faut décider entre aligner Commerce sur le contrat CRM recommandé
+de 254 caractères, après audit des données, ou élargir explicitement CRM; une
+attribution transactionnelle ne doit pas découvrir ce conflit au paiement.
+Deuxièmement, il faut accepter explicitement la sémantique fail-closed : une
+incohérence CRM ferait rollbacker la finalisation financière. L'alternative
+eventuelle exige une outbox durable et une file explicite d'Orders non attribués;
+le simple événement `OrderPaid` est insuffisant. Ces choix bloquent le code
+P6-A1.0, pas l'audit financier.
+
+**ROLLUP RETENU** : `crm_contact_commerce_rollups`, clé primaire
+`(contact_id, currency)`, FK contact RESTRICT, devise `VARCHAR(3)` uppercase.
+Métriques : `paid_orders_count`, `paid_total_minor`,
+`refunded_amount_minor`, `net_revenue_minor`, `first_paid_at`, `last_paid_at`,
+`last_refunded_at`, `calculation_version` et `reconciled_at`. Le nom
+`paid_total_minor` est préféré à `gross_revenue_minor`, ambigu avec le sous-total
+avant remise/taxe. Tous les montants sont BIGINT, non négatifs, zéro permis;
+`refunded_amount_minor <= paid_total_minor` et
+`net_revenue_minor = paid_total_minor - refunded_amount_minor`. Les agrégats
+PostgreSQL sont calculés en NUMERIC puis bornés avant cast BIGINT afin de refuser
+un overflow. Aucun index de tri métier n'est créé avant un lecteur prouvé.
+
+**CALCUL, REPLAY ET CONCURRENCE** : stratégie hybride. Les événements ne font que
+signaler; une autorité SECURITY DEFINER reconstruit intégralement la projection
+depuis attribution + Orders + unique Payment réussi + Refunds réussis, sous
+transaction `REPEATABLE READ` et verrou ciblé `(contact_id, currency)`. Aucun
+compteur n'est incrémenté aveuglément. Deux OrderPaid, deux refunds, leurs replays
+ou un ordre inverse convergent vers le même état. Des clés distinctes restent
+parallèles. L'absence actuelle de `RefundSucceeded` n'est pas un blocage : une
+réconciliation périodique est obligatoire; un futur événement peut seulement
+réduire la latence.
+
+**RÔLES ET EXPOSITION** : l'autorité d'attribution peut rester possédée par
+`digitrove_crm_executor` NOLOGIN. Le rollup financier doit utiliser un nouvel
+executor `digitrove_crm_rollup_executor` NOLOGIN et, dans un gate ultérieur, un
+LOGIN `digitrove_crm_rollup_worker` EXECUTE-only. Le runtime web n'a aucun accès
+direct aux attributions/rollups. Le futur lecteur CRM reste derrière
+`manageCustomerRelationships`, admin actif uniquement; il ne réutilise pas la
+Gate Analytics. UI, export, segment et campagne sont hors P6-A1.
+Le worker reçoit ses credentials uniquement par l'environnement, avec connexion
+dédiée fail-closed; les tests CI doivent créer temporairement les rôles requis et
+le rollback doit retirer les objets du gate sans laisser de LOGIN résiduel.
+
+**BACKFILL** : aucune migration ni résolution automatique historique. Un gate
+séparé devra fournir une commande désactivée par défaut, dry-run, lots bornés,
+curseur/reprise, rapport d'Orders non attribuables et idempotence. Par défaut il
+ne crée aucun contact : après anonymisation, le schéma ne permet plus de prouver
+quel ancien contact portait l'e-mail. Autoriser la création depuis un snapshot
+historique est une décision humaine distincte et n'équivaut jamais à un
+consentement marketing.
+Le dépôt ne contient pas de jeu de production permettant de chiffrer les Orders
+honnêtement attribuables; aucun volume de backfill ne peut donc être promis.
+
+**DÉCOUPAGE** : P6-A1.0 attribution immuable; P6-A1.1 table et autorité de
+reconstruction currency-safe; P6-A1.2 worker LOGIN, signaux et réconciliation;
+P6-A1.3 backfill explicite. A1.0 et A1.1 restent séparés pour isoler le fait
+historique de la projection recalculable; worker et backfill restent séparés.
+
+**PREMIER GATE PROVISOIRE** : `P6-A1.0 - Immutable Order-to-CRM Attribution`,
+branche future `p6-a1-0-order-crm-attribution`, migration envisagée
+`2026_07_14_000021_create_crm_order_attributions_table.php`. Une table, FKs
+RESTRICT, PK/unique Order, index `(contact_id, order_id)`, immutabilité, autorité
+PostgreSQL possédée par l'executor CRM et trigger immédiat sur la transition
+Order vers `paid`; aucun service, job, commande, UI ou rollup. Tests futurs :
+compte/guest exacts, inactive fallback sans liaison, absence Visitor, replay et
+concurrence, anonymisation, nouveau contact, refus de conflit, ACL, erreurs
+sanitizées et rollback isolé. Le gate ne commence qu'après résolution des deux
+blocages d'attribution ci-dessus.
+Le rollback devra retirer table, fonction et trigger P6-A1.0 tout en préservant
+P6-A0. Les gates rollup suivants devront aussi couvrir Order payant/gratuit,
+pending/review ignorés, refund partiel/complet/multiple, devises séparées,
+absence de total global, replay, ordre inverse, concurrence, reconstruction,
+worker EXECUTE-only et réconciliation.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

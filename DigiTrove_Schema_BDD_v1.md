@@ -227,14 +227,16 @@ La source financière future est Commerce, jamais `events` :
   le plafond P3C garantit un résultat non négatif;
 - aucune conversion FX et aucun total traversant plusieurs devises.
 
-Le gate proposé P6-A1 créerait un rollup recalculable par contact et devise,
-avec une source unique par commande, par exemple `crm_contact_currency_stats` :
-clé unique `(contact_id, currency)`, `orders_count`, `paid_total_minor`,
-`refunded_minor`, `net_value_minor`, `first_paid_at`, `last_paid_at`, version et
-date de calcul. L'équation nette et les montants BIGINT seront contraints.
-`OrderPaid` peut marquer une donnée sale mais ne peut pas être l'unique source :
-sa fenêtre COMMIT→dispatch est assumée et aucun événement Refund n'existe. Une
-reconstruction autoritative et un job de réconciliation restent obligatoires.
+D-044 retient d'abord une attribution immuable séparée
+`crm_order_attributions`, puis un rollup recalculable
+`crm_contact_commerce_rollups` par contact et devise. La clé du rollup est
+`(contact_id, currency)`; ses métriques sont `paid_orders_count`,
+`paid_total_minor`, `refunded_amount_minor`, `net_revenue_minor`,
+`first_paid_at`, `last_paid_at`, `last_refunded_at`, version et date de calcul.
+L'équation nette et les montants BIGINT sont contraints. `OrderPaid` peut
+signaler une donnée sale mais ne peut pas être l'unique source : sa fenêtre
+COMMIT -> dispatch est assumée et aucun événement Refund n'existe. Une
+reconstruction autoritative et une réconciliation restent obligatoires.
 
 #### Paniers, affiliation, exports et autorisation
 
@@ -310,9 +312,12 @@ Les rollups précèdent les segments afin que le DSL n'expose que des critères
 stables et currency-safe. Campagnes générales, SMS et affiliation restent hors
 MVP tant que leurs contrats ne sont pas validés.
 
-#### P6-A0 implémenté — identité, consentement et autorisation (D-043)
+#### P6-A0 terminé, mergé et validé — identité, consentement et autorisation (D-043)
 
-Branche : `p6-a0-crm-identity-consent-auth`, depuis la stable `a11de061`.
+PR #31, head `3276fef12d94f25e91fe6386e153ae3130424eb1`, merge
+`47888d0992aa5664e82341e52f6c3a68c4b0b15a` depuis la stable `a11de061`.
+Le CI GitHub n'était pas visible avant merge; la validation locale post-merge
+complète est verte.
 Migration unique :
 `2026_07_14_000020_create_crm_identity_and_consent_foundation.php`. Aucune
 migration `000021` et aucune table de liaison commande/contact ne sont créées.
@@ -347,17 +352,134 @@ idempotence utilisent des advisory locks transactionnels et sont couvertes par
 deux tests multi-processus. Le rollback retire objets P6-A0 mais conserve le
 rôle cluster-global.
 
-La configuration est désactivée par défaut; policy version obligatoire. Les
+La preuve `verified_account` exige explicitement un User actif dans
+`resolve_crm_contact` et dans `enforce_crm_contacts_integrity` pour la liaison
+`user_id NULL -> id`; `suspended` et `blocked` sont refusés. La configuration est
+désactivée par défaut; policy version obligatoire. Les
 services refusent transaction ambiante et identité DB autre que runtime,
 marquent e-mail/clé brute sensibles et retournent des erreurs sanitizées. La
 Gate `manageCustomerRelationships` autorise uniquement l'admin actif et non
-supprimé. Validation : 36 migrations, P6-A0 **33/211**, suite **828/5964**,
+supprimé. Validation : 36 migrations, P6-A0 **40/235**, suite **835/5988**,
 Pint **347**, diff-check, ACL, rollback et concurrence verts.
 
 Hors P6-A0 : segment, rollup, UI client/Filament, export, campagne, e-mail/SMS,
 panier abandonné, affiliation, fournisseur, route publique, backfill, purge et
-rétention automatique. Prochain gate : **P6-A1 — Currency-safe Customer
-Commerce Rollups**, non commencé et soumis à validation séparée.
+rétention automatique. P6-A1 est audité mais non implémenté.
+
+#### P6-A1 audité — attribution et rollups Commerce currency-safe (D-044)
+
+##### Sources autoritatives
+
+- acquisition : Order `paid|partially_refunded|refunded` avec `paid_at`;
+- date commerciale : `orders.paid_at`, y compris commande gratuite;
+- montant payé : `orders.total_minor`; devise : `orders.currency`;
+- commande non gratuite : exactement un Payment `succeeded`, montant/devise
+  identiques à l'Order; commande gratuite : aucun Payment;
+- remboursement : uniquement Refund `succeeded`, daté par `succeeded_at`;
+- plusieurs refunds réussis sont permis, plafonnés au Payment réussi;
+- un Order avec Payment réussi ne peut pas finir `cancelled` : les contraintes
+  différées l'interdisent et le Payment `succeeded` est terminal;
+- `payment_review`, Analytics, catalogue courant, FLOAT, FX et somme
+  multi-devise sont exclus.
+
+##### Attribution immuable
+
+La jointure dynamique par e-mail est interdite : l'anonymisation libère l'e-mail
+et un nouveau contact pourrait récupérer une vente ancienne. Ajouter
+`contact_id` à `orders` est également rejeté. Le modèle retenu est :
+
+```text
+crm_order_attributions
+    order_id       BIGINT PRIMARY KEY REFERENCES orders(id) ON DELETE RESTRICT
+    contact_id     BIGINT NOT NULL REFERENCES crm_contacts(id) ON DELETE RESTRICT
+    source         VARCHAR(32) NOT NULL CHECK source fermée
+    attributed_at  TIMESTAMPTZ NOT NULL
+```
+
+La ligne est immuable et sans PII. Elle doit être créée dans la même transaction
+que la première transition Order vers `paid`, sous verrou Order et résolution
+CRM sérialisée. Un compte actif, non supprimé, vérifié et exact peut être lié;
+sinon l'e-mail figé de l'Order sert de preuve `guest_order`. Visitor, cookie,
+session, IP, nom, téléphone et rapprochement flou sont interdits. `OrderPaid`
+reste un signal après COMMIT, jamais l'autorité d'attribution.
+
+Une anonymisation conserve la FK et tous les montants sur l'ancien contact;
+l'e-mail et le consentement restent effacés et l'interface future affiche
+« Contact anonymisé ». Un nouveau contact au même e-mail repart sans historique.
+
+##### Rollup recommandé
+
+```text
+crm_contact_commerce_rollups
+    contact_id               BIGINT REFERENCES crm_contacts(id) ON DELETE RESTRICT
+    currency                 VARCHAR(3)
+    paid_orders_count        BIGINT
+    paid_total_minor         BIGINT
+    refunded_amount_minor    BIGINT
+    net_revenue_minor        BIGINT
+    first_paid_at            TIMESTAMPTZ
+    last_paid_at             TIMESTAMPTZ
+    last_refunded_at         TIMESTAMPTZ NULL
+    calculation_version      SMALLINT
+    reconciled_at            TIMESTAMPTZ
+    PRIMARY KEY (contact_id, currency)
+```
+
+`paid_total_minor` est la somme de `orders.total_minor` et évite l'ambiguïté du
+mot « gross ». Tous les montants sont BIGINT non négatifs, zéro autorisé;
+`refunded_amount_minor <= paid_total_minor` et
+`net_revenue_minor = paid_total_minor - refunded_amount_minor`. Les `SUM`
+PostgreSQL sont bornées avant cast BIGINT. Devise exactement trois majuscules,
+dates UTC et `first_paid_at <= last_paid_at`. Aucun index de classement métier
+avant un lecteur prouvé.
+
+##### Autorité, concurrence et rôles
+
+Le calcul est hybride : événement = signal, Commerce = autorité. Une fonction
+SECURITY DEFINER reconstruit intégralement une clé `(contact_id, currency)` sous
+`REPEATABLE READ` et verrou ciblé; elle upsert la projection exacte et ne fait
+jamais `compteur = compteur + événement`. Replay OrderPaid, refunds multiples,
+ordre inverse et retries convergent; les clés distinctes restent parallèles. Une
+réconciliation périodique couvre la fenêtre de dispatch et l'absence actuelle
+d'événement Refund.
+
+L'attribution peut rester sous `digitrove_crm_executor` NOLOGIN. Le rollup futur
+utilise `digitrove_crm_rollup_executor` NOLOGIN, puis un LOGIN
+`digitrove_crm_rollup_worker` EXECUTE-only. Le runtime web n'a aucun accès direct;
+le lecteur CRM futur reste admin actif via `manageCustomerRelationships` et ne
+réutilise pas la Gate Analytics.
+Les credentials du worker viennent seulement de l'environnement, sur connexion
+dédiée fail-closed. La CI crée les rôles nécessaires temporairement; chaque gate
+prouve par rollback isolé qu'aucun objet ou LOGIN résiduel ne subsiste.
+
+##### Backfill et découpage
+
+Aucun backfill dans une migration. Un gate séparé, désactivé par défaut, doit
+offrir dry-run, lots/cursor, reprise, rapport des Orders non attribuables et ne
+créer aucun contact par défaut. Créer un contact depuis un achat historique est
+une décision humaine et ne vaut jamais consentement.
+Le dépôt ne contient aucun jeu de production permettant de quantifier les Orders
+honnêtement attribuables : le volume de backfill reste inconnu avant audit réel.
+
+Découpage retenu : A1.0 attribution immuable; A1.1 projection et autorité;
+A1.2 worker/signaux/réconciliation; A1.3 backfill explicite. Le premier gate
+provisoire est `P6-A1.0 - Immutable Order-to-CRM Attribution`, branche
+`p6-a1-0-order-crm-attribution`, migration envisagée
+`2026_07_14_000021_create_crm_order_attributions_table.php`.
+
+Deux décisions bloquent son implémentation : aligner le contrat e-mail Commerce
+(`<= 320`, contrôle BDD permissif) avec CRM (`3..254`, format strict), puis
+accepter soit l'attribution transactionnelle fail-closed recommandée, qui peut
+rollbacker une finalisation financière incohérente, soit financer une outbox
+durable et une file d'Orders non attribués. Un simple listener `OrderPaid` n'est
+pas une alternative sûre.
+
+Le gate A1.0 doit tester compte/guest exacts, compte inactif sans liaison,
+absence Visitor, replay/concurrence, anonymisation et recréation au même e-mail,
+conflit d'attribution, ACL, erreur sanitizée et rollback isolé préservant P6-A0.
+Les gates de rollup couvrent en plus Orders payants/gratuits, pending/review
+ignorés, refunds partiels/complets/multiples, devises séparées, absence de total
+global, replay, ordre inverse, worker EXECUTE-only et réconciliation.
 
 ---
 

@@ -404,24 +404,37 @@ durcissement préproduction, non bloquant pour P6; les opérations restent
 CLI/scheduler, désactivées par défaut, et aucune opération n'est exposée dans
 Filament.
 
-**P6-A0 CRM IDENTITY, CONSENT AND AUTHORIZATION FOUNDATION IMPLÉMENTÉ — EN
-ATTENTE DE REVUE/MERGE** (**D-043**) sur
-`p6-a0-crm-identity-consent-auth`, base `a11de061`. La migration unique `000020`
-crée `crm_contacts` et le ledger append-only
-`crm_marketing_consent_events`. Déduplication par e-mail exact normalisé
-(`trim` + CITEXT) seulement; aucun Visitor, alias folding ou rapprochement
-approximatif. Les achats invités utilisent le snapshot e-mail de l'Order; un
-compte n'est lié que s'il est actif, vérifié et de même e-mail. Consentement
-limité à `email/promotional`, checkout grant seulement, compte vérifié
-grant/withdraw, version de politique obligatoire et idempotence SHA-256.
-`digitrove_crm_executor` est NOLOGIN/NOINHERIT; trois fonctions SECURITY DEFINER
-à search_path fixe donnent au runtime un accès EXECUTE-only. Config désactivée
-par défaut, services fail-closed et Gate `manageCustomerRelationships` réservée
-à l'admin actif non supprimé. Validation : **36 migrations**, P6-A0 **33/211**,
-suite **828/5964**, Pint **347**, rollback/concurrence verts. Aucun flux
-utilisateur, route, UI, job, mail, campagne, segment, rollup ou rétention
-automatique. P6-A1 rollups commerce currency-safe est non commencé; P7 reste
-non commencé.
+**P6-A0 CRM IDENTITY, CONSENT AND AUTHORIZATION FOUNDATION TERMINÉ, MERGÉ ET
+VALIDÉ** via [PR #31](https://github.com/mysterus44/DigiTrove/pull/31), head
+`3276fef`, merge `47888d0` (**D-043**). La migration unique `000020` crée
+`crm_contacts` et le ledger append-only `crm_marketing_consent_events`.
+Déduplication par e-mail exact normalisé (`trim` + CITEXT) seulement; aucun
+Visitor, alias folding ou rapprochement approximatif. Les achats invités
+utilisent le snapshot e-mail de l'Order; un compte n'est lié que s'il est actif,
+non supprimé, vérifié et de même e-mail. Le hardening final impose
+`UserStatus::Active` dans `resolve_crm_contact` et dans le trigger de liaison;
+`suspended|blocked` sont refusés. Consentement limité à `email/promotional`,
+checkout grant seulement, compte vérifié grant/withdraw, version de politique
+obligatoire et idempotence SHA-256. `digitrove_crm_executor` est
+NOLOGIN/NOINHERIT; trois fonctions SECURITY DEFINER à search_path fixe donnent
+au runtime un accès EXECUTE-only. Config désactivée par défaut, services
+fail-closed et Gate `manageCustomerRelationships` réservée à l'admin actif non
+supprimé. Aucun CI GitHub n'était visible avant merge; validation locale
+post-merge : **36 migrations**, P6-A0 **40/235**, suite **835/5988**, Pint
+**347**, rollback/concurrence/diff-check verts.
+
+**P6-A1 CURRENCY-SAFE CUSTOMER COMMERCE ROLLUPS AUDITÉ, NON IMPLÉMENTÉ**
+(**D-044**). Commerce est l'autorité : Orders acquis
+`paid|partially_refunded|refunded`, date `paid_at`, valeur
+`orders.total_minor`, devise Order, unique Payment `succeeded` pour le payant et
+Refunds `succeeded` seulement. Attribution retenue : table immuable séparée
+`crm_order_attributions`; projection future :
+`crm_contact_commerce_rollups` par `(contact_id,currency)`, BIGINT, net payé moins
+remboursé, reconstruction idempotente. Deux décisions bloquent P6-A1.0 : contrat
+e-mail Commerce `<=320` contre CRM `<=254`, puis attribution transactionnelle
+fail-closed recommandée contre alternative outbox durable. Ne pas utiliser le
+simple événement `OrderPaid`, l'e-mail dynamique, Visitor, Analytics, FX ou le
+catalogue. P6-A2+, P7 et P5-A3D restent non commencés.
 Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —

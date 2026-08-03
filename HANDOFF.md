@@ -8,8 +8,8 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-08-03
-- **Branche git active** : `p6-a0-crm-identity-consent-auth`, créée depuis la
-  stable `a11de061232a9195f95b96ab428d87c499ae7cfe`.
+- **Branche git active** : `p0-foundations-laravel13`, synchronisée sur le merge
+  P6-A0 `47888d0992aa5664e82341e52f6c3a68c4b0b15a`.
 - **P5-A2 AUTHORITATIVE ROLLUPS AND PARTITION OPERATIONS TERMINÉ, MERGÉ ET
   VALIDÉ** via [PR #28](https://github.com/mysterus44/DigiTrove/pull/28), head
   `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
@@ -54,15 +54,22 @@
 - **P5 ANALYTIQUE TERMINÉ, MERGÉ ET VALIDÉ** (D-042). P5-A3D est reporté au
   durcissement préproduction et ne bloque pas P6; les opérations restent
   CLI/scheduler, désactivées par défaut, sans commande Filament.
-- **P6-A0 CRM IDENTITY, CONSENT AND AUTHORIZATION FOUNDATION IMPLÉMENTÉ — EN
-  ATTENTE DE REVUE/MERGE** (D-043). La migration unique `000020` crée
-  `crm_contacts` et `crm_marketing_consent_events`; l'identité repose uniquement
-  sur l'e-mail exact normalisé, sans Visitor ni fusion approximative. Le ledger
-  promotionnel e-mail est append-only, servi par trois fonctions SECURITY
-  DEFINER détenues par `digitrove_crm_executor` NOLOGIN; le runtime est
-  EXECUTE-only. La Gate `manageCustomerRelationships` reste admin actif et non
-  supprimé uniquement. Aucun flux utilisateur, route, UI, job, mail, campagne,
-  segment, rollup, backfill ou rétention automatique n'est livré.
+- **P6-A0 CRM IDENTITY, CONSENT AND AUTHORIZATION FOUNDATION TERMINÉ, MERGÉ ET
+  VALIDÉ** via [PR #31](https://github.com/mysterus44/DigiTrove/pull/31), head
+  `3276fef12d94f25e91fe6386e153ae3130424eb1`, merge
+  `47888d0992aa5664e82341e52f6c3a68c4b0b15a` (D-043). La migration unique
+  `000020` crée `crm_contacts` et `crm_marketing_consent_events`; l'identité
+  repose uniquement sur l'e-mail exact normalisé, sans Visitor ni fusion
+  approximative. `resolve_crm_contact` et le trigger de liaison exigent tous
+  deux un User `active`, non supprimé, vérifié et de même e-mail; `suspended` et
+  `blocked` sont refusés. Le ledger promotionnel e-mail est append-only, servi
+  par trois fonctions SECURITY DEFINER détenues par `digitrove_crm_executor`
+  NOLOGIN; le runtime est EXECUTE-only. La Gate
+  `manageCustomerRelationships` reste admin actif et non supprimé uniquement.
+  Validation post-merge : **36 migrations**, P6-A0 **40/235**, suite complète
+  **835/5988**, Pint **347**, rollback/concurrence/diff-check verts. Aucun flux
+  utilisateur, route, UI, job, mail, campagne, segment, rollup, backfill ou
+  rétention automatique n'est livré.
 - **P5-A1 FIRST-PARTY ANALYTICS INGESTION TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #27](https://github.com/mysterus44/DigiTrove/pull/27), head
   `955cc34050daa4b8706e752fd9a82f579bebb02b`, merge
@@ -480,13 +487,42 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 P6-A1 — Currency-safe Customer Commerce Rollups
+## 🎯 P6-A1.0 — Immutable Order-to-CRM Attribution (bloqué)
 
-P6-A0 est implémenté sur `p6-a0-crm-identity-consent-auth` et attend sa revue et
-son merge. Ne pas commencer P6-A1 avant ce merge et une validation humaine de
-son contrat. P6-A1 devra reconstruire les agrégats Commerce par contact et par
-devise depuis les sources autoritatives, sans conversion FX, campagne, segment,
-export, relance ou affiliation.
+P6-A0 est mergé et validé. L'audit P6-A1 est consigné dans D-044, mais aucune
+implémentation ne doit commencer avant deux décisions humaines : aligner le
+contrat e-mail Commerce (`<= 320`) avec le contrat CRM (`<= 254`), puis confirmer
+l'attribution transactionnelle fail-closed recommandée ou choisir une outbox
+durable avec file explicite des commandes non attribuées. Un simple listener
+post-commit `OrderPaid` n'est pas une autorité fiable.
+
+Après décision, le premier gate proposé est une table immuable séparée
+`crm_order_attributions`, sur la future branche
+`p6-a1-0-order-crm-attribution`, migration future
+`2026_07_14_000021_create_crm_order_attributions_table.php`. Ne créer ni cette
+branche ni cette migration avant validation. Les rollups currency-safe restent
+un gate ultérieur et doivent lire Commerce comme autorité, sans FX, Analytics,
+Visitor, catalogue courant, campagne, segment, export, relance ou affiliation.
+
+### 2026-08-03 — Codex (clôture P6-A0 et audit d'architecture P6-A1)
+
+- PR #31 prouvée : head `3276fef1`, merge `47888d09`, parents `a11de061` et
+  `3276fef1`; les six commits P6-A0 sont ancêtres de la stable. Aucun CI GitHub
+  n'était visible avant le merge.
+- Le hardening final exige `UserStatus::Active` dans l'autorité
+  `resolve_crm_contact` et dans le trigger de liaison; les comptes `suspended`
+  et `blocked` sont refusés par PostgreSQL et par le runtime sanitizé, tandis
+  que le compte actif vérifié reste accepté.
+- Validation locale post-merge : **36 migrations**, P6-A0 **40/235**, P5-A3
+  **54/371**, P5-A2 **25/198**, P5-A1 **74/400**, P5-A0 **19/256**, P4-C
+  **86/559**, P4-B **20/560**, P3-D2 **91/364**, P3-B **18/354**, suite
+  complète **835/5988**, Pint **347**, rollback/concurrence/diff-check verts.
+- D-044 retient une attribution Order vers CRM immuable et séparée, puis une
+  projection `(contact_id, currency)` reconstruite idempotemment depuis les
+  Orders acquis et Refunds réussis. `orders.total_minor`, `orders.currency`,
+  `orders.paid_at` et `refunds.succeeded_at` sont les sources financières.
+- P6-A1.0 reste bloqué par le contrat e-mail divergent et la sémantique
+  transactionnelle d'attribution. P6-A1+, P7 et P5-A3D ne sont pas commencés.
 
 ### 2026-08-03 — Codex (P6-A0 identité, consentement et autorisation)
 
@@ -502,7 +538,7 @@ export, relance ou affiliation.
   search_path fixe, runtime EXECUTE-only et PUBLIC sans accès direct.
 - Config désactivée par défaut, services fail-closed, paramètres sensibles,
   erreurs sanitizées et Gate CRM admin actif/non supprimé uniquement.
-- Validation : P6-A0 **33/211**, P5-A3 **54/371**, P5-A2 **25/198**, P5-A1
+- Validation pré-hardening : P6-A0 **33/211**, P5-A3 **54/371**, P5-A2 **25/198**, P5-A1
   **74/400**, P4-C **86/559**, P4-B **20/560**, P3-D2 **91/364**, P3-B
   **18/354**, suite complète **828/5964**, Pint **347**, 36 migrations et
   `git diff --check` propre. Rollback et deux concurrences PostgreSQL verts.
