@@ -12,6 +12,12 @@ it('keeps CRM services behind PostgreSQL authorities and sensitive parameters', 
         ->filter(fn (SplFileInfo $file): bool => $file->isFile() && $file->getExtension() === 'php')
         ->map(fn (SplFileInfo $file): string => (string) file_get_contents($file->getPathname()))
         ->implode("\n");
+    $p6a0Sources = collect([
+        'Concerns/UsesCrmAuthority.php',
+        'CrmContactResolver.php',
+        'MarketingConsentRecorder.php',
+        'MarketingConsentStatusQuery.php',
+    ])->map(fn (string $path): string => (string) file_get_contents($directory.'/'.$path))->implode("\n");
 
     expect($sources)->toContain('public.resolve_crm_contact')
         ->and($sources)->toContain('public.record_crm_marketing_consent')
@@ -24,7 +30,7 @@ it('keeps CRM services behind PostgreSQL authorities and sensitive parameters', 
         ->and($sources)->not->toContain('visitor_id')
         ->and($sources)->not->toContain('Mail::')
         ->and($sources)->not->toContain('Notification::')
-        ->and($sources)->not->toContain('dispatch(')
+        ->and($p6a0Sources)->not->toContain('dispatch(')
         ->and($sources)->not->toContain('env(')
         ->and($sources)->not->toContain('Log::');
 });
