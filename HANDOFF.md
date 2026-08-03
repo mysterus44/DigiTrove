@@ -8,8 +8,8 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-08-03
-- **Branche git active** : `p0-foundations-laravel13`, synchronisée sur le merge
-  P5-A3A/B `2bbf2b5260bb97c7981cf84a13c84910062a21cc`.
+- **Branche git active** : `p5-a3c-product-funnel-analytics`, créée depuis le
+  commit documentaire stable `c6790e6ec4171034050d91202e758971881f5aa0`.
 - **P5-A2 AUTHORITATIVE ROLLUPS AND PARTITION OPERATIONS TERMINÉ, MERGÉ ET
   VALIDÉ** via [PR #28](https://github.com/mysterus44/DigiTrove/pull/28), head
   `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
@@ -35,7 +35,18 @@
   données brutes ou Commerce, aucun worker web, aucune API/export/opération UI.
   Validation : **35 migrations**, P5-A3 **32 tests / 193 assertions**, suite
   complète **773 / 5575**, Pint **302 fichiers**, rollback ACL isolé vert.
-  P5-A3C, P5-A3D, P6 et P7 ne sont pas commencés.
+  P5-A3A/B est clos sur la stable par le commit documentaire `c6790e6`.
+- **P5-A3C PRODUCT AND FUNNEL ANALYTICS VIEWS IMPLÉMENTÉ, EN ATTENTE DE
+  REVUE/MERGE** (D-041). `AnalyticsProductQuery` réunit engagement global sans
+  devise et commerce dans la devise choisie sans lire le catalogue; l'UI affiche
+  `Produit #<id>` et `add_to_carts` « Non suivi ». `AnalyticsFunnelQuery`
+  restitue les volumes calendaires et ratios agrégés non cohortés, sans plafond,
+  avec division par zéro à `NULL`, trous non calculés et jour UTC courant
+  provisoire. Les caches stockent des tableaux scalaires réhydratés en DTO afin
+  de fonctionner avec Redis sans désérialisation d'objets. Aucune migration ni
+  ACL : **35 migrations**, aucune `000020`. Validation : P5-A3C **18/123**,
+  P5-A3 agrégé **50/316**, suite **791/5698**, Pint **318**, PostgreSQL/Redis
+  réels et `git diff --check` propre. P5-A3D, P6 et P7 ne sont pas commencés.
 - **P5-A1 FIRST-PARTY ANALYTICS INGESTION TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #27](https://github.com/mysterus44/DigiTrove/pull/27), head
   `955cc34050daa4b8706e752fd9a82f579bebb02b`, merge
@@ -453,12 +464,24 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 P5-A3C — Product and Funnel Analytics Views
+## 🎯 Review et merge P5-A3C — Product and Funnel Analytics Views
 
-P5-A3A/B est clos sur la stable via PR #29. La prochaine tâche, dans une
-exécution séparée, est P5-A3C : vues Produits
-et Tunnel à partir des rollups existants et de la même frontière reader. Ne pas
+P5-A3C est implémenté sur `p5-a3c-product-funnel-analytics` depuis la base
+`c6790e6`. La prochaine tâche est sa review puis son merge éventuel. Ne pas
 commencer P5-A3D, P6 ou P7 pendant ce gate.
+
+### 2026-08-03 — Codex (P5-A3C produits et tunnel)
+
+- Ajout des read models/DTO produit et funnel, widgets Filament Produits/Tunnel
+  et tests PostgreSQL/Redis/UI/sécurité, sans migration ni nouvelle ACL.
+- Le produit reste identifié honnêtement par `Produit #<id>`; les vues sont
+  globales, achats/revenus sont filtrés par devise et aucun taux achats/vues
+  n'est présenté comme cohorte. Les ratios tunnel sont agrégés non cohortés.
+- Auto-audit : caches durcis en payloads scalaires pour Redis avec
+  désérialisation d'objets désactivée; allowlist P4-B étendue explicitement aux
+  huit services/read models P5-A3C, sans affaiblir sa frontière fail-closed.
+- Validation : P5-A3C **18/123**, P5-A3 total **50/316**, suite complète
+  **791/5698**, Pint **318**, **35 migrations**, `git diff --check` propre.
 
 ### 2026-08-03 — Codex (clôture post-merge P5-A3A/B)
 
@@ -469,7 +492,8 @@ commencer P5-A3D, P6 ou P7 pendant ce gate.
   complète **773/5575**, Pint **302**, **35 migrations**, `000019` appliquée et
   `git diff --check` propre.
 - Reader LOGIN/ACL, accès admin actif, transactions read-only, séparation des
-  devises, rollback isolé et contrat CI restent verts. P5-A3C est non commencé.
+  devises, rollback isolé et contrat CI restent verts. À cette clôture,
+  P5-A3C était encore non commencé.
 
 ### 2026-08-03 — Codex (P5-A3A/B admin analytics read boundary et dashboard)
 

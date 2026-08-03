@@ -385,9 +385,18 @@ comptes inactifs sont refusés. Le rôle PostgreSQL
 uniquement les quatre rollups en transaction read-only. Vue d'ensemble et
 Ventes séparent strictement les devises, exposent les trous de calcul et le jour
 UTC courant provisoire, sans données brutes, Commerce, worker, opération, API
-ou export. Validation : **35 migrations**, P5-A3 **32/193**, suite complète
-**773/5575**, Pint **302**. **TÂCHE ACTIVE : P5-A3C — Product and Funnel
-Analytics Views, NON COMMENCÉE.** P5-A3D, P6 et P7 ne sont pas commencés.
+ou export. Validation historique : **35 migrations**, P5-A3 **32/193**, suite
+complète **773/5575**, Pint **302**.
+
+**P5-A3C PRODUCT AND FUNNEL ANALYTICS VIEWS IMPLÉMENTÉ, EN ATTENTE DE
+REVUE/MERGE** sur `p5-a3c-product-funnel-analytics` depuis `c6790e6`
+(**D-041**). Produits : engagement global sans devise, commerce par devise,
+libellé `Produit #<id>`, aucun join catalogue ni faux ratio de cohorte. Tunnel :
+volumes calendaires et ratios agrégés non cohortés, trous à `NULL`, jour UTC
+courant provisoire. Même reader D-040, transactions read-only et cache scalaire
+compatible Redis; aucune migration/ACL supplémentaire. Validation : P5-A3C
+**18/123**, P5-A3 agrégé **50/316**, suite **791/5698**, Pint **318**, **35
+migrations**. P5-A3D, P6 et P7 ne sont pas commencés.
 Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —

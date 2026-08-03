@@ -3209,9 +3209,52 @@ de rollup/partition, tenant ou dashboard staff.
 **VALIDATION** : PostgreSQL 16 réel, **35 migrations**, P5-A3 **32 tests / 193
 assertions**, suite complète **773 / 5575**, Pint **302 fichiers**,
 `git diff --check` propre. ACL reader/runtime/worker/PUBLIC, transaction
-read-only, identités, cache, UI et rollback isolé sont couverts. P5-A3C,
-P5-A3D, P6 et P7 ne sont pas commencés. Prochaine tâche après merge :
+read-only, identités, cache, UI et rollback isolé sont couverts. À la clôture
+de D-040, P5-A3C, P5-A3D, P6 et P7 n'étaient pas commencés. La tâche suivante
+était :
 **P5-A3C — Product and Funnel Analytics Views**.
+
+### D-041 — Global Product and Funnel Analytics Views ✅
+
+**Date** : 2026-08-03. **Statut** : **P5-A3C IMPLÉMENTÉ SUR
+`p5-a3c-product-funnel-analytics`, EN ATTENTE DE REVUE/MERGE**. Base exacte :
+commit documentaire stable `c6790e6ec4171034050d91202e758971881f5aa0`, après
+le merge P5-A3A/B `2bbf2b5260bb97c7981cf84a13c84910062a21cc`.
+
+**PRODUITS** : `AnalyticsProductQuery` agrège séparément
+`daily_product_stats` (achats et revenu dans la devise sélectionnée) et
+`daily_product_engagement_stats` (vues globales sans devise), puis réunit les
+produits vus, achetés ou les deux. Aucun catalogue n'est lu : le libellé honnête
+est `Produit #<id>`. Le classement est stable par revenu, achats, vues ou ID;
+pagination 30 par défaut, 100 maximum. Le prix moyen est calculé en unités
+mineures entières et reste indisponible sans achat. `add_to_carts` demeure
+« Non suivi »; aucun ratio achats/vues n'est présenté comme une conversion.
+
+**TUNNEL** : `AnalyticsFunnelQuery` lit uniquement `daily_funnel_stats`. La
+série calendaire conserve un jour absent à `NULL`, distingue un zéro réellement
+calculé et marque le jour UTC courant présent comme provisoire. Les ratios
+agrégés sont explicitement **non cohortés**, calculés par PostgreSQL avec six
+décimales, non plafonnés et `NULL` lorsque le dénominateur vaut zéro. Ils ne
+prétendent donc pas suivre une même cohorte entre les étapes.
+
+**FRONTIÈRE ET CACHE** : les deux queries réutilisent exclusivement le reader
+D-040, ses transactions read-only, sa fenêtre UTC bornée et ses quatre rollups
+autorisés. Aucune migration ni ACL supplémentaire n'est requise : le total
+reste **35 migrations**, sans `000020`. Les caches utilisent les clés bornées
+`analytics:v1` et stockent des tableaux scalaires réhydratés en DTO immuables,
+compatibles avec Redis lorsque la désérialisation d'objets est désactivée.
+
+**UI ET SÉCURITÉ** : les widgets Filament Produits et Tunnel restent réservés à
+l'admin actif global de D-040. Ils n'exposent aucune donnée brute, personnelle
+ou Commerce, aucune API, export, opération analytique, vendeur, tenant ou
+ownership. P5-A3D reste optionnel et non commencé; P6 et P7 ne sont pas
+commencés.
+
+**VALIDATION** : PostgreSQL 16 et Redis réels, P5-A3C **18 tests / 123
+assertions**; P5-A3 agrégé **50 / 316** (baseline historique 32/193 + P5-A3C
+18/123); suite complète **791 / 5698**; Pint **318 fichiers**; **35 migrations**
+appliquées; `git diff --check` propre. P5-A2/P5-A1/P5-A0, P4-C/P4-B et
+P3-D2/P3-B restent verts.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]
