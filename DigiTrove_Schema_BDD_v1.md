@@ -1639,8 +1639,9 @@ P5-A1 est terminée, mergée et validée via PR #27, head `955cc340`, merge
 PR #28, head `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
 `17aaa4f43fcac0d3ef5e039897f0d30666b9d29d`, CI #35 success (D-039).
 P5-A3A/B est terminée, mergée et validée via PR #29, head `31f986dc`, merge
-`2bbf2b52`, CI #36 success (D-040);
-P5-A3C, P5-A3D, P6 et P7 ne sont pas commencés.
+`2bbf2b52`, CI #36 success (D-040). P5-A3C est implémentée sur
+`p5-a3c-product-funnel-analytics`, en attente de revue/merge (D-041). P5-A3D,
+P6 et P7 ne sont pas commencés.
 
 **Principe non négociable** : l'analytique ne pose aucune FK, aucun verrou et
 aucune dépendance de disponibilité sur les tables chaudes du commerce.
@@ -1923,8 +1924,50 @@ secret, API ou export n'est exposé.
 **Décisions humaines appliquées** : admin actif uniquement, staff refusé,
 portée globale uniquement et widgets analytiques dans P5-A3. P6 reste CRM et
 marketing. Validation : P5-A3 **32/193**, suite complète **773/5575**, Pint
-**302**, rollback ACL isolé vert. Prochaine tâche après merge : P5-A3C produits
-et tunnel. P5-A3C, P5-A3D, P6 et P7 restent non commencés.
+**302**, rollback ACL isolé vert. À cette clôture historique, P5-A3C produits et
+tunnel constituait la tâche suivante et P5-A3D/P6/P7 n'étaient pas commencés.
+
+### P5-A3C — Produits et Tunnel (D-041)
+
+**État** : implémenté sur `p5-a3c-product-funnel-analytics`, en attente de
+revue/merge. Ce gate ne crée aucune migration, table, fonction, trigger, ACL ou
+index : la frontière reste `000019` et le total reste **35 migrations**.
+
+`AnalyticsProductQuery` agrège d'abord séparément les sources autorisées :
+
+- `daily_product_engagement_stats(day, product_id)` fournit les vues globales,
+  sans devise;
+- `daily_product_stats(day, product_id, currency)` fournit achats et revenu
+  uniquement dans la devise sélectionnée;
+- `daily_funnel_stats(day)` fournit la couverture calendaire globale.
+
+La réunion conserve un produit présent dans une seule source. Aucun join avec
+`products` n'est autorisé par le reader : l'identité affichée est donc
+`Produit #<id>`, sans nom ou slug inventé. L'ordre stable peut être revenu,
+achats, vues ou ID; la pagination vaut 30 par défaut et 100 maximum. Le revenu
+moyen par achat est un entier en unités mineures et vaut `NULL` sans achat.
+`add_to_carts` reste « Non suivi ». Vues et achats ne forment pas une cohorte :
+aucun taux achats/vues n'est exposé comme conversion.
+
+`AnalyticsFunnelQuery` produit une série complète depuis
+`daily_funnel_stats`. Un jour absent reste `NULL`, un zéro présent reste zéro,
+et le jour UTC courant présent est provisoire. Les ratios sur les totaux de la
+plage sont PostgreSQL `numeric` rendus en chaînes à six décimales, sans plafond;
+un dénominateur nul donne `NULL`. L'UI les nomme « Ratios agrégés — non
+cohortés » et trace Sessions, Vues, Checkouts et Achats sans relier les trous.
+
+Les deux queries réutilisent `pgsql_analytics_reader`, l'identité vérifiée, la
+transaction read-only et les timeouts de D-040. Les clés de cache bornées
+restent sous `analytics:v1`; les valeurs sont des tableaux scalaires réhydratés
+en DTO immuables afin de fonctionner avec Redis lorsque la désérialisation
+d'objets est désactivée. L'accès UI reste réservé à l'admin actif global.
+Aucune donnée brute, Commerce ou personnelle, API, export, commande analytique,
+vendeur, tenant ou ownership n'est ajouté.
+
+Validation : P5-A3C **18/123**; P5-A3 agrégé **50/316** (32/193 historique +
+18/123); suite complète **791/5698**; Pint **318**; PostgreSQL 16 et Redis réels;
+**35 migrations** appliquées; `git diff --check` propre. P5-A3D reste optionnel
+et non commencé; P6/P7 restent non commencés.
 
 ---
 

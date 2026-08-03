@@ -15,7 +15,7 @@ P3 COMMERCE         : ██████████  Schéma P3C-C refunds merg
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
-P5 ANALYTIQUE       : ██████████  P5-A0/P5-A1/P5-A2/P5-A3A/B mergés ; P5-A3C non commencé
+P5 ANALYTIQUE       : ██████████  P5-A0/P5-A1/P5-A2/P5-A3A/B mergés ; P5-A3C implémenté, en attente de revue/merge
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
@@ -502,7 +502,11 @@ Foundation**.
 | Frontière PostgreSQL de lecture | ✅ reader LOGIN dédié, transaction read-only, SELECT uniquement sur quatre rollups; runtime/worker/PUBLIC et données brutes refusés |
 | Queries/UI P5-A3A/B | ✅ DTO immuables, cache borné et global, Vue d'ensemble/Ventes, devises séparées, trous/provisoire explicites, aucune API/export/opération |
 | Validation P5-A3A/B | ✅ 35 migrations, P5-A3 32/193, suite 773/5575, Pint 302, rollback ACL isolé vert |
-| **P5-A3C** produits et tunnel | ⬜ prochaine tâche après merge; non commencé |
+| **P5-A3C** produits et tunnel | ✅ IMPLÉMENTÉ — branche `p5-a3c-product-funnel-analytics`, D-041; en attente de revue/merge |
+| Queries/UI P5-A3C | ✅ Produits (`Produit #id`, engagement global + commerce par devise) et Tunnel agrégé non cohorté; trous/provisoire explicites, `add_to_carts` non suivi |
+| Cache P5-A3C | ✅ payloads scalaires réhydratés en DTO immuables, compatibles Redis sans désérialisation d'objets |
+| Validation P5-A3C | ✅ 18/123; P5-A3 agrégé 50/316; suite 791/5698; Pint 318; 35 migrations, aucune `000020` |
+| **P5-A3D** | ⬜ optionnel; non commencé |
 | Portée analytique actuelle | ✅ globale uniquement; aucun vendeur, tenant, owner ou dimension propriétaire; aucun dashboard vendeur |
 | Campaigns, segments et affiliation | ⬜ P6 — explicitement hors P5-A0 |
 

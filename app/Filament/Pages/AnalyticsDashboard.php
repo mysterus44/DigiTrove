@@ -2,7 +2,11 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Widgets\AnalyticsFunnelChart;
+use App\Filament\Widgets\AnalyticsFunnelStats;
 use App\Filament\Widgets\AnalyticsOverviewStats;
+use App\Filament\Widgets\AnalyticsProductChart;
+use App\Filament\Widgets\AnalyticsProductTable;
 use App\Filament\Widgets\AnalyticsSalesChart;
 use App\Filament\Widgets\AnalyticsSalesTable;
 use App\Services\Analytics\Read\AnalyticsOverviewQuery;
@@ -65,6 +69,16 @@ final class AnalyticsDashboard extends Dashboard
                 ->options(fn (): array => $this->currencyOptions())
                 ->default('XOF')
                 ->required(),
+            Select::make('product_sort')
+                ->label('Classement')
+                ->options([
+                    'revenue_desc' => 'Revenu',
+                    'purchases_desc' => 'Achats',
+                    'views_desc' => 'Vues',
+                    'product_id_asc' => 'Identifiant',
+                ])
+                ->default('revenue_desc')
+                ->required(),
         ]);
     }
 
@@ -75,6 +89,10 @@ final class AnalyticsDashboard extends Dashboard
             AnalyticsOverviewStats::class,
             AnalyticsSalesChart::class,
             AnalyticsSalesTable::class,
+            AnalyticsProductChart::class,
+            AnalyticsProductTable::class,
+            AnalyticsFunnelStats::class,
+            AnalyticsFunnelChart::class,
         ];
     }
 
