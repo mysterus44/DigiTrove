@@ -15,7 +15,7 @@ P3 COMMERCE         : ██████████  Schéma P3C-C refunds merg
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
-P5 ANALYTIQUE       : █████████░  P5-A0/P5-A1/P5-A2 terminés et mergés ; P5-A3 audité, bloqué sur décisions produit et frontière de lecture
+P5 ANALYTIQUE       : ██████████  P5-A0/P5-A1/P5-A2 mergés ; P5-A3A/B implémenté, en attente de revue/merge ; P5-A3C non commencé
 P6 CRM & MARKETING  : ░░░░░░░░░░  0%
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
@@ -497,10 +497,13 @@ Foundation**.
 | Autorité de rollup | ✅ worker LOGIN EXECUTE-only, executor NOLOGIN, SECURITY DEFINER, recalcul UTC atomique/idempotent, commandes et scheduler conditionnel |
 | Partitions calendaires contrôlées | ✅ création mensuelle bornée et idempotente, DEFAULT jamais déplacée, audit non destructif, ACL explicites |
 | Validation P5-A2 | ✅ POST-MERGE GREEN — 34 migrations, P5-A2 25/198, P5-A1 74/400, P5-A0 19/256, suite 741/5381, Pint 278, rollback/concurrence verts |
-| **P5-A3** audit read models/dashboard | ⚠️ BLOCAGE PRODUIT — implémentation non commencée; audience `admin`/`staff`, portée globale/tenant et ownership du gate UI P5-A3/P6 à trancher |
-| Autorisation Filament P5-A3 | ⚠️ aucun accès production actuel : `User` n'implémente pas `FilamentUser`; aucune policy/gate analytique |
-| Frontière PostgreSQL de lecture | ⚠️ migration/provisionnement préalable requis : runtime et worker sans SELECT; recommander un reader LOGIN restreint aux quatre rollups, jamais `events`/sessions/Commerce/opérations |
-| Portée analytique actuelle | ✅ globale uniquement; aucun vendeur, tenant, owner ou dimension propriétaire; dashboard vendeur impossible honnêtement sans évolution de schéma |
+| **P5-A3A/B** read boundary, overview et ventes | ✅ IMPLÉMENTÉ — EN ATTENTE DE REVUE/MERGE sur `p5-a3ab-admin-analytics-dashboard`, D-040, migration `000019` |
+| Autorisation Filament P5-A3 | ✅ admin actif/non supprimé uniquement; Gate `viewGlobalAnalytics`; staff/customer/suspended/blocked refusés |
+| Frontière PostgreSQL de lecture | ✅ reader LOGIN dédié, transaction read-only, SELECT uniquement sur quatre rollups; runtime/worker/PUBLIC et données brutes refusés |
+| Queries/UI P5-A3A/B | ✅ DTO immuables, cache borné et global, Vue d'ensemble/Ventes, devises séparées, trous/provisoire explicites, aucune API/export/opération |
+| Validation P5-A3A/B | ✅ 35 migrations, P5-A3 32/193, suite 773/5575, Pint 302, rollback ACL isolé vert |
+| **P5-A3C** produits et tunnel | ⬜ prochaine tâche après merge; non commencé |
+| Portée analytique actuelle | ✅ globale uniquement; aucun vendeur, tenant, owner ou dimension propriétaire; aucun dashboard vendeur |
 | Campaigns, segments et affiliation | ⬜ P6 — explicitement hors P5-A0 |
 
 ## P6 — CRM & MARKETING
@@ -509,7 +512,7 @@ Foundation**.
 | customer_segments + membres (définition JSONB) | ⬜ TODO |
 | Rollups CRM maintenus par événement (orders_count, LTV) | ⬜ TODO |
 | Paniers abandonnés + relance | ⬜ TODO |
-| Widgets Filament (CA, tunnel, top produits) | ⚠️ ownership de phase à trancher avec P5-A3 avant implémentation |
+| Widgets Filament CRM/marketing | ⬜ P6 uniquement; les widgets analytiques de rollups appartiennent à P5-A3 |
 | Export CSV des segments | ⬜ TODO |
 
 ## P7 — BLOG & SEO

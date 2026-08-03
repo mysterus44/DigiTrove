@@ -7,9 +7,10 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Codex
-- **Date** : 2026-07-25
-- **Branche git active** : `p0-foundations-laravel13`, synchronisée sur
-  `17aaa4f43fcac0d3ef5e039897f0d30666b9d29d`.
+- **Date** : 2026-08-03
+- **Branche git active** : `p5-a3ab-admin-analytics-dashboard`, base stable
+  `51b8d4b4818621aa7d7812bc68c39da7c9717c16`, head fonctionnel audité
+  `8448964`.
 - **P5-A2 AUTHORITATIVE ROLLUPS AND PARTITION OPERATIONS TERMINÉ, MERGÉ ET
   VALIDÉ** via [PR #28](https://github.com/mysterus44/DigiTrove/pull/28), head
   `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
@@ -23,15 +24,17 @@
   automatiquement. Validation post-merge : **34 migrations**, P5-A2 **25 tests /
   198 assertions**, suite complète **741 / 5381**, Pint **278 fichiers**,
   `git diff --check` propre; rollback isolé et concurrence PostgreSQL verts.
-- **P5-A3 AUDITÉ, IMPLÉMENTATION NON COMMENCÉE — BLOCAGE PRODUIT**. Le dépôt
-  contient un seul panel Filament `admin`, mais `User` n'implémente pas
-  `FilamentUser` : en production, aucun rôle ne peut actuellement l'ouvrir. Les
-  rôles `admin` et `staff` existent, sans policy/gate analytique ni décision
-  explicite sur l'accès aux données financières. Les rollups sont globaux et
-  sans propriétaire/tenant; aucun vendeur n'existe dans le modèle. Enfin,
-  `digitrove_runtime` et `digitrove_analytics_worker` n'ont aucun `SELECT` sur
-  les rollups. Une frontière de lecture dédiée est donc requise avant toute UI.
-  P6 et P7 ne sont pas commencés.
+- **P5-A3A/B ADMIN ANALYTICS READ BOUNDARY, OVERVIEW AND SALES IMPLÉMENTÉ — EN
+  ATTENTE DE REVUE/MERGE** (D-040). Seul un admin actif et non supprimé accède
+  au panel `admin` et à la Gate `viewGlobalAnalytics`; `staff`, `customer` et
+  les comptes inactifs sont refusés. La migration `000019` accorde au rôle
+  `digitrove_analytics_reader` uniquement `SELECT` sur les quatre rollups. Les
+  queries globales Vue d'ensemble/Ventes utilisent une transaction read-only,
+  des DTO immuables et un cache court séparé par devise. Aucune lecture de
+  données brutes ou Commerce, aucun worker web, aucune API/export/opération UI.
+  Validation : **35 migrations**, P5-A3 **32 tests / 193 assertions**, suite
+  complète **773 / 5575**, Pint **302 fichiers**, rollback ACL isolé vert.
+  P5-A3C, P5-A3D, P6 et P7 ne sont pas commencés.
 - **P5-A1 FIRST-PARTY ANALYTICS INGESTION TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #27](https://github.com/mysterus44/DigiTrove/pull/27), head
   `955cc34050daa4b8706e752fd9a82f579bebb02b`, merge
@@ -449,22 +452,27 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 Décisions produit P5-A3 — Analytics Read Models and Dashboard
+## 🎯 P5-A3C — Product and Funnel Analytics Views
 
-P5-A2 est clos. Avant toute branche ou implémentation P5-A3, une validation
-humaine doit trancher :
+P5-A3A/B est implémenté sur sa branche dédiée et attend revue/merge. La prochaine
+tâche, dans une exécution séparée après intégration, est P5-A3C : vues Produits
+et Tunnel à partir des rollups existants et de la même frontière reader. Ne pas
+commencer P5-A3C, P5-A3D, P6 ou P7 pendant la revue de ce gate.
 
-1. accès analytique `admin` uniquement, ou `admin` + `staff` actif avec
-   permissions distinctes;
-2. dashboard global, seul périmètre honnête avec le schéma actuel, ou future
-   isolation vendeur/tenant exigeant d'abord ownership et dimensions dédiées;
-3. widgets Filament livrés en P5-A3 ou maintenus dans P6, où le tracker les
-   place encore.
+### 2026-08-03 — Codex (P5-A3A/B admin analytics read boundary et dashboard)
 
-Le prochain gate technique recommandé commence par une autorisation Filament
-fail-closed et une identité PostgreSQL de lecture dédiée aux quatre rollups,
-sans accès à `events`, `analytics_sessions`, Commerce ou aux opérations P5-A2.
-Ne commencer ni P5-A3, ni P6, ni P7 avant ces décisions.
+- Décisions humaines appliquées : admin actif uniquement, `staff` refusé,
+  portée globale uniquement, widgets analytiques en P5-A3; P6 reste CRM et
+  marketing.
+- Migration `000019`, rôle reader LOGIN restreint, connexion
+  `pgsql_analytics_reader`, policy/Gate et accès Filament fail-closed.
+- Vue d'ensemble et Ventes lisent seulement les quatre rollups, séparent les
+  devises, signalent les jours non calculés et le jour UTC courant provisoire;
+  net négatif conservé et `add_to_carts` affiché « Non suivi ».
+- Validation : P5-A3 **32/193**, P5-A2 **25/198**, P5-A1 **74/400**, P5-A0
+  **19/256**, P4-C **86/559**, P4-B **20/560**, P3-D2 **91/364**, P3-B
+  **18/354**, suite complète **773/5575**, Pint **302**, **35 migrations**,
+  `git diff --check` propre.
 
 ### 2026-07-25 — Codex (clôture post-merge P5-A2 et audit P5-A3)
 

@@ -3161,5 +3161,56 @@ P4-B **20/560**, P3-D2 **91/364** et P3-B **18/354**.
    la portée globale/tenant et l'ownership P5-A3/P6 sont des décisions humaines
    bloquantes. Aucun D-040 n'est créé artificiellement.
 
+### D-040 — Admin-only Global Analytics Read Model ✅
+
+**Date** : 2026-08-03. **Statut** : **P5-A3A/B IMPLÉMENTÉ — EN ATTENTE DE
+REVUE/MERGE** sur `p5-a3ab-admin-analytics-dashboard`.
+
+**ACCÈS ET PORTÉE** : seul un utilisateur authentifié, non supprimé, de rôle
+`admin` et statut `active` accède au panel Filament `admin` et à la Gate
+`viewGlobalAnalytics`. `staff`, `customer`, `suspended` et `blocked` sont
+refusés. Le dashboard est global uniquement : aucune dimension vendeur, tenant
+ou owner n'est prétendue. Les widgets analytiques appartiennent à P5-A3; P6
+reste réservé au CRM, aux campagnes, segments et au marketing.
+
+**FRONTIÈRE POSTGRESQL** : la migration additive
+`2026_07_14_000019_grant_analytics_dashboard_read_privileges.php` ne crée ni
+table ni index. Le rôle LOGIN `digitrove_analytics_reader`, sans privilège
+élevé ni membership, reçoit seulement `USAGE` sur `public` et `SELECT` sur
+`daily_sales_stats`, `daily_product_stats`,
+`daily_product_engagement_stats` et `daily_funnel_stats`. `PUBLIC`, le runtime
+web et le worker P5-A2 restent sans lecture directe. Le rollback retire
+seulement ces ACL et conserve rôle, tables, données et autorités P5-A0/A1/A2.
+
+La connexion Laravel `pgsql_analytics_reader` n'a aucun fallback, vérifie
+`session_user` et `current_user`, refuse une transaction ambiante puis exécute
+une transaction PostgreSQL read-only avec statement/lock timeouts bornés.
+Credentials incomplets, identité inattendue ou dashboard désactivé entraînent
+un refus fail-closed. Aucun worker P5-A2 ne sert les requêtes HTTP.
+
+**READ MODELS ET CACHE** : `AnalyticsOverviewQuery` et
+`AnalyticsSalesQuery` lisent seulement les rollups autorisés et retournent des
+DTO immuables. Les plages sont UTC, 30 jours par défaut, 366 maximum; devise
+strictement uppercase; pagination 100 maximum et ordre stable. Le cache Laravel
+est borné à 0–300 secondes et sa clé `analytics:v1` inclut rôle admin, portée
+globale, UTC, query, plage, devise, page et taille, sans identité utilisateur,
+session, cookie, IP ou token.
+
+**SÉMANTIQUE ET UI** : aucune somme monétaire ne mélange les devises; chaque
+carte financière et la vue Ventes restent currency-safe. Un jour absent est
+« non calculé », le jour UTC courant présent est « provisoire », un net négatif
+reste signé et `add_to_carts` est « Non suivi ». L'interface Filament française
+affiche Vue d'ensemble et Ventes avec couverture, états vide/indisponible et
+erreurs sanitizées. Elle ne lit ni `events`, `analytics_sessions`, données
+Commerce ou personnelles brutes; elle n'expose aucune API, export CSV, commande
+de rollup/partition, tenant ou dashboard staff.
+
+**VALIDATION** : PostgreSQL 16 réel, **35 migrations**, P5-A3 **32 tests / 193
+assertions**, suite complète **773 / 5575**, Pint **302 fichiers**,
+`git diff --check` propre. ACL reader/runtime/worker/PUBLIC, transaction
+read-only, identités, cache, UI et rollback isolé sont couverts. P5-A3C,
+P5-A3D, P6 et P7 ne sont pas commencés. Prochaine tâche après merge :
+**P5-A3C — Product and Funnel Analytics Views**.
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]
