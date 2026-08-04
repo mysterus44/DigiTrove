@@ -319,8 +319,9 @@ PR #31, head `3276fef12d94f25e91fe6386e153ae3130424eb1`, merge
 Le CI GitHub n'était pas visible avant merge; la validation locale post-merge
 complète est verte.
 Migration unique :
-`2026_07_14_000020_create_crm_identity_and_consent_foundation.php`. Aucune
-migration `000021` et aucune table de liaison commande/contact ne sont créées.
+`2026_07_14_000020_create_crm_identity_and_consent_foundation.php`. À la
+frontière P6-A0, aucune migration `000021` ni table de liaison commande/contact
+n'était créée; P6-A1.0 les ajoute désormais séparément selon D-045.
 
 `crm_contacts` contient `id BIGINT`, `public_id UUID UNIQUE`, `email CITEXT
 NULL`, `user_id BIGINT NULL ON DELETE SET NULL`, `origin VARCHAR(32)`, `status
@@ -364,9 +365,14 @@ Pint **347**, diff-check, ACL, rollback et concurrence verts.
 
 Hors P6-A0 : segment, rollup, UI client/Filament, export, campagne, e-mail/SMS,
 panier abandonné, affiliation, fournisseur, route publique, backfill, purge et
-rétention automatique. P6-A1 est audité mais non implémenté.
+rétention automatique. P6-A1.0 est depuis implémenté dans son gate séparé;
+P6-A1.1+ restent non commencés.
 
-#### P6-A1 audité — attribution et rollups Commerce currency-safe (D-044)
+#### P6-A1 — attribution durable implémentée, rollups currency-safe audités (D-044/D-045)
+
+D-045 lève les deux blocages historiques de D-044 et supersède uniquement sa
+recommandation d'attribution synchrone fail-closed. Les rollups currency-safe de
+D-044 restent futurs et non implémentés.
 
 ##### Sources autoritatives
 
@@ -396,12 +402,14 @@ crm_order_attributions
     attributed_at  TIMESTAMPTZ NOT NULL
 ```
 
-La ligne est immuable et sans PII. Elle doit être créée dans la même transaction
-que la première transition Order vers `paid`, sous verrou Order et résolution
-CRM sérialisée. Un compte actif, non supprimé, vérifié et exact peut être lié;
-sinon l'e-mail figé de l'Order sert de preuve `guest_order`. Visitor, cookie,
-session, IP, nom, téléphone et rapprochement flou sont interdits. `OrderPaid`
-reste un signal après COMMIT, jamais l'autorité d'attribution.
+La ligne est immuable et sans PII. D-045 la crée après commit depuis une outbox
+durable insérée dans la transaction de première transition Order vers `paid`.
+Le trigger capture seulement un contact actif exact déjà existant et ne lance
+jamais le resolver. Sans snapshot, l'autorité post-commit résout un compte actif,
+non supprimé, vérifié et exact, sinon l'e-mail figé de l'Order sert de preuve
+`guest_order`. Visitor, cookie, session, IP, nom, téléphone et rapprochement flou
+sont interdits. `OrderPaid` reste un signal après COMMIT; le sweeper de l'outbox
+porte la reprise durable.
 
 Une anonymisation conserve la FK et tous les montants sur l'ancien contact;
 l'e-mail et le consentement restent effacés et l'interface future affiche
@@ -461,23 +469,63 @@ une décision humaine et ne vaut jamais consentement.
 Le dépôt ne contient aucun jeu de production permettant de quantifier les Orders
 honnêtement attribuables : le volume de backfill reste inconnu avant audit réel.
 
-Découpage retenu : A1.0 attribution immuable; A1.1 projection et autorité;
-A1.2 worker/signaux/réconciliation; A1.3 backfill explicite. Le premier gate
-provisoire est `P6-A1.0 - Immutable Order-to-CRM Attribution`, branche
-`p6-a1-0-order-crm-attribution`, migration envisagée
-`2026_07_14_000021_create_crm_order_attributions_table.php`.
+Découpage retenu : A1.0 attribution durable; A1.1 projection et autorité rollup;
+A1.2 worker rollup/signaux/réconciliation; A1.3 backfill explicite.
 
-Deux décisions bloquent son implémentation : aligner le contrat e-mail Commerce
-(`<= 320`, contrôle BDD permissif) avec CRM (`3..254`, format strict), puis
-accepter soit l'attribution transactionnelle fail-closed recommandée, qui peut
-rollbacker une finalisation financière incohérente, soit financer une outbox
-durable et une file d'Orders non attribués. Un simple listener `OrderPaid` n'est
-pas une alternative sûre.
+##### P6-A1.0 implémenté — migration unique `000021`
 
-Le gate A1.0 doit tester compte/guest exacts, compte inactif sans liaison,
-absence Visitor, replay/concurrence, anonymisation et recréation au même e-mail,
-conflit d'attribution, ACL, erreur sanitizée et rollback isolé préservant P6-A0.
-Les gates de rollup couvrent en plus Orders payants/gratuits, pending/review
+`2026_07_14_000021_create_durable_crm_order_attribution_pipeline.php` crée :
+
+```text
+crm_order_attribution_outbox
+    order_id             BIGINT PRIMARY KEY REFERENCES orders(id) ON DELETE RESTRICT
+    contact_id_snapshot  BIGINT NULL REFERENCES crm_contacts(id) ON DELETE RESTRICT
+    status               VARCHAR(16) NOT NULL DEFAULT pending
+    reason               VARCHAR(32) NULL
+    attempt_count        INTEGER NOT NULL DEFAULT 0
+    available_at         TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at            TIMESTAMPTZ NULL
+    updated_at            TIMESTAMPTZ NULL
+
+crm_order_attributions
+    order_id       BIGINT PRIMARY KEY REFERENCES orders(id) ON DELETE RESTRICT
+    contact_id     BIGINT NOT NULL REFERENCES crm_contacts(id) ON DELETE RESTRICT
+    source         VARCHAR(32) NOT NULL
+    attributed_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    INDEX (contact_id, order_id)
+```
+
+États outbox fermés : `pending|attributed|unattributable`; raisons terminales :
+`invalid_email_contract|attribution_conflict`. Sources d'attribution :
+`existing_contact_snapshot|verified_account_resolution|guest_order_resolution`.
+La preuve outbox ne contient aucun e-mail, Visitor, JSON ou autre PII; elle est
+indélébile et ses champs d'évidence sont immuables. L'attribution finale est
+entièrement immuable. Le snapshot de contact survit à l'anonymisation et empêche
+qu'un nouveau contact de même e-mail hérite de la vente.
+
+Les nouvelles créations checkout appliquent explicitement `3..254`; l'enveloppe
+d'entrée reste syntaxiquement validée et bornée à 320 afin qu'un replay exact
+retrouve d'abord un Order historique jusqu'à 320 caractères, sans nouvelle ligne,
+troncature ni mutation du Cart. La colonne historique Order reste `VARCHAR(320)`.
+Un snapshot legacy incompatible avec le processeur CRM devient
+`unattributable/invalid_email_contract` sans création de contact/consentement ni
+rollback financier. Le trigger suit la transition `false → true` du prédicat
+`status IN (paid,partially_refunded,refunded) AND paid_at IS NOT NULL`, quel que
+soit l'ordre des mises à jour. Il ne résout jamais le CRM; il insère seulement
+l'outbox et, si déjà prouvé, le contact actif exact. Le traitement post-commit
+s'appuie sur cinq fonctions SECURITY DEFINER, trois triggers, un job unique à
+payload `orderId` et TTL 3600 secondes, un listener `OrderPaid` faible et un sweeper borné planifié
+toutes les cinq minutes mais désactivé par défaut.
+
+`digitrove_runtime` possède uniquement EXECUTE sur les fonctions de liste et de
+traitement; il n'a aucun accès direct aux tables/séquences. Le propriétaire reste
+`digitrove_crm_executor` NOLOGIN/NOINHERIT, sans nouvelle identité PostgreSQL.
+Validation : **37 migrations**, P6-A1.0 **48/285**, suite **883/6273**, Pint
+**367**, concurrence, rollback isolé et diff-check verts. Aucune `000022`, aucun
+rollup, worker LOGIN, backfill, UI, segment ou campagne. Prochain gate séparé :
+**P6-A1.1 — Currency-safe Commerce Rollup Authority**, non commencé.
+
+Les gates de rollup devront couvrir Orders payants/gratuits, pending/review
 ignorés, refunds partiels/complets/multiples, devises séparées, absence de total
 global, replay, ordre inverse, worker EXECUTE-only et réconciliation.
 

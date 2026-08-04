@@ -423,18 +423,27 @@ supprimé. Aucun CI GitHub n'était visible avant merge; validation locale
 post-merge : **36 migrations**, P6-A0 **40/235**, suite **835/5988**, Pint
 **347**, rollback/concurrence/diff-check verts.
 
-**P6-A1 CURRENCY-SAFE CUSTOMER COMMERCE ROLLUPS AUDITÉ, NON IMPLÉMENTÉ**
-(**D-044**). Commerce est l'autorité : Orders acquis
-`paid|partially_refunded|refunded`, date `paid_at`, valeur
-`orders.total_minor`, devise Order, unique Payment `succeeded` pour le payant et
-Refunds `succeeded` seulement. Attribution retenue : table immuable séparée
-`crm_order_attributions`; projection future :
-`crm_contact_commerce_rollups` par `(contact_id,currency)`, BIGINT, net payé moins
-remboursé, reconstruction idempotente. Deux décisions bloquent P6-A1.0 : contrat
-e-mail Commerce `<=320` contre CRM `<=254`, puis attribution transactionnelle
-fail-closed recommandée contre alternative outbox durable. Ne pas utiliser le
-simple événement `OrderPaid`, l'e-mail dynamique, Visitor, Analytics, FX ou le
-catalogue. P6-A2+, P7 et P5-A3D restent non commencés.
+**P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION PIPELINE IMPLÉMENTÉ — EN ATTENTE DE
+REVUE/MERGE** sur `p6-a1-0-durable-order-crm-attribution` (**D-045**), base
+`8f4e91c`. La migration unique `000021` crée une outbox transactionnelle sans
+PII et une attribution immuable. Les nouveaux checkouts appliquent le contrat
+e-mail `3..254`; un replay exact peut encore retourner un Order historique valide
+jusqu'à 320 caractères avant le contrôle de nouvelle création. Le schéma Commerce
+`VARCHAR(320)` reste intact. Le trigger suit la transition `false → true` du
+prédicat `status acquis + paid_at non NULL` dans les deux ordres et capture seulement un contact actif exact déjà existant; il
+n'appelle jamais le resolver. Après commit, `OrderPaid` est un signal faible;
+un job unique à TTL 3600 secondes et un sweeper borné appellent des autorités PostgreSQL
+SECURITY DEFINER EXECUTE-only. Un e-mail historique incompatible ou un conflit
+devient terminal `unattributable`, sans rollback financier. Le snapshot de
+contact préserve l'historique après anonymisation sans attribuer une ancienne
+vente à un nouveau contact de même e-mail. Validation : **37 migrations**,
+P6-A1.0 **48/285**, suite **883/6273**, Pint **367**, concurrence/rollback/
+diff-check verts.
+
+**P6-A1.1 CURRENCY-SAFE COMMERCE ROLLUP AUTHORITY NON COMMENCÉ** (**D-044**).
+La projection future reste `(contact_id,currency)`, BIGINT, net payé moins
+remboursé, reconstruite idempotemment depuis Commerce. Aucune migration `000022`,
+aucun worker rollup, backfill, UI, segment, campagne, P6-A2+, P7 ou P5-A3D.
 Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —

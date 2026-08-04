@@ -8,8 +8,9 @@
 
 - **Dernier agent** : Codex
 - **Date** : 2026-08-03
-- **Branche git active** : `p0-foundations-laravel13`, synchronisée sur le merge
-  P6-A0 `47888d0992aa5664e82341e52f6c3a68c4b0b15a`.
+- **Branche git active** : `p6-a1-0-durable-order-crm-attribution`, basée sur
+  la stable `8f4e91c1d0e798d98207e3ca6c727d1d008f9051`; implémentation en attente de
+  revue/merge.
 - **P5-A2 AUTHORITATIVE ROLLUPS AND PARTITION OPERATIONS TERMINÉ, MERGÉ ET
   VALIDÉ** via [PR #28](https://github.com/mysterus44/DigiTrove/pull/28), head
   `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
@@ -70,6 +71,21 @@
   **835/5988**, Pint **347**, rollback/concurrence/diff-check verts. Aucun flux
   utilisateur, route, UI, job, mail, campagne, segment, rollup, backfill ou
   rétention automatique n'est livré.
+- **P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION PIPELINE IMPLÉMENTÉ — EN ATTENTE
+  DE REVUE/MERGE** (D-045). La migration unique `000021` crée l'outbox durable
+  `crm_order_attribution_outbox`, sans e-mail ni Visitor, et le fait immuable
+  `crm_order_attributions`. La transition financière capture uniquement un
+  `contact_id` actif déjà prouvé; elle ne résout ni ne crée jamais de contact.
+  Après commit, `OrderPaid` reste un signal faible, complété par un sweeper
+  borné et un job unique à TTL 3600 secondes qui appellent deux autorités SECURITY DEFINER
+  EXECUTE-only. Le trigger suit la transition du prédicat complet `status acquis
+  + paid_at non NULL` dans les deux ordres. Les nouvelles créations bornent
+  l'e-mail à 254 caractères, mais un replay exact historique reste autorisé
+  jusqu'à 320; les
+  anciens Orders incompatibles deviennent `unattributable` sans rollback
+  financier. Validation : **37 migrations**, P6-A1.0 **48/285**, suite complète
+  **883/6273**, Pint **367**, concurrence/rollback/diff-check verts. Aucune
+  `000022`, aucun rollup, backfill, UI, segment ou campagne.
 - **P5-A1 FIRST-PARTY ANALYTICS INGESTION TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #27](https://github.com/mysterus44/DigiTrove/pull/27), head
   `955cc34050daa4b8706e752fd9a82f579bebb02b`, merge
@@ -487,24 +503,58 @@
 
 ## ⏭️ PROCHAINE TÂCHE
 
-## 🎯 P6-A1.0 — Immutable Order-to-CRM Attribution (bloqué)
+## 🎯 P6-A1.1 — Currency-safe Commerce Rollup Authority (non commencé)
 
-P6-A0 est mergé et validé. L'audit P6-A1 est consigné dans D-044, mais aucune
-implémentation ne doit commencer avant deux décisions humaines : aligner le
-contrat e-mail Commerce (`<= 320`) avec le contrat CRM (`<= 254`), puis confirmer
-l'attribution transactionnelle fail-closed recommandée ou choisir une outbox
-durable avec file explicite des commandes non attribuées. Un simple listener
-post-commit `OrderPaid` n'est pas une autorité fiable.
+P6-A1.0 est implémenté sur `p6-a1-0-durable-order-crm-attribution` et doit être
+reviewé puis mergé avant toute suite. Le prochain gate séparé est P6-A1.1 : table
+et autorité PostgreSQL de reconstruction `(contact_id, currency)` définies par
+D-044, sans worker LOGIN, backfill, UI, segment, campagne ou export. La future
+migration serait `000022`, mais elle n'existe pas et ne doit pas être créée dans
+la présente exécution.
 
-Après décision, le premier gate proposé est une table immuable séparée
-`crm_order_attributions`, sur la future branche
-`p6-a1-0-order-crm-attribution`, migration future
-`2026_07_14_000021_create_crm_order_attributions_table.php`. Ne créer ni cette
-branche ni cette migration avant validation. Les rollups currency-safe restent
-un gate ultérieur et doivent lire Commerce comme autorité, sans FX, Analytics,
-Visitor, catalogue courant, campagne, segment, export, relance ou affiliation.
+### 2026-08-04 — Codex (hardening pré-PR P6-A1.0)
 
-### 2026-08-03 — Codex (clôture P6-A0 et audit d'architecture P6-A1)
+- Les trois constats pré-PR sont fermés dans le gate existant : le trigger suit
+  désormais la transition `false → true` de `status acquis + paid_at non NULL`,
+  y compris `status` puis `paid_at` et l'ordre inverse, avec une seule outbox.
+- `ProcessCrmOrderAttribution` conserve `ShouldBeUnique` et `orderId` seul, avec
+  `uniqueFor=3600`; ce TTL dépasse l'horizon déclaré des cinq tentatives et laisse
+  le sweeper récupérer un verrou abandonné, PostgreSQL restant idempotent.
+- Une nouvelle création reste limitée à 254 caractères. La recherche idempotente
+  précède ce contrôle strict après une enveloppe initiale valide jusqu'à 320 : un
+  replay historique exact 255..320 retourne la même Order sans mutation; tout
+  conflit d'e-mail reste refusé.
+- Validation réelle : **37 migrations**, P6-A1.0 **48/285**, P6-A0 **40/235**,
+  P5-A3 **54/371**, P5-A2 **25/198**, P4-C **86/559**, P4-B **20/560**, P3-D2
+  **91/364**, P3-B **18/354**, suite complète **883/6273**, Pint **367** et
+  `git diff --check` verts. Aucune `000022`; P6-A1.1+ restent non commencés.
+
+### 2026-08-03 — Codex (P6-A1.0 attribution Order vers CRM durable)
+
+- Branche `p6-a1-0-durable-order-crm-attribution`, base exacte `8f4e91c`; une
+  migration `000021`, deux tables, cinq fonctions et trois triggers.
+- D-045 résout les blocages de D-044 : nouveaux e-mails checkout `3..254`,
+  schéma historique `VARCHAR(320)` conservé, outbox dans la transaction
+  financière et résolution CRM après commit. Une incompatibilité historique
+  devient `unattributable/invalid_email_contract`, jamais un rollback financier.
+- L'outbox ne contient aucune PII. `contact_id_snapshot` capture seulement un
+  contact actif exact déjà présent et protège l'historique d'une anonymisation
+  puis recréation au même e-mail. Le resolver n'est jamais appelé par le trigger.
+- Le runtime a uniquement EXECUTE sur `list_due_crm_order_attributions` et
+  `process_crm_order_attribution`; `digitrove_crm_executor` reste NOLOGIN. Job
+  unique, listener `OrderPaid` faible, commande sweeper et scheduler 5 minutes
+  sont fail-closed et désactivés par défaut.
+- Validation réelle à l'implémentation initiale, désormais supersédée par le
+  hardening ci-dessus : **37 migrations**, P6-A1.0 **44/239**, P6-A0 **40/235**,
+  P5-A3 **54/371**, P5-A2 **25/198**, P5-A1 **74/400**, P5-A0 **19/256**,
+  P4-C **86/559**, P4-B **20/560**, P3-D2 **91/364**, P3-B **18/354**, suite
+  **879/6227**, Pint **367**, rollback isolé, concurrence et diff-check verts.
+- Un correctif post-commit a durci la précision `TIMESTAMPTZ(6)` des lignes
+  immédiatement dues. Deux autres commits `fix:` ont adapté des sentinelles
+  historiques sans réduire leur couverture. P6-A1.1+, P6-A2+, P7 et P5-A3D ne
+  sont pas commencés.
+
+### 2026-08-03 — Codex (clôture P6-A0 et audit d'architecture P6-A1, état historique avant D-045)
 
 - PR #31 prouvée : head `3276fef1`, merge `47888d09`, parents `a11de061` et
   `3276fef1`; les six commits P6-A0 sont ancêtres de la stable. Aucun CI GitHub
@@ -521,13 +571,15 @@ Visitor, catalogue courant, campagne, segment, export, relance ou affiliation.
   projection `(contact_id, currency)` reconstruite idempotemment depuis les
   Orders acquis et Refunds réussis. `orders.total_minor`, `orders.currency`,
   `orders.paid_at` et `refunds.succeeded_at` sont les sources financières.
-- P6-A1.0 reste bloqué par le contrat e-mail divergent et la sémantique
-  transactionnelle d'attribution. P6-A1+, P7 et P5-A3D ne sont pas commencés.
+- À cet instant, P6-A1.0 restait bloqué par le contrat e-mail divergent et la
+  sémantique transactionnelle; D-045 a depuis levé ces deux blocages. P6-A1.1+,
+  P7 et P5-A3D ne sont pas commencés.
 
 ### 2026-08-03 — Codex (P6-A0 identité, consentement et autorisation)
 
 - Migration unique `000020` : `crm_contacts` et ledger append-only
-  `crm_marketing_consent_events`; 36 migrations au total, aucune `000021`.
+  `crm_marketing_consent_events`; 36 migrations à cette frontière, avant le
+  `000021` désormais livré séparément par P6-A1.0.
 - Identité exacte `trim` + CITEXT, achats invités prouvés par l'e-mail figé de
   l'Order, comptes liés seulement si actifs/vérifiés et e-mail exact; aucun
   Visitor, alias folding, backfill ou fusion approximative.

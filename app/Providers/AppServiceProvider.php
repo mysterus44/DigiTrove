@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Contracts\Payments\PaymentConfirmationProvider;
 use App\Contracts\Payments\PaymentProvider;
 use App\Events\OrderPaid;
+use App\Listeners\QueueCrmOrderAttribution;
 use App\Listeners\QueueSecureDelivery;
 use App\Payments\PaymentProviderFactory;
 use App\Policies\AnalyticsPolicy;
@@ -98,6 +99,7 @@ class AppServiceProvider extends ServiceProvider
         // Secure delivery pipeline (P4-C0, D-035): a paid order queues an
         // order-id-only delivery job, and only when the pipeline is enabled.
         Event::listen(OrderPaid::class, QueueSecureDelivery::class);
+        Event::listen(OrderPaid::class, QueueCrmOrderAttribution::class);
     }
 
     private function downloadRateLimitKey(Request $request): string

@@ -61,6 +61,9 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Crm/Concerns/UsesCrmAuthority.php',
     'Crm/CrmContactResolver.php',
     'Crm/CrmOperationException.php',
+    // P6-A1.0 (D-045) — durable EXECUTE-only Order-to-CRM attribution pipeline.
+    'Crm/CrmOrderAttributionDispatcher.php',
+    'Crm/CrmOrderAttributionProcessor.php',
     'Crm/MarketingConsentRecorder.php',
     'Crm/MarketingConsentStatusQuery.php',
     // P4-C1/P4-C2 (D-035) — grant issuance and refund revocation.
@@ -442,7 +445,7 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(36)
+        ->and(DB::table('migrations')->count())->toBe(37)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')
@@ -1071,8 +1074,8 @@ it('keeps HEAD commercially inert and allows only the explicitly reviewed downlo
             ->sort()->values()->all();
         expect($actual)->toBe($allowed);
     };
-    $dirAllowlist('Jobs', ['SecureDeliveryJob.php']);
-    $dirAllowlist('Listeners', ['QueueSecureDelivery.php']);
+    $dirAllowlist('Jobs', ['ProcessCrmOrderAttribution.php', 'SecureDeliveryJob.php']);
+    $dirAllowlist('Listeners', ['QueueCrmOrderAttribution.php', 'QueueSecureDelivery.php']);
     $dirAllowlist('Mail', ['OrderDownloadsReady.php']);
 
     // P3-D1 (D-030) legitimately introduces app/Services/Pricing, a read-only

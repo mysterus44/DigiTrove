@@ -44,6 +44,10 @@ final class OrderService
 
     private const IDEMPOTENCY_KEY_PATTERN = '/\A[A-Za-z0-9._-]{32,255}\z/';
 
+    private const MAX_NEW_CUSTOMER_EMAIL_LENGTH = 254;
+
+    private const MAX_HISTORICAL_CUSTOMER_EMAIL_LENGTH = 320;
+
     /** A year of minutes: far beyond any sane cart, still safe for Carbon. */
     private const MAX_PENDING_TTL_MINUTES = 525_600;
 
@@ -101,6 +105,8 @@ final class OrderService
                 return $this->resolveReplay($existing, $cart, $actor, $currency, $email);
             }
 
+            $this->assertNewOrderEmail($email);
+
             if (Order::query()->where('cart_id', $cart->id)->exists()) {
                 throw CheckoutException::of(
                     CheckoutRefusalReason::CartAlreadyCheckedOut,
@@ -146,11 +152,51 @@ final class OrderService
         $email = $actor instanceof User ? (string) $actor->email : (string) $guestEmail;
         $email = trim($email);
 
-        if ($email === '' || mb_strlen($email) > 320 || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+        if ($email === ''
+            || mb_strlen($email) > self::MAX_HISTORICAL_CUSTOMER_EMAIL_LENGTH
+            || ! $this->isValidHistoricalEmail($email)) {
             throw CheckoutException::of(CheckoutRefusalReason::InvalidEmail, 'A valid email address is required.');
         }
 
         return $email;
+    }
+
+    private function assertNewOrderEmail(string $email): void
+    {
+        if (mb_strlen($email) > self::MAX_NEW_CUSTOMER_EMAIL_LENGTH) {
+            throw CheckoutException::of(CheckoutRefusalReason::InvalidEmail, 'A valid email address is required.');
+        }
+    }
+
+    /**
+     * Preserve the historical 320-character envelope for exact idempotent
+     * replays. New addresses still use PHP's established validation contract;
+     * the extended branch accepts only an ASCII dot-atom and DNS-safe labels.
+     */
+    private function isValidHistoricalEmail(string $email): bool
+    {
+        if (mb_strlen($email) <= self::MAX_NEW_CUSTOMER_EMAIL_LENGTH) {
+            return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+        }
+
+        if (preg_match('/\A[A-Za-z0-9!#$%&\'*+\/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&\'*+\/=?^_`{|}~-]+)*@(.+)\z/D', $email, $matches) !== 1) {
+            return false;
+        }
+
+        $localPartLength = strpos($email, '@');
+        $domain = $matches[1];
+
+        if ($localPartLength === false || $localPartLength > 64 || strlen($domain) > 255) {
+            return false;
+        }
+
+        foreach (explode('.', $domain) as $label) {
+            if (preg_match('/\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\z/D', $label) !== 1) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
