@@ -438,10 +438,13 @@ vente à un nouveau contact de même e-mail. Validation : **37 migrations**,
 P6-A1.0 **48/285**, suite **883/6273**, Pint **367**, concurrence/rollback/
 diff-check verts.
 
-**P6-A1.1 CURRENCY-SAFE COMMERCE ROLLUP AUTHORITY AUDITÉ** (**D-046**) mais **NON IMPLÉMENTÉ**.
-La projection future reste `(contact_id,currency)`, BIGINT, net payé moins
-remboursé, reconstruite idempotemment depuis Commerce. Aucune migration `000022`,
-aucun worker rollup, backfill, UI, segment, campagne, P6-A2+, P7 ou P5-A3D.
+**P6-A1.1 CURRENCY-SAFE COMMERCE ROLLUP AUTHORITY — D-046 COMPLÈTE, PRÊT À
+IMPLÉMENTER, AUCUN CODE CRÉÉ.** Table future `crm_contact_commerce_rollups`, PK
+`(contact_id,currency)`, projection mutable par autorité PostgreSQL uniquement
+(pas append-only), owner `digitrove_crm_executor`, aucun accès runtime, aucun
+modèle/service/job/listener/commande/scheduler. `acquired_orders_count` inclut
+les commandes gratuites. Aucune migration `000022`, aucun worker rollup, backfill,
+UI, segment, campagne, P6-A1.2+, P6-A2+, P7 ou P5-A3D.
 Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —

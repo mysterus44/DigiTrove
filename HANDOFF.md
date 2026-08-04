@@ -501,16 +501,19 @@
 
 ## 🛑 PROCHAINE TÂCHE
 
-## ⛔ P6-A1.1 — Currency-safe Commerce Rollup Authority (Audit terminé, implémentation à faire)
+## ⛔ P6-A1.1 — Currency-safe Commerce Rollup Authority
 
-L'audit d'architecture a été réalisé et consigné sous **D-046** dans `DECISIONS_LOG.md`.
+**Statut** : AUDIT COMPLET (D-046) — IMPLÉMENTATION NON COMMENCÉE.
 
-P6-A1.0 est implémenté sur `p6-a1-0-durable-order-crm-attribution` et doit être
-reviewé puis mergé avant toute suite. Le prochain gate séparé est P6-A1.1 : table
-et autorité PostgreSQL de reconstruction `(contact_id, currency)` définies par
-D-044, sans worker LOGIN, backfill, UI, segment, campagne ou export. La future
-migration serait `000022`, mais elle n'existe pas et ne doit pas être créée dans
-la présente exécution.
+**P6-A1.0 TERMINÉ, MERGÉ ET VALIDÉ** — PR #32, head
+`562d83ef661ca83bc1e3909363d6b9a226d4c6ed`, merge
+`77652f2b309a737dea46ec45c6ad5cbf13e849e8`, CI #39 success.
+
+Le contrat complet D-046 fige : table `crm_contact_commerce_rollups`, PK
+`(contact_id,currency)`, projection mutable par autorité PostgreSQL uniquement,
+owner `digitrove_crm_executor`, aucun accès runtime, aucun modèle/service/job
+applicatif. La future migration serait `000022`, mais elle n'existe pas.
+P6-A1.2 (worker/réconciliation) et P6-A1.3 (backfill) sont séparés.
 
 ### 2026-08-04 — Codex (hardening pré-PR P6-A1.0)
 
@@ -1045,10 +1048,19 @@ aucun push direct sur `main`.
 ## 📖 JOURNAL DES PASSATIONS (le plus récent en haut)
 
 ### 2026-08-04 — Codex (Clôture P6-A1.0 et Audit P6-A1.1)
-- Validation post-merge PR #32 sur `77652f2` : tests complets verts (CI #39, 883 tests, 6273 assertions), Pint et frontières de rôles PG vérifiés.
-- Réalisation stricte de l'audit d'architecture pour le prochain gate `P6-A1.1` consigné sous **D-046** : règles financières immuables, sources de vérité (`orders`, `payments`, `refunds`), gestion des états (net) et tolérance aux échecs (idempotence).
-- Aucune création de branche, aucune migration, aucun rôle PG supplémentaire créés conformément aux instructions de phase B (strictement documentaire).
-- Le dépôt reste propre sur la branche stable, prêt pour implémenter P6-A1.1 au prochain passage.
+- Validation post-merge PR #32 sur `77652f2` : P6-A1.0 **48/285**, P6-A0 **40/235**,
+  suite complète **883/6273**, Pint **367**, 37 migrations, diff-check verts.
+- Commit `7d53dc5` (clôture initiale incomplète) : `git add .` utilisé au lieu du
+  staging explicite — déviation de protocole sans impact sur le contenu (4 docs) ;
+  D-046 contenait « append-only / reconstruction » (contradictoire), un choix ouvert
+  « executor ou dédié », et mentionnait un worker dans le périmètre A1.1.
+  HANDOFF conservait une phrase obsolète disant que P6-A1.0 devait être reviewé.
+- Commit correctif (présent) : D-046 complétée avec le contrat définitif (population,
+  source financière, commandes gratuites, schéma exact, types monétaires, cycle de
+  vie, autorité, ACL, découpage A1.1/A1.2/A1.3, matrice de tests). HANDOFF corrigé.
+  DigiTrove_Schema_BDD_v1.md mis à jour avec le contrat futur P6-A1.1.
+  Staging explicite fichier par fichier.
+- Aucune branche, migration, rôle PG, code P6-A1.1 créés.
 
 
 ### 2026-07-24 — Codex (clôture post-merge P5-A0)

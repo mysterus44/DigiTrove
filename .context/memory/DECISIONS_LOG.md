@@ -3529,33 +3529,178 @@ préservant P6-A0; suite complète **883 / 6273**; Pint **367 fichiers**;
 **91/364** et P3-B **18/354**. Aucune migration `000022`, table rollup, worker
 LOGIN, backfill, UI, segment, campagne, export, relance, affiliation, P6-A2+, P7 ou P5-A3D n'est créé.
 
-### D-046 — Audit d'Architecture : Currency-safe Commerce Rollup Authority (P6-A1.1) ✅
+### D-046 — Currency-safe Commerce Rollup Authority : Contrat Complet P6-A1.1 ✅
 
-**Date** : 2026-08-04. **Statut** : **AUDITÉ UNIQUEMENT, AUCUN CODE ÉCRIT**.
+**Date** : 2026-08-04 (complétée). **Statut** : **D-046 COMPLÈTE — P6-A1.1 AUDITÉ
+ET PRÊT À IMPLÉMENTER — AUCUN CODE P6-A1.1 CRÉÉ**.
 
-**CONTEXTE** :
-Avant d'implémenter le rollup financier CRM (le gate P6-A1.1), un audit strict de l'architecture existante était requis pour garantir l'indépendance de l'analytique et l'exactitude des calculs monétaires.
+**NOTE DE PROTOCOLE** : le commit précédent `7d53dc5` a utilisé `git add .` au lieu
+du staging explicite fichier par fichier — déviation de protocole sans impact sur le
+contenu distant (seuls quatre documents modifiés), corrigée par le présent commit qui
+utilise le staging explicite obligatoire.
 
-**CHOIX / RÉSULTATS DE L'AUDIT** :
-L'audit a permis de figer les règles d'implémentation du futur gate P6-A1.1 :
-1. **Source de Vérité (Modèle Commerce)** :
-   - `orders` (statut `paid`, `partially_refunded`, `refunded` avec `paid_at IS NOT NULL` et `total_minor`).
-   - `payments` (un seul `succeeded` exigé par la contrainte `validate_payment_order_consistency`, montant strict).
-   - `refunds` (`succeeded` uniquement, capés au montant total capturé de la commande).
-2. **Population Cible (Éligibilité CRM)** :
-   - La cible est la table `crm_contacts`, reliée aux commandes par `crm_order_attributions` (FK `order_id`).
-   - La projection finale sera une granularité `(contact_id, currency)`.
-3. **Formule Financière (Calculs et devises)** :
-   - Le montant net sera calculé en `BIGINT` selon la formule : `total_minor` (payé) - somme des `amount_minor` (remboursés `succeeded`).
-   - Les devises (`currency`) sont strictement cloisonnées, aucun taux de change (FX) implicite ou explicite n'est toléré.
-4. **Tolérance aux Échecs & Désynchronisation** :
-   - L'architecture du rollup sera idempotente et fonctionnera en "append-only" / "reconstruction".
-   - Le calcul s'exécutera sous verrou via un worker (job séparé) et une autorité PostgreSQL (`digitrove_crm_executor` ou dédié), de façon asynchrone sans bloquer la transaction `Order` ni l'outbox d'attribution.
-5. **Recommandation** :
-   - Le gate P6-A1.1 doit d'abord implémenter l'**Autorité Rollup** (tables, trigger de sécurité, fonctions) de façon purement structurelle, sans lancer l'orchestration (P6-A1.2 Worker/Réconciliation) ni le backfill (P6-A1.3).
+---
 
-**IMPACT** :
-Le futur gate P6-A1.1 devra respecter ces invariants. Conformément au protocole, aucune création de la migration `000022` ni du code de rollup n'a été effectuée à ce stade.
+#### 4.1 — Population éligible
+
+Le rollup futur utilise exclusivement `crm_order_attributions INNER JOIN orders`.
+Conditions Order : `status IN ('paid', 'partially_refunded', 'refunded')` ET
+`paid_at IS NOT NULL`.
+
+Exclusions : Order non attribué ; outbox encore `pending` ; Order `unattributable` ;
+Order `pending`, `payment_review`, `cancelled` ou `expired` ; résolution dynamique
+par e-mail ; User ; Visitor ; Analytics ; prix catalogue courant.
+
+Un contact anonymisé conserve ses faits sur son ancien `contact_id`. Un nouveau
+contact portant ultérieurement le même e-mail repart sans historique.
+
+#### 4.2 — Source financière
+
+Source du brut : `orders.total_minor`. Source de la devise : `orders.currency`.
+Date d'acquisition : `orders.paid_at`. Les Payments servent uniquement à vérifier
+le contrat Commerce existant. Ne jamais additionner `orders.total_minor` et
+`payments.amount_minor`.
+
+Remboursements : `SUM(refunds.amount_minor) WHERE refunds.status = 'succeeded'
+AND refunds.payment_id` appartient au Payment `succeeded` de l'Order. Agrégat des
+Refunds par Order avant agrégation par contact/devise afin d'éviter toute
+multiplication de lignes.
+
+#### 4.3 — Commandes gratuites
+
+Décision : les commandes gratuites acquises sont incluses. Elles incrémentent le
+compteur, participent aux dates `first/last_acquired_at`, et ajoutent zéro au brut,
+au remboursement et au net. Nom obligatoire : `acquired_orders_count`. Ne pas
+utiliser `paid_orders_count`.
+
+#### 4.4 — Schéma futur exact
+
+Table future : `crm_contact_commerce_rollups`.
+Migration future : `2026_07_14_000022_create_crm_contact_commerce_rollups.php`.
+Clé primaire : `(contact_id, currency)`.
+
+Colonnes retenues :
+
+| Colonne | Type |
+|---------|------|
+| `contact_id` | `BIGINT NOT NULL` |
+| `currency` | `VARCHAR(3) NOT NULL` |
+| `acquired_orders_count` | `BIGINT NOT NULL` |
+| `gross_revenue_minor` | `BIGINT NOT NULL` |
+| `refunded_amount_minor` | `BIGINT NOT NULL` |
+| `net_revenue_minor` | `BIGINT NOT NULL GENERATED ALWAYS AS (gross_revenue_minor - refunded_amount_minor) STORED` |
+| `first_acquired_at` | `TIMESTAMPTZ NOT NULL` |
+| `last_acquired_at` | `TIMESTAMPTZ NOT NULL` |
+| `last_refunded_at` | `TIMESTAMPTZ NULL` |
+| `calculation_version` | `SMALLINT NOT NULL` |
+| `refreshed_at` | `TIMESTAMPTZ NOT NULL` |
+
+Ne pas créer : `created_at`, `updated_at`, `reconciled_at`, `checksum`, `email`,
+`user_id`, `visitor_id`, JSON/JSONB, `global_lifetime_value_minor`.
+
+Contraintes : `currency ~ '^[A-Z]{3}$'` ; `acquired_orders_count > 0` ;
+`gross_revenue_minor >= 0` ; `refunded_amount_minor >= 0` ;
+`refunded_amount_minor <= gross_revenue_minor` ; `calculation_version > 0` ;
+`first_acquired_at <= last_acquired_at`.
+
+FK : `contact_id → crm_contacts.id ON DELETE RESTRICT`. Index supplémentaire :
+aucun — la PK commence déjà par `contact_id` ; tout index futur exige une preuve
+de requête.
+
+#### 4.5 — Types monétaires
+
+Stockage : `BIGINT`. Calcul intermédiaire : `NUMERIC` (PostgreSQL `SUM(BIGINT)`
+retourne `NUMERIC`). L'autorité future doit : (1) calculer en NUMERIC ;
+(2) vérifier chaque total contre `0 <= valeur <= 9223372036854775807` ;
+(3) refuser explicitement tout débordement ; (4) caster en BIGINT uniquement après
+vérification. Aucun cast silencieux, aucun FLOAT, aucun DECIMAL fractionnaire.
+Le futur DTO PHP utilisera des `int`.
+
+#### 4.6 — Cycle de vie de la ligne
+
+Une ligne existe uniquement lorsqu'au moins un Order acquis et attribué existe pour
+le couple `(contact_id, currency)`. Si le recalcul retourne
+`acquired_orders_count = 0`, l'autorité supprime la ligne existante et retourne un
+résultat vide explicite. Une commande gratuite produit néanmoins une ligne car le
+compteur est positif.
+
+**La table n'est pas append-only. C'est une projection mutable uniquement par
+autorité PostgreSQL.**
+
+#### 4.7 — Autorité PostgreSQL
+
+Fonction future : `refresh_crm_contact_commerce_rollup(p_contact_id BIGINT,
+p_currency VARCHAR)`.
+
+Elle doit : valider le contact ; valider la devise ; prendre un advisory
+transaction lock déterministe sur contact/devise ; calculer les métriques dans
+une seule instruction SQL/CTE ; utiliser un snapshot cohérent de cette instruction ;
+faire un UPSERT atomique ; supprimer la ligne si aucun Order éligible ; être
+idempotente ; retourner un DTO minimal sans PII ; qualifier tous les objets ;
+utiliser un `search_path` fixe ; ne lire aucune table Analytics ; ne créer ni
+contact ni attribution.
+
+Isolation retenue : `READ COMMITTED` + une instruction d'agrégation cohérente +
+advisory transaction lock par contact/devise. Ne pas imposer `SERIALIZABLE`.
+
+#### 4.8 — Propriétaire et ACL
+
+Décision unique : `owner = digitrove_crm_executor`.
+
+P6-A1.1 ne crée aucun rôle ; conserve executor `NOLOGIN/NOINHERIT` ; transfère la
+propriété de la table et de la fonction à l'executor ; révoque tout accès `PUBLIC` ;
+n'accorde aucun `SELECT/DML/EXECUTE` à `digitrove_runtime` ; n'accorde aucun accès
+aux séquences ; ne crée aucun reader ; ne crée aucun worker LOGIN.
+
+La protection repose sur : ownership, `REVOKE`, absence de membership vers
+l'executor, fonction `SECURITY DEFINER` comme seule frontière de mutation. Le futur
+worker recevra `EXECUTE` uniquement dans P6-A1.2.
+
+#### 4.9 — Modèle applicatif (P6-A1.1)
+
+Aucun modèle Eloquent, aucun service Laravel, aucun DTO PHP, aucun job, aucun
+listener, aucune commande, aucun scheduler. P6-A1.1 est une autorité PostgreSQL
+structurelle et testée.
+
+#### 4.10 — Signaux et durabilité future (P6-A1.2, P6-A1.3)
+
+P6-A1.2 devra créer une outbox durable distincte de refresh, car `OrderPaid` peut
+être perdu, un Refund `succeeded` doit provoquer un nouveau calcul, une attribution
+créée après le paiement doit provoquer un calcul, et le replay doit rester sans
+double comptage. P6-A1.2 contiendra : outbox de refresh, worker
+`order/contact/currency` ID-only, signaux post-commit faibles, sweeper, scheduler,
+réconciliation.
+
+P6-A1.3 reste le backfill explicite : désactivé par défaut, dry-run, borné,
+reprenable, audité, sans création de contact, sans attribution par e-mail.
+
+P6-A1.1 ne crée aucun de ces éléments.
+
+#### 4.11 — Matrice de tests futurs (à documenter, non créés)
+
+**Schéma** : migration `000022` uniquement ; une table ; aucune `000023` ;
+PK `(contact_id,currency)` ; FK RESTRICT ; devise uppercase ; BIGINT monétaires ;
+net généré ; version positive ; aucun e-mail, User, Visitor, JSON ou float.
+
+**Calcul** : un Order payant ; un Order gratuit ; plusieurs Orders ;
+plusieurs devises ; pending/review ignorés ; Order unattributable ignoré ;
+Refund partiel ; Refund complet ; Refunds multiples ; Refund non `succeeded`
+ignoré ; dates exactes ; net exact ; anonymisation conservée ; nouveau contact
+séparé ; débordement refusé.
+
+**Idempotence et concurrence** : replay ; deux refresh du même couple ; deux devises
+simultanées ; nouvelle attribution concurrente ; nouveau Refund concurrent ;
+aucun double comptage ; aucun état partiel ; rollback atomique.
+
+**ACL** : PUBLIC sans accès ; runtime sans SELECT ; runtime sans DML ;
+runtime sans EXECUTE ; executor NOLOGIN/NOINHERIT ; SECURITY DEFINER ;
+`search_path` fixe ; objets qualifiés ; aucun nouveau rôle.
+
+**Rollback** : le rollback de `000022` doit supprimer uniquement la fonction de
+refresh, la table `crm_contact_commerce_rollups` et les privilèges P6-A1.1. Il doit
+conserver : `crm_contacts`, `crm_marketing_consent_events`,
+`crm_order_attribution_outbox`, `crm_order_attributions`, `orders`, `payments`,
+`refunds`, `digitrove_crm_executor`.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

@@ -531,6 +531,72 @@ global, replay, ordre inverse, worker EXECUTE-only et réconciliation.
 
 ---
 
+### FUTUR CONTRAT P6-A1.1 — NON IMPLÉMENTÉ
+
+> **D-046 COMPLÈTE — Aucune migration, table, fonction ou rôle ci-dessous n'existe
+> encore. Ce contrat fige les décisions d'audit pour la future migration `000022`.**
+
+Table future : `crm_contact_commerce_rollups`.
+Migration future : `2026_07_14_000022_create_crm_contact_commerce_rollups.php`.
+PK : `(contact_id, currency)`.
+
+```sql
+-- FUTUR — NON MIGRÉ
+crm_contact_commerce_rollups
+    contact_id              BIGINT NOT NULL REFERENCES crm_contacts(id) ON DELETE RESTRICT
+    currency                VARCHAR(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$')
+    acquired_orders_count   BIGINT NOT NULL CHECK (acquired_orders_count > 0)
+    gross_revenue_minor     BIGINT NOT NULL CHECK (gross_revenue_minor >= 0)
+    refunded_amount_minor   BIGINT NOT NULL CHECK (refunded_amount_minor >= 0
+                            AND refunded_amount_minor <= gross_revenue_minor)
+    net_revenue_minor       BIGINT NOT NULL GENERATED ALWAYS AS
+                            (gross_revenue_minor - refunded_amount_minor) STORED
+    first_acquired_at       TIMESTAMPTZ NOT NULL
+    last_acquired_at        TIMESTAMPTZ NOT NULL CHECK (first_acquired_at <= last_acquired_at)
+    last_refunded_at        TIMESTAMPTZ NULL
+    calculation_version     SMALLINT NOT NULL CHECK (calculation_version > 0)
+    refreshed_at            TIMESTAMPTZ NOT NULL
+    PRIMARY KEY (contact_id, currency)
+```
+
+Colonnes exclues : `created_at`, `updated_at`, `reconciled_at`, `checksum`,
+`email`, `user_id`, `visitor_id`, JSON/JSONB, `global_lifetime_value_minor`.
+Index supplémentaire : aucun — la PK commence déjà par `contact_id`.
+
+**Population** : `crm_order_attributions INNER JOIN orders` avec
+`status IN ('paid','partially_refunded','refunded') AND paid_at IS NOT NULL`.
+Exclut : non attribué, outbox pending, unattributable, pending/review/cancelled/
+expired, résolution dynamique, User, Visitor, Analytics, catalogue courant.
+
+**Source financière** : brut = `orders.total_minor`, devise = `orders.currency`,
+date = `orders.paid_at`. Remboursements = `SUM(refunds.amount_minor)` où
+`refunds.status = 'succeeded'`, agrégés par Order puis par contact/devise.
+Payments non additionnés. Commandes gratuites incluses (`acquired_orders_count`
+positif, zéro au brut/remboursement/net).
+
+**Types** : stockage BIGINT, calcul intermédiaire NUMERIC, vérification de
+débordement explicite `0 <= valeur <= 9223372036854775807` avant cast, aucun
+FLOAT/DECIMAL fractionnaire.
+
+**Cycle de vie** : projection mutable uniquement par autorité PostgreSQL (pas
+append-only). La ligne est supprimée quand `acquired_orders_count = 0`.
+
+**Autorité future** : `refresh_crm_contact_commerce_rollup(p_contact_id, p_currency)`,
+SECURITY DEFINER, owner `digitrove_crm_executor`, `search_path` fixe, advisory
+transaction lock, UPSERT/DELETE atomique, READ COMMITTED, idempotente, aucune
+lecture Analytics, aucune création contact/attribution.
+
+**ACL** : owner `digitrove_crm_executor` (NOLOGIN/NOINHERIT, existant, aucun
+nouveau rôle). Runtime sans SELECT/DML/EXECUTE. PUBLIC sans accès. Worker
+EXECUTE dans P6-A1.2 uniquement.
+
+**Rollback `000022`** : supprime la fonction de refresh, la table et les privilèges
+P6-A1.1. Conserve : `crm_contacts`, `crm_marketing_consent_events`,
+`crm_order_attribution_outbox`, `crm_order_attributions`, `orders`, `payments`,
+`refunds`, `digitrove_crm_executor`.
+
+---
+
 ## 🅱️ BLOC CATALOGUE (produits digitaux)
 
 Distinction cruciale : **le produit est une fiche marketing, le fichier est le

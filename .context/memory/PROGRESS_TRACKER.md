@@ -16,7 +16,7 @@ P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (P
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
-P6 CRM & MARKETING  : ████░░░░░░  P6-A0 et P6-A1.0 TERMINÉS ET MERGÉS (D-043, D-045) ; Audit P6-A1.1 consigné (D-046)
+P6 CRM & MARKETING  : ████░░░░░░  P6-A0 et P6-A1.0 TERMINÉS ET MERGÉS (D-043, D-045) ; D-046 COMPLÈTE — P6-A1.1 prêt à implémenter
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
@@ -514,9 +514,11 @@ Foundation**.
 ## P6 — CRM & MARKETING
 Statut : **P6-A0 CRM IDENTITY, CONSENT AND AUTHORIZATION FOUNDATION TERMINÉ,
 MERGÉ ET VALIDÉ** via PR #31, head `3276fef`, merge `47888d0` (D-043).
-**P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION PIPELINE TERMINÉ ET MERGÉ** via PR #32 sur `77652f2` (D-045).
-**Audit P6-A1.1 (Rollup Authority) CONSIGNÉ** (D-046). L'implémentation P6-A1.1,
-P6-A1.2+, P6-A2+, P7 et P5-A3D restent non commencés.
+**P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION PIPELINE TERMINÉ, MERGÉ ET VALIDÉ**
+via PR #32, head `562d83e`, merge `77652f2`, CI #39 success (D-045).
+**D-046 COMPLÈTE** — P6-A1.1 audité et prêt à implémenter, aucun code P6-A1.1
+créé. L'implémentation P6-A1.1, P6-A1.2+, P6-A2+, P7 et P5-A3D restent non
+commencés.
 
 | Tâche | Statut |
 |-------|--------|
@@ -541,13 +543,13 @@ P6-A1.2+, P6-A2+, P7 et P5-A3D restent non commencés.
 | Autorité P6-A1.0 | ✅ 5 fonctions, 3 triggers, propriétaire `digitrove_crm_executor`; runtime EXECUTE-only sur list/process, aucune lecture/écriture directe ni nouvelle identité PostgreSQL |
 | Orchestration P6-A1.0 | ✅ processor/dispatcher fail-closed, job `ShouldBeUnique` payload `orderId` avec `uniqueFor=3600`, listener faible, commande sweeper et scheduler 5 minutes désactivés par défaut |
 | Validation P6-A1.0 | ✅ 48 tests / 285 assertions; 2 scénarios de concurrence, rollback isolé, suite complète 883/6273, Pint 367, diff-check propre |
-| Rollups CRM | 🧭 `crm_contact_commerce_rollups`, clé `(contact_id,currency)`, BIGINT, net = payé - remboursé; reconstruction idempotente sous verrou, worker/reconciliation séparés |
+| Rollups CRM | 🧭 `crm_contact_commerce_rollups`, clé `(contact_id,currency)`, BIGINT, net = brut - remboursé, projection mutable par autorité PostgreSQL uniquement (D-046) ; `acquired_orders_count` inclut les commandes gratuites ; owner `digitrove_crm_executor` ; aucun accès runtime ; aucun modèle/service/job P6-A1.1 ; worker/réconciliation séparés dans P6-A1.2 |
 | Segments | ⬜ modèle recommandé C : définition dynamique allowlistée/versionnée + membres matérialisés; aucun SQL, colonne, opérateur, JSONPath ou PHP libre |
 | Paniers abandonnés | ⏸️ tables `carts`/`cart_items` présentes et checkout transactionnel existant, mais aucun flux public de création/abandon, aucune identité e-mail sur panier invité, aucun job/consentement/frequency cap |
 | Affiliation | ⏸️ **AFFILIATION NON FONDÉE — HORS PREMIER GATE P6**; aucune table/service, D-014 impose plus tard un compte et des tables dédiées |
 | Exports | ⏸️ après identité, consentement, segments et membership fiables; futur job privé audité, borné, expirant et protégé contre les formules CSV |
 | Découpage | ✅ P6-A0 → A1.0 attribution → A1.1 autorité rollup → A1.2 worker/réconciliation → A1.3 backfill explicite → A2 segments → B0 vues → B1 exports → C paniers/relances → D affiliation |
-| Prochain gate | ⛔ `P6-A1.1 — Currency-safe Commerce Rollup Authority` AUDITÉ (D-046) mais NON IMPLÉMENTÉ; aucune migration `000022`, aucun rollup/worker/backfill/UI/segment/campagne |
+| Prochain gate | ⛔ `P6-A1.1 — Currency-safe Commerce Rollup Authority` D-046 COMPLÈTE, prêt à implémenter ; aucune migration `000022`, aucun rollup/worker/backfill/UI/segment/campagne créé |
 
 ## P7 — BLOG & SEO
 | Tâche | Statut |
