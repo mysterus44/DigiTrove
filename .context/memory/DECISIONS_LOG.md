@@ -3338,8 +3338,9 @@ P5-A3D ne sont pas commencés.
 
 ### D-044 — Currency-safe CRM Commerce Rollup Architecture ⚠️
 
-**Date** : 2026-08-03. **Statut** : **AUDIT FINALISÉ, IMPLÉMENTATION NON
-COMMENCÉE - BLOCAGE D'ATTRIBUTION À LEVER**.
+**Date** : 2026-08-03. **Statut** : **AUDIT FINALISÉ; ARCHITECTURE ROLLUP
+CONSERVÉE, VOLET ATTRIBUTION SUPERSEDÉ PAR D-045**. P6-A1.1+ ne sont pas
+commencés.
 
 **SOURCES FINANCIÈRES** : Commerce est l'unique autorité. Une acquisition est un
 `orders.status` parmi `paid|partially_refunded|refunded` avec `paid_at` présent;
@@ -3370,7 +3371,8 @@ consentement. Les faits restent liés à l'ancien `contact_id` après anonymisat
 l'UI future affiche seulement « Contact anonymisé ». Un nouveau contact au même
 e-mail repart à zéro et ne reçoit ni attribution, rollup ni consentement ancien.
 
-**POINT TRANSACTIONNEL RECOMMANDÉ** : l'attribution future doit être créée dans
+**POINT TRANSACTIONNEL HISTORIQUE, SUPERSEDÉ PAR D-045** : l'audit recommandait
+que l'attribution future soit créée dans
 la même transaction que la première transition vers `OrderStatus::Paid`, sous
 verrou Order et verrou/advisory lock CRM, avec résolution exacte de
 `orders.customer_email`. Un User n'est lié que s'il est actif, non supprimé,
@@ -3380,17 +3382,14 @@ est explicitement non durable et ne peut pas porter l'identité historique.
 L'unicité `order_id` rend le replay idempotent; tout conflit de contact doit être
 refusé, jamais remplacé.
 
-**BLOCAGES D'ATTRIBUTION** : deux choix humains précèdent P6-A1.0. Premièrement,
-Commerce accepte actuellement `customer_email` jusqu'à 320 caractères et avec un
-contrat BDD moins strict, alors que CRM exige un e-mail canonique de 3 à 254
-caractères. Il faut décider entre aligner Commerce sur le contrat CRM recommandé
-de 254 caractères, après audit des données, ou élargir explicitement CRM; une
-attribution transactionnelle ne doit pas découvrir ce conflit au paiement.
-Deuxièmement, il faut accepter explicitement la sémantique fail-closed : une
-incohérence CRM ferait rollbacker la finalisation financière. L'alternative
-eventuelle exige une outbox durable et une file explicite d'Orders non attribués;
-le simple événement `OrderPaid` est insuffisant. Ces choix bloquent le code
-P6-A1.0, pas l'audit financier.
+**BLOCAGES D'ATTRIBUTION LEVÉS PAR D-045** : l'audit identifiait deux choix.
+Premièrement, Commerce conserve sa colonne historique jusqu'à 320 caractères,
+mais toute nouvelle création par checkout applique désormais le contrat CRM
+3..254; un ancien snapshot incompatible est classé terminalement sans réécriture.
+Deuxièmement, la décision humaine retient l'outbox durable plutôt que le rollback
+de la finalisation financière. Le simple événement `OrderPaid` reste insuffisant;
+outbox et sweeper apportent la reprise durable. Ces choix sont détaillés dans
+D-045 et ne bloquent plus P6-A1.0.
 
 **ROLLUP RETENU** : `crm_contact_commerce_rollups`, clé primaire
 `(contact_id, currency)`, FK contact RESTRICT, devise `VARCHAR(3)` uppercase.
@@ -3455,6 +3454,73 @@ P6-A0. Les gates rollup suivants devront aussi couvrir Order payant/gratuit,
 pending/review ignorés, refund partiel/complet/multiple, devises séparées,
 absence de total global, replay, ordre inverse, concurrence, reconstruction,
 worker EXECUTE-only et réconciliation.
+
+### D-045 — Durable CRM Attribution without Financial Rollback ✅
+
+**Date** : 2026-08-03. **Statut** : **P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION
+PIPELINE IMPLÉMENTÉ — EN ATTENTE DE REVUE/MERGE**.
+
+**CONTRAT E-MAIL** : toute nouvelle création d'Order par checkout valide une
+adresse de 3 à 254 caractères; 254 est accepté sans troncature et 255 est refusé
+avant toute commande. La colonne historique `orders.customer_email VARCHAR(320)`
+et ses données existantes ne sont pas réécrites. Une Order historique qui ne
+respecte pas le contrat CRM devient terminale `unattributable` avec la raison
+fermée `invalid_email_contract`; elle ne crée ni contact ni consentement et ne
+rollbacke jamais le paiement.
+
+**OUTBOX TRANSACTIONNELLE** : la migration unique
+`2026_07_14_000021_create_durable_crm_order_attribution_pipeline.php` crée
+`crm_order_attribution_outbox` et `crm_order_attributions`. Lors de la première
+transition de l'Order vers `paid`, un trigger insère l'outbox dans la même
+transaction financière. Il peut capturer uniquement le `contact_id` d'un contact
+actif à e-mail exact déjà présent; il n'appelle jamais `resolve_crm_contact`, ne
+crée aucun contact et ne contient ni e-mail, Visitor, cookie, session, IP, nom,
+téléphone, JSON ni autre PII. `available_at` est `TIMESTAMPTZ(6)` afin qu'une
+ligne immédiatement due ne soit jamais arrondie dans le futur.
+
+**SNAPSHOT ET ANONYMISATION** : `contact_id_snapshot` est une preuve sans PII.
+S'il existe, le traitement attribue à ce contact exact même après anonymisation;
+un nouveau contact recréé plus tard avec le même e-mail ne peut pas hériter de
+l'ancienne vente. Sans snapshot, la résolution post-commit applique D-043 : User
+seulement actif, non supprimé, vérifié et e-mail exact; sinon résolution
+`guest_order`. Aucun stitching Visitor. Toute tentative de remplacer un fait
+`order_id → contact_id` existant devient terminale
+`unattributable/attribution_conflict`, jamais un écrasement.
+
+**RÉSOLUTION POST-COMMIT DURABLE** : `OrderPaid` est seulement un signal faible
+après commit. `ProcessCrmOrderAttribution` est un job `ShouldBeUnique`, queue
+`crm`, payload `orderId` uniquement, retries/backoff bornés. Un sweeper
+`crm:dispatch-order-attributions`, désactivé par défaut, récupère par lots bornés
+les lignes dues et le scheduler le lance toutes les cinq minutes avec verrou
+d'exécution. La durabilité vient de l'outbox et du sweeper, pas de la fenêtre de
+dispatch événementielle. Le processeur ne s'exécute jamais dans une transaction
+ambiante et retourne uniquement un DTO minimal sans PII.
+
+**AUTORITÉ POSTGRESQL** : cinq fonctions et trois triggers sont possédés par le
+rôle existant `digitrove_crm_executor` NOLOGIN/NOINHERIT, avec `search_path`
+fixe. `digitrove_runtime` n'a aucun droit direct sur les deux tables ou leurs
+séquences et reçoit seulement EXECUTE sur
+`list_due_crm_order_attributions(integer)` et
+`process_crm_order_attribution(bigint)`. PUBLIC reste sans accès. Aucune nouvelle
+identité PostgreSQL n'est créée. L'executor ne reçoit sur Orders que SELECT et
+`UPDATE(id)`, privilège minimal nécessaire au verrou `SELECT ... FOR UPDATE`;
+les colonnes financières restent non modifiables.
+
+**IMMUTABILITÉ ET ÉTATS** : l'outbox est append-preserving, sans DELETE; sa preuve
+(`order_id`, snapshot, disponibilité, création) est immuable et seule la
+transition `pending → attributed|unattributable` avec incrément exact de tentative
+est permise. L'attribution finale est totalement immuable et FK RESTRICT, source
+fermée `existing_contact_snapshot|verified_account_resolution|guest_order_resolution`.
+Le processus est idempotent sous verrous Order/outbox et ne modifie jamais
+Commerce, les consentements ou les montants.
+
+**VALIDATION ET PORTÉE** : PostgreSQL 16/Redis réels, **37 migrations**, P6-A1.0
+**44 tests / 239 assertions**, deux scénarios de concurrence et rollback isolé
+préservant P6-A0; suite complète **879 / 6227**; Pint **367 fichiers**;
+`git diff --check` propre. P6-A0 reste **40/235**, P4-B **20/560**, P3-D2
+**91/364** et P3-B **18/354**. Aucune migration `000022`, table rollup, worker
+LOGIN, backfill, UI, segment, campagne, export, relance, affiliation, P6-A1.1+,
+P6-A2+, P7 ou P5-A3D n'est créé.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

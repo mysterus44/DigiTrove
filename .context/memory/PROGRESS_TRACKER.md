@@ -16,7 +16,7 @@ P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (P
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
-P6 CRM & MARKETING  : ██░░░░░░░░  P6-A0 TERMINÉ, MERGÉ ET VALIDÉ via PR #31 (`47888d0`, D-043) ; P6-A1 audité, implémentation bloquée sur le contrat d'attribution (D-044)
+P6 CRM & MARKETING  : ███░░░░░░░  P6-A0 TERMINÉ/MERGÉ ; P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION IMPLÉMENTÉ, EN ATTENTE DE REVUE/MERGE (D-045)
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
@@ -513,14 +513,15 @@ Foundation**.
 
 ## P6 — CRM & MARKETING
 Statut : **P6-A0 CRM IDENTITY, CONSENT AND AUTHORIZATION FOUNDATION TERMINÉ,
-MERGÉ ET VALIDÉ** via PR #31, head `3276fef`, merge `47888d0` (D-043). P6-A1
-est audité mais non implémenté; deux décisions d'attribution bloquent A1.0
-(D-044). P6-A2+ restent non commencés.
+MERGÉ ET VALIDÉ** via PR #31, head `3276fef`, merge `47888d0` (D-043).
+**P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION PIPELINE IMPLÉMENTÉ, EN ATTENTE DE
+REVUE/MERGE** sur `p6-a1-0-durable-order-crm-attribution` (D-045). P6-A1.1+,
+P6-A2+, P7 et P5-A3D restent non commencés.
 
 | Tâche | Statut |
 |-------|--------|
 | **P6-A0 merge** | ✅ PR #31, head `3276fef12d94f25e91fe6386e153ae3130424eb1`, merge `47888d0992aa5664e82341e52f6c3a68c4b0b15a`; CI GitHub non observé avant merge, validation locale complète verte |
-| **P6-A0 migration `000020`** | ✅ Deux tables uniquement : `crm_contacts`, `crm_marketing_consent_events`; 36 migrations, aucune `000021` |
+| **P6-A0 migration `000020`** | ✅ Frontière historique P6-A0 : deux tables uniquement, 36 migrations; `000021` appartient exclusivement au gate P6-A1.0 |
 | Identité CRM | ✅ E-mail exact normalisé par `trim` + CITEXT; aucune fusion alias/nom/IP/appareil/cookie/Visitor; `user_id` non autoritatif |
 | Achats invités et comptes | ✅ Order invité exact supporté; compte lié seulement s'il est actif, non supprimé, vérifié et de même e-mail; `resolve_crm_contact` et le trigger de liaison refusent `suspended|blocked`; aucune liaison Visitor ni backfill |
 | Consentement | ✅ Ledger append-only `email/promotional`; checkout grant seulement; compte vérifié grant/withdraw; policy version et idempotence SHA-256 obligatoires |
@@ -531,14 +532,21 @@ est audité mais non implémenté; deux décisions d'attribution bloquent A1.0
 | Validation P6-A0 | ✅ 40 tests / 235 assertions; rollback isolé et 2 tests de concurrence; suite 835/5988; Pint 347; diff-check propre |
 | Profil historique | ✅ `marketing_consent`, `consent_updated_at`, `orders_count` et `lifetime_value_minor` inchangés et non autoritatifs |
 | Audit P6-A1 | ✅ D-044 : Commerce autoritatif, acquisition `paid|partially_refunded|refunded`, `orders.paid_at`, `orders.total_minor`, unique Payment réussi et Refunds réussis; aucune FX/Analytics/catalogue |
-| Attribution Commerce → CRM | ⚠️ Option B retenue : `crm_order_attributions` immuable et transactionnelle; blocages humains sur contrat e-mail Commerce 320 vs CRM 254 et sémantique fail-closed vs outbox durable |
+| Contrat e-mail | ✅ Tout nouveau checkout accepte 3..254 caractères et refuse 255 avant création; le schéma Commerce historique `VARCHAR(320)` reste inchangé pour ne pas réécrire les Orders |
+| **P6-A1.0 migration `000021`** | ✅ Migration unique; `crm_order_attribution_outbox` durable sans PII + `crm_order_attributions` immuable; 37 migrations, aucune `000022` |
+| Capture transactionnelle | ✅ Trigger sur première transition d'Order vers `paid`; snapshot `contact_id` existant seulement, aucun resolver/contact créé dans la transaction financière; disponibilité `TIMESTAMPTZ(6)` |
+| Résolution durable | ✅ `OrderPaid` est un signal faible post-commit; job unique + sweeper borné traitent l'outbox via autorités PostgreSQL; invalidité legacy → `unattributable/invalid_email_contract`, conflit → terminal explicite, aucun rollback financier |
+| Anonymisation/identité | ✅ Snapshot contact sans PII préserve l'ancien lien après anonymisation; aucun héritage par un nouveau contact au même e-mail; compte seulement actif/non supprimé/vérifié/exact, sinon guest exact; aucun Visitor |
+| Autorité P6-A1.0 | ✅ 5 fonctions, 3 triggers, propriétaire `digitrove_crm_executor`; runtime EXECUTE-only sur list/process, aucune lecture/écriture directe ni nouvelle identité PostgreSQL |
+| Orchestration P6-A1.0 | ✅ processor/dispatcher fail-closed, job `ShouldBeUnique` payload `orderId`, listener faible, commande sweeper et scheduler 5 minutes désactivés par défaut |
+| Validation P6-A1.0 | ✅ 44 tests / 239 assertions; 2 scénarios de concurrence, rollback isolé, suite complète 879/6227, Pint 367, diff-check propre |
 | Rollups CRM | 🧭 `crm_contact_commerce_rollups`, clé `(contact_id,currency)`, BIGINT, net = payé - remboursé; reconstruction idempotente sous verrou, worker/reconciliation séparés |
 | Segments | ⬜ modèle recommandé C : définition dynamique allowlistée/versionnée + membres matérialisés; aucun SQL, colonne, opérateur, JSONPath ou PHP libre |
 | Paniers abandonnés | ⏸️ tables `carts`/`cart_items` présentes et checkout transactionnel existant, mais aucun flux public de création/abandon, aucune identité e-mail sur panier invité, aucun job/consentement/frequency cap |
 | Affiliation | ⏸️ **AFFILIATION NON FONDÉE — HORS PREMIER GATE P6**; aucune table/service, D-014 impose plus tard un compte et des tables dédiées |
 | Exports | ⏸️ après identité, consentement, segments et membership fiables; futur job privé audité, borné, expirant et protégé contre les formules CSV |
 | Découpage | ✅ P6-A0 → A1.0 attribution → A1.1 autorité rollup → A1.2 worker/réconciliation → A1.3 backfill explicite → A2 segments → B0 vues → B1 exports → C paniers/relances → D affiliation |
-| Prochain gate | ⛔ `P6-A1.0 — Immutable Order-to-CRM Attribution`, branche future `p6-a1-0-order-crm-attribution`, migration future `000021`; ne pas commencer avant décisions e-mail et atomicité |
+| Prochain gate | ⛔ `P6-A1.1 — Currency-safe Commerce Rollup Authority` NON COMMENCÉ; aucune migration `000022`, aucun rollup/worker/backfill/UI/segment/campagne |
 
 ## P7 — BLOG & SEO
 | Tâche | Statut |
