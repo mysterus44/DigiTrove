@@ -37,6 +37,15 @@ function p6a10Process(int $orderId): object
     return DB::selectOne('SELECT * FROM public.process_crm_order_attribution(?::bigint)', [$orderId]);
 }
 
+/** @return list<int> */
+function p6a10DueOrderIds(): array
+{
+    return collect(DB::select('SELECT * FROM public.list_due_crm_order_attributions(100)'))
+        ->pluck('order_id')
+        ->map(static fn ($orderId): int => (int) $orderId)
+        ->all();
+}
+
 function p6a10Acquire(Order $order): void
 {
     DB::transaction(function () use ($order): void {
@@ -251,6 +260,53 @@ it('enqueues acquired paid and free orders without resolving a contact', functio
         ->and($rows->pluck('attempt_count')->unique()->all())->toBe([0])
         ->and($rows->pluck('contact_id_snapshot')->filter()->all())->toBe([])
         ->and(DB::connection('pgsql_migration')->table('crm_contacts')->count())->toBe(0);
+});
+
+it('enqueues exactly once when financial acquisition is completed in either update order', function () {
+    $statusFirst = $this->crmPendingOrder('status-first@example.test');
+
+    DB::transaction(function () use ($statusFirst): void {
+        Payment::factory()->forOrder($statusFirst)->succeeded()->create();
+
+        $statusFirst->forceFill(['status' => OrderStatus::Paid->value])->save();
+        expect(p6a10DueOrderIds())->not->toContain($statusFirst->id);
+
+        $statusFirst->forceFill(['paid_at' => now()])->save();
+        expect(p6a10DueOrderIds())->toContain($statusFirst->id);
+
+        DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
+    });
+
+    $paidAtFirst = $this->crmPendingOrder('paid-at-first@example.test');
+
+    DB::transaction(function () use ($paidAtFirst): void {
+        Payment::factory()->forOrder($paidAtFirst)->succeeded()->create();
+
+        $paidAtFirst->forceFill(['paid_at' => now()])->save();
+        expect(p6a10DueOrderIds())->not->toContain($paidAtFirst->id);
+
+        $paidAtFirst->forceFill(['status' => OrderStatus::Paid->value])->save();
+        expect(p6a10DueOrderIds())->toContain($paidAtFirst->id);
+
+        DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
+    });
+
+    $payment = Payment::query()->where('order_id', $statusFirst->id)->sole();
+    DB::transaction(function () use ($statusFirst, $payment): void {
+        Refund::factory()->forPayment($payment)->succeeded()->create(['amount_minor' => 1_000]);
+        $statusFirst->forceFill(['status' => OrderStatus::PartiallyRefunded->value])->save();
+        DB::statement('SET CONSTRAINTS ALL IMMEDIATE');
+    });
+
+    $owner = DB::connection('pgsql_migration');
+    foreach ([$statusFirst, $paidAtFirst] as $order) {
+        expect($order->fresh()->status)->toBeIn([OrderStatus::Paid, OrderStatus::PartiallyRefunded])
+            ->and($order->fresh()->paid_at)->not->toBeNull()
+            ->and($owner->table('crm_order_attribution_outbox')->where('order_id', $order->id)->count())->toBe(1)
+            ->and($owner->table('payments')->where('order_id', $order->id)->where('status', 'succeeded')->count())->toBe(1);
+    }
+
+    expect($owner->table('crm_contacts')->count())->toBe(0);
 });
 
 it('captures one exact active contact and never replaces the snapshot', function () {

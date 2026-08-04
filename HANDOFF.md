@@ -77,11 +77,14 @@
   `crm_order_attributions`. La transition financière capture uniquement un
   `contact_id` actif déjà prouvé; elle ne résout ni ne crée jamais de contact.
   Après commit, `OrderPaid` reste un signal faible, complété par un sweeper
-  borné et un job unique qui appellent deux autorités SECURITY DEFINER
-  EXECUTE-only. Les nouveaux checkouts bornent l'e-mail à 254 caractères; les
+  borné et un job unique à TTL 3600 secondes qui appellent deux autorités SECURITY DEFINER
+  EXECUTE-only. Le trigger suit la transition du prédicat complet `status acquis
+  + paid_at non NULL` dans les deux ordres. Les nouvelles créations bornent
+  l'e-mail à 254 caractères, mais un replay exact historique reste autorisé
+  jusqu'à 320; les
   anciens Orders incompatibles deviennent `unattributable` sans rollback
-  financier. Validation : **37 migrations**, P6-A1.0 **44/239**, suite complète
-  **879/6227**, Pint **367**, concurrence/rollback/diff-check verts. Aucune
+  financier. Validation : **37 migrations**, P6-A1.0 **48/285**, suite complète
+  **883/6273**, Pint **367**, concurrence/rollback/diff-check verts. Aucune
   `000022`, aucun rollup, backfill, UI, segment ou campagne.
 - **P5-A1 FIRST-PARTY ANALYTICS INGESTION TERMINÉ, MERGÉ ET VALIDÉ** via
   [PR #27](https://github.com/mysterus44/DigiTrove/pull/27), head
@@ -509,6 +512,23 @@ D-044, sans worker LOGIN, backfill, UI, segment, campagne ou export. La future
 migration serait `000022`, mais elle n'existe pas et ne doit pas être créée dans
 la présente exécution.
 
+### 2026-08-04 — Codex (hardening pré-PR P6-A1.0)
+
+- Les trois constats pré-PR sont fermés dans le gate existant : le trigger suit
+  désormais la transition `false → true` de `status acquis + paid_at non NULL`,
+  y compris `status` puis `paid_at` et l'ordre inverse, avec une seule outbox.
+- `ProcessCrmOrderAttribution` conserve `ShouldBeUnique` et `orderId` seul, avec
+  `uniqueFor=3600`; ce TTL dépasse l'horizon déclaré des cinq tentatives et laisse
+  le sweeper récupérer un verrou abandonné, PostgreSQL restant idempotent.
+- Une nouvelle création reste limitée à 254 caractères. La recherche idempotente
+  précède ce contrôle strict après une enveloppe initiale valide jusqu'à 320 : un
+  replay historique exact 255..320 retourne la même Order sans mutation; tout
+  conflit d'e-mail reste refusé.
+- Validation réelle : **37 migrations**, P6-A1.0 **48/285**, P6-A0 **40/235**,
+  P5-A3 **54/371**, P5-A2 **25/198**, P4-C **86/559**, P4-B **20/560**, P3-D2
+  **91/364**, P3-B **18/354**, suite complète **883/6273**, Pint **367** et
+  `git diff --check` verts. Aucune `000022`; P6-A1.1+ restent non commencés.
+
 ### 2026-08-03 — Codex (P6-A1.0 attribution Order vers CRM durable)
 
 - Branche `p6-a1-0-durable-order-crm-attribution`, base exacte `8f4e91c`; une
@@ -524,7 +544,8 @@ la présente exécution.
   `process_crm_order_attribution`; `digitrove_crm_executor` reste NOLOGIN. Job
   unique, listener `OrderPaid` faible, commande sweeper et scheduler 5 minutes
   sont fail-closed et désactivés par défaut.
-- Validation réelle : **37 migrations**, P6-A1.0 **44/239**, P6-A0 **40/235**,
+- Validation réelle à l'implémentation initiale, désormais supersédée par le
+  hardening ci-dessus : **37 migrations**, P6-A1.0 **44/239**, P6-A0 **40/235**,
   P5-A3 **54/371**, P5-A2 **25/198**, P5-A1 **74/400**, P5-A0 **19/256**,
   P4-C **86/559**, P4-B **20/560**, P3-D2 **91/364**, P3-B **18/354**, suite
   **879/6227**, Pint **367**, rollback isolé, concurrence et diff-check verts.

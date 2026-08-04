@@ -32,9 +32,12 @@ it('queues one unique after-commit order-id-only CRM job from the weak signal', 
 
     $job = new ProcessCrmOrderAttribution(42);
     $payload = serialize($job);
+    $maximumDeclaredRetryHorizon = $job->tries * ($job->timeout + max($job->backoff()));
     expect($job)->toBeInstanceOf(ShouldQueue::class)
         ->and($job)->toBeInstanceOf(ShouldBeUnique::class)
         ->and($job->uniqueId())->toBe('42')
+        ->and($job->uniqueFor)->toBe(3600)
+        ->and($job->uniqueFor)->toBeGreaterThan($maximumDeclaredRetryHorizon)
         ->and($job->afterCommit)->toBeTrue()
         ->and($job->queue)->toBe('crm')
         ->and($payload)->not->toContain('@')

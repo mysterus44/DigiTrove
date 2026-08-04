@@ -503,19 +503,24 @@ indélébile et ses champs d'évidence sont immuables. L'attribution finale est
 entièrement immuable. Le snapshot de contact survit à l'anonymisation et empêche
 qu'un nouveau contact de même e-mail hérite de la vente.
 
-Les nouveaux checkouts appliquent explicitement `3..254`; la colonne historique
-Order reste `VARCHAR(320)`. Un snapshot legacy incompatible devient
+Les nouvelles créations checkout appliquent explicitement `3..254`; l'enveloppe
+d'entrée reste syntaxiquement validée et bornée à 320 afin qu'un replay exact
+retrouve d'abord un Order historique jusqu'à 320 caractères, sans nouvelle ligne,
+troncature ni mutation du Cart. La colonne historique Order reste `VARCHAR(320)`.
+Un snapshot legacy incompatible avec le processeur CRM devient
 `unattributable/invalid_email_contract` sans création de contact/consentement ni
-rollback financier. Le trigger d'Order ne résout jamais le CRM; il insère seulement
+rollback financier. Le trigger suit la transition `false → true` du prédicat
+`status IN (paid,partially_refunded,refunded) AND paid_at IS NOT NULL`, quel que
+soit l'ordre des mises à jour. Il ne résout jamais le CRM; il insère seulement
 l'outbox et, si déjà prouvé, le contact actif exact. Le traitement post-commit
 s'appuie sur cinq fonctions SECURITY DEFINER, trois triggers, un job unique à
-payload `orderId`, un listener `OrderPaid` faible et un sweeper borné planifié
+payload `orderId` et TTL 3600 secondes, un listener `OrderPaid` faible et un sweeper borné planifié
 toutes les cinq minutes mais désactivé par défaut.
 
 `digitrove_runtime` possède uniquement EXECUTE sur les fonctions de liste et de
 traitement; il n'a aucun accès direct aux tables/séquences. Le propriétaire reste
 `digitrove_crm_executor` NOLOGIN/NOINHERIT, sans nouvelle identité PostgreSQL.
-Validation : **37 migrations**, P6-A1.0 **44/239**, suite **879/6227**, Pint
+Validation : **37 migrations**, P6-A1.0 **48/285**, suite **883/6273**, Pint
 **367**, concurrence, rollback isolé et diff-check verts. Aucune `000022`, aucun
 rollup, worker LOGIN, backfill, UI, segment ou campagne. Prochain gate séparé :
 **P6-A1.1 — Currency-safe Commerce Rollup Authority**, non commencé.

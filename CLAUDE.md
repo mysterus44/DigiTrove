@@ -427,15 +427,17 @@ post-merge : **36 migrations**, P6-A0 **40/235**, suite **835/5988**, Pint
 REVUE/MERGE** sur `p6-a1-0-durable-order-crm-attribution` (**D-045**), base
 `8f4e91c`. La migration unique `000021` crée une outbox transactionnelle sans
 PII et une attribution immuable. Les nouveaux checkouts appliquent le contrat
-e-mail `3..254`; le schéma historique Commerce `VARCHAR(320)` reste intact. Le
-trigger financier capture seulement un contact actif exact déjà existant et
+e-mail `3..254`; un replay exact peut encore retourner un Order historique valide
+jusqu'à 320 caractères avant le contrôle de nouvelle création. Le schéma Commerce
+`VARCHAR(320)` reste intact. Le trigger suit la transition `false → true` du
+prédicat `status acquis + paid_at non NULL` dans les deux ordres et capture seulement un contact actif exact déjà existant; il
 n'appelle jamais le resolver. Après commit, `OrderPaid` est un signal faible;
-un job unique et un sweeper borné appellent des autorités PostgreSQL
+un job unique à TTL 3600 secondes et un sweeper borné appellent des autorités PostgreSQL
 SECURITY DEFINER EXECUTE-only. Un e-mail historique incompatible ou un conflit
 devient terminal `unattributable`, sans rollback financier. Le snapshot de
 contact préserve l'historique après anonymisation sans attribuer une ancienne
 vente à un nouveau contact de même e-mail. Validation : **37 migrations**,
-P6-A1.0 **44/239**, suite **879/6227**, Pint **367**, concurrence/rollback/
+P6-A1.0 **48/285**, suite **883/6273**, Pint **367**, concurrence/rollback/
 diff-check verts.
 
 **P6-A1.1 CURRENCY-SAFE COMMERCE ROLLUP AUTHORITY NON COMMENCÉ** (**D-044**).

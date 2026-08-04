@@ -23,6 +23,8 @@ final class ProcessCrmOrderAttribution implements ShouldBeUnique, ShouldQueue
 
     public int $timeout = 60;
 
+    public int $uniqueFor = 3600;
+
     public function __construct(public readonly int $orderId)
     {
         $this->onQueue('crm');

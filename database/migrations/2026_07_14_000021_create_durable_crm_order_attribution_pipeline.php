@@ -180,6 +180,7 @@ return new class extends Migration
 
                     IF TG_OP = 'UPDATE'
                         AND OLD.status IN ('paid', 'partially_refunded', 'refunded')
+                        AND OLD.paid_at IS NOT NULL
                     THEN
                         RETURN NEW;
                     END IF;

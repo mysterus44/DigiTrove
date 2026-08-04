@@ -532,14 +532,14 @@ P6-A2+, P7 et P5-A3D restent non commencés.
 | Validation P6-A0 | ✅ 40 tests / 235 assertions; rollback isolé et 2 tests de concurrence; suite 835/5988; Pint 347; diff-check propre |
 | Profil historique | ✅ `marketing_consent`, `consent_updated_at`, `orders_count` et `lifetime_value_minor` inchangés et non autoritatifs |
 | Audit P6-A1 | ✅ D-044 : Commerce autoritatif, acquisition `paid|partially_refunded|refunded`, `orders.paid_at`, `orders.total_minor`, unique Payment réussi et Refunds réussis; aucune FX/Analytics/catalogue |
-| Contrat e-mail | ✅ Tout nouveau checkout accepte 3..254 caractères et refuse 255 avant création; le schéma Commerce historique `VARCHAR(320)` reste inchangé pour ne pas réécrire les Orders |
+| Contrat e-mail | ✅ Toute nouvelle création accepte 3..254 caractères et refuse 255; l'enveloppe initiale reste bornée à 320 et un replay idempotent exact d'un Order historique 255..320 est servi avant le contrôle de création, sans troncature ni mutation |
 | **P6-A1.0 migration `000021`** | ✅ Migration unique; `crm_order_attribution_outbox` durable sans PII + `crm_order_attributions` immuable; 37 migrations, aucune `000022` |
-| Capture transactionnelle | ✅ Trigger sur première transition d'Order vers `paid`; snapshot `contact_id` existant seulement, aucun resolver/contact créé dans la transaction financière; disponibilité `TIMESTAMPTZ(6)` |
-| Résolution durable | ✅ `OrderPaid` est un signal faible post-commit; job unique + sweeper borné traitent l'outbox via autorités PostgreSQL; invalidité legacy → `unattributable/invalid_email_contract`, conflit → terminal explicite, aucun rollback financier |
+| Capture transactionnelle | ✅ Trigger sur transition `false → true` du prédicat complet `status acquis + paid_at non NULL`, dans les deux ordres de mise à jour; snapshot `contact_id` existant seulement, aucun resolver/contact créé dans la transaction financière; disponibilité `TIMESTAMPTZ(6)` |
+| Résolution durable | ✅ `OrderPaid` est un signal faible post-commit; job unique à TTL 3600 s + sweeper borné traitent l'outbox via autorités PostgreSQL; après expiration PostgreSQL garde l'idempotence; invalidité legacy → `unattributable/invalid_email_contract`, conflit → terminal explicite, aucun rollback financier |
 | Anonymisation/identité | ✅ Snapshot contact sans PII préserve l'ancien lien après anonymisation; aucun héritage par un nouveau contact au même e-mail; compte seulement actif/non supprimé/vérifié/exact, sinon guest exact; aucun Visitor |
 | Autorité P6-A1.0 | ✅ 5 fonctions, 3 triggers, propriétaire `digitrove_crm_executor`; runtime EXECUTE-only sur list/process, aucune lecture/écriture directe ni nouvelle identité PostgreSQL |
-| Orchestration P6-A1.0 | ✅ processor/dispatcher fail-closed, job `ShouldBeUnique` payload `orderId`, listener faible, commande sweeper et scheduler 5 minutes désactivés par défaut |
-| Validation P6-A1.0 | ✅ 44 tests / 239 assertions; 2 scénarios de concurrence, rollback isolé, suite complète 879/6227, Pint 367, diff-check propre |
+| Orchestration P6-A1.0 | ✅ processor/dispatcher fail-closed, job `ShouldBeUnique` payload `orderId` avec `uniqueFor=3600`, listener faible, commande sweeper et scheduler 5 minutes désactivés par défaut |
+| Validation P6-A1.0 | ✅ 48 tests / 285 assertions; 2 scénarios de concurrence, rollback isolé, suite complète 883/6273, Pint 367, diff-check propre |
 | Rollups CRM | 🧭 `crm_contact_commerce_rollups`, clé `(contact_id,currency)`, BIGINT, net = payé - remboursé; reconstruction idempotente sous verrou, worker/reconciliation séparés |
 | Segments | ⬜ modèle recommandé C : définition dynamique allowlistée/versionnée + membres matérialisés; aucun SQL, colonne, opérateur, JSONPath ou PHP libre |
 | Paniers abandonnés | ⏸️ tables `carts`/`cart_items` présentes et checkout transactionnel existant, mais aucun flux public de création/abandon, aucune identité e-mail sur panier invité, aucun job/consentement/frequency cap |

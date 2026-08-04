@@ -3457,22 +3457,28 @@ worker EXECUTE-only et réconciliation.
 
 ### D-045 — Durable CRM Attribution without Financial Rollback ✅
 
-**Date** : 2026-08-03. **Statut** : **P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION
+**Date** : 2026-08-03, durcie le 2026-08-04. **Statut** : **P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION
 PIPELINE IMPLÉMENTÉ — EN ATTENTE DE REVUE/MERGE**.
 
 **CONTRAT E-MAIL** : toute nouvelle création d'Order par checkout valide une
 adresse de 3 à 254 caractères; 254 est accepté sans troncature et 255 est refusé
-avant toute commande. La colonne historique `orders.customer_email VARCHAR(320)`
-et ses données existantes ne sont pas réécrites. Une Order historique qui ne
-respecte pas le contrat CRM devient terminale `unattributable` avec la raison
-fermée `invalid_email_contract`; elle ne crée ni contact ni consentement et ne
-rollbacke jamais le paiement.
+avant toute création. L'enveloppe initiale trimée et syntaxiquement validée reste
+bornée à 320 caractères afin qu'un replay idempotent exact retrouve d'abord son
+Order historique. Un Order existant jusqu'à 320 caractères est retourné sans
+nouvelle ligne ni mutation du Cart; un e-mail différent avec le même digest reste
+un conflit. La colonne historique `orders.customer_email VARCHAR(320)` et ses
+données existantes ne sont pas réécrites. Une Order historique que le processeur
+CRM ne peut attribuer devient terminale `unattributable` avec la raison fermée
+`invalid_email_contract`; elle ne crée ni contact ni consentement et ne rollbacke
+jamais le paiement.
 
 **OUTBOX TRANSACTIONNELLE** : la migration unique
 `2026_07_14_000021_create_durable_crm_order_attribution_pipeline.php` crée
-`crm_order_attribution_outbox` et `crm_order_attributions`. Lors de la première
-transition de l'Order vers `paid`, un trigger insère l'outbox dans la même
-transaction financière. Il peut capturer uniquement le `contact_id` d'un contact
+`crm_order_attribution_outbox` et `crm_order_attributions`. Le trigger suit la
+transition `false → true` du prédicat complet `status IN
+('paid','partially_refunded','refunded') AND paid_at IS NOT NULL`, indépendamment
+de l'ordre des deux mises à jour, puis insère l'outbox dans la même transaction
+financière. Il peut capturer uniquement le `contact_id` d'un contact
 actif à e-mail exact déjà présent; il n'appelle jamais `resolve_crm_contact`, ne
 crée aucun contact et ne contient ni e-mail, Visitor, cookie, session, IP, nom,
 téléphone, JSON ni autre PII. `available_at` est `TIMESTAMPTZ(6)` afin qu'une
@@ -3489,11 +3495,13 @@ seulement actif, non supprimé, vérifié et e-mail exact; sinon résolution
 
 **RÉSOLUTION POST-COMMIT DURABLE** : `OrderPaid` est seulement un signal faible
 après commit. `ProcessCrmOrderAttribution` est un job `ShouldBeUnique`, queue
-`crm`, payload `orderId` uniquement, retries/backoff bornés. Un sweeper
+`crm`, payload `orderId` uniquement, retries/backoff bornés et verrou unique à
+TTL fini de 3600 secondes, supérieur à l'horizon déclaré des cinq tentatives. Un sweeper
 `crm:dispatch-order-attributions`, désactivé par défaut, récupère par lots bornés
 les lignes dues et le scheduler le lance toutes les cinq minutes avec verrou
 d'exécution. La durabilité vient de l'outbox et du sweeper, pas de la fenêtre de
-dispatch événementielle. Le processeur ne s'exécute jamais dans une transaction
+dispatch événementielle; après expiration du verrou, l'idempotence PostgreSQL
+rend un éventuel redispatch sans danger. Le processeur ne s'exécute jamais dans une transaction
 ambiante et retourne uniquement un DTO minimal sans PII.
 
 **AUTORITÉ POSTGRESQL** : cinq fonctions et trois triggers sont possédés par le
@@ -3515,8 +3523,8 @@ Le processus est idempotent sous verrous Order/outbox et ne modifie jamais
 Commerce, les consentements ou les montants.
 
 **VALIDATION ET PORTÉE** : PostgreSQL 16/Redis réels, **37 migrations**, P6-A1.0
-**44 tests / 239 assertions**, deux scénarios de concurrence et rollback isolé
-préservant P6-A0; suite complète **879 / 6227**; Pint **367 fichiers**;
+**48 tests / 285 assertions**, deux scénarios de concurrence et rollback isolé
+préservant P6-A0; suite complète **883 / 6273**; Pint **367 fichiers**;
 `git diff --check` propre. P6-A0 reste **40/235**, P4-B **20/560**, P3-D2
 **91/364** et P3-B **18/354**. Aucune migration `000022`, table rollup, worker
 LOGIN, backfill, UI, segment, campagne, export, relance, affiliation, P6-A1.1+,
