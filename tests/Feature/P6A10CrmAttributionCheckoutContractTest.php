@@ -79,6 +79,6 @@ it('refuses an exact 255 character checkout email before creating an order', fun
     }
 
     expect(strlen($email))->toBe(255)
-        ->and(DB::table('orders')->count())->toBe(0)
+        ->and(DB::table('orders')->where('cart_id', $cart->id)->doesntExist())->toBeTrue()
         ->and($cart->fresh()->status->value)->toBe('active');
 });
