@@ -7,10 +7,8 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Codex
-- **Date** : 2026-08-03
-- **Branche git active** : `p6-a1-0-durable-order-crm-attribution`, basée sur
-  la stable `8f4e91c1d0e798d98207e3ca6c727d1d008f9051`; implémentation en attente de
-  revue/merge.
+- **Date** : 2026-08-04
+- **Branche git active** : `p0-foundations-laravel13` (stable). P6-A1.0 a été mergé (PR #32 sur `77652f2`).
 - **P5-A2 AUTHORITATIVE ROLLUPS AND PARTITION OPERATIONS TERMINÉ, MERGÉ ET
   VALIDÉ** via [PR #28](https://github.com/mysterus44/DigiTrove/pull/28), head
   `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
@@ -501,9 +499,11 @@
 
 ---
 
-## ⏭️ PROCHAINE TÂCHE
+## 🛑 PROCHAINE TÂCHE
 
-## 🎯 P6-A1.1 — Currency-safe Commerce Rollup Authority (non commencé)
+## ⛔ P6-A1.1 — Currency-safe Commerce Rollup Authority (Audit terminé, implémentation à faire)
+
+L'audit d'architecture a été réalisé et consigné sous **D-046** dans `DECISIONS_LOG.md`.
 
 P6-A1.0 est implémenté sur `p6-a1-0-durable-order-crm-attribution` et doit être
 reviewé puis mergé avant toute suite. Le prochain gate séparé est P6-A1.1 : table
@@ -655,8 +655,7 @@ la présente exécution.
   devises, signalent les jours non calculés et le jour UTC courant provisoire;
   net négatif conservé et `add_to_carts` affiché « Non suivi ».
 - Validation : P5-A3 **32/193**, P5-A2 **25/198**, P5-A1 **74/400**, P5-A0
-  **19/256**, P4-C **86/559**, P4-B **20/560**, P3-D2 **91/364**, P3-B
-  **18/354**, suite complète **773/5575**, Pint **302**, **35 migrations**,
+  **19/256**, P4-C **86/559**, P4-B **20/560**, P3-D2 **91/364**, P3-B **18/354**, suite complète **773/5575**, Pint **302**, **35 migrations**,
   `git diff --check` propre.
 
 ### 2026-07-25 — Codex (clôture post-merge P5-A2 et audit P5-A3)
@@ -1043,7 +1042,14 @@ aucun push direct sur `main`.
 
 ---
 
-## 📝 JOURNAL DES PASSATIONS (le plus récent en haut)
+## 📖 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-08-04 — Codex (Clôture P6-A1.0 et Audit P6-A1.1)
+- Validation post-merge PR #32 sur `77652f2` : tests complets verts (CI #39, 883 tests, 6273 assertions), Pint et frontières de rôles PG vérifiés.
+- Réalisation stricte de l'audit d'architecture pour le prochain gate `P6-A1.1` consigné sous **D-046** : règles financières immuables, sources de vérité (`orders`, `payments`, `refunds`), gestion des états (net) et tolérance aux échecs (idempotence).
+- Aucune création de branche, aucune migration, aucun rôle PG supplémentaire créés conformément aux instructions de phase B (strictement documentaire).
+- Le dépôt reste propre sur la branche stable, prêt pour implémenter P6-A1.1 au prochain passage.
+
 
 ### 2026-07-24 — Codex (clôture post-merge P5-A0)
 - [PR #26](https://github.com/mysterus44/DigiTrove/pull/26) mergée : head

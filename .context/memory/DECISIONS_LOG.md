@@ -3527,8 +3527,35 @@ Commerce, les consentements ou les montants.
 préservant P6-A0; suite complète **883 / 6273**; Pint **367 fichiers**;
 `git diff --check` propre. P6-A0 reste **40/235**, P4-B **20/560**, P3-D2
 **91/364** et P3-B **18/354**. Aucune migration `000022`, table rollup, worker
-LOGIN, backfill, UI, segment, campagne, export, relance, affiliation, P6-A1.1+,
-P6-A2+, P7 ou P5-A3D n'est créé.
+LOGIN, backfill, UI, segment, campagne, export, relance, affiliation, P6-A2+, P7 ou P5-A3D n'est créé.
+
+### D-046 — Audit d'Architecture : Currency-safe Commerce Rollup Authority (P6-A1.1) ✅
+
+**Date** : 2026-08-04. **Statut** : **AUDITÉ UNIQUEMENT, AUCUN CODE ÉCRIT**.
+
+**CONTEXTE** :
+Avant d'implémenter le rollup financier CRM (le gate P6-A1.1), un audit strict de l'architecture existante était requis pour garantir l'indépendance de l'analytique et l'exactitude des calculs monétaires.
+
+**CHOIX / RÉSULTATS DE L'AUDIT** :
+L'audit a permis de figer les règles d'implémentation du futur gate P6-A1.1 :
+1. **Source de Vérité (Modèle Commerce)** :
+   - `orders` (statut `paid`, `partially_refunded`, `refunded` avec `paid_at IS NOT NULL` et `total_minor`).
+   - `payments` (un seul `succeeded` exigé par la contrainte `validate_payment_order_consistency`, montant strict).
+   - `refunds` (`succeeded` uniquement, capés au montant total capturé de la commande).
+2. **Population Cible (Éligibilité CRM)** :
+   - La cible est la table `crm_contacts`, reliée aux commandes par `crm_order_attributions` (FK `order_id`).
+   - La projection finale sera une granularité `(contact_id, currency)`.
+3. **Formule Financière (Calculs et devises)** :
+   - Le montant net sera calculé en `BIGINT` selon la formule : `total_minor` (payé) - somme des `amount_minor` (remboursés `succeeded`).
+   - Les devises (`currency`) sont strictement cloisonnées, aucun taux de change (FX) implicite ou explicite n'est toléré.
+4. **Tolérance aux Échecs & Désynchronisation** :
+   - L'architecture du rollup sera idempotente et fonctionnera en "append-only" / "reconstruction".
+   - Le calcul s'exécutera sous verrou via un worker (job séparé) et une autorité PostgreSQL (`digitrove_crm_executor` ou dédié), de façon asynchrone sans bloquer la transaction `Order` ni l'outbox d'attribution.
+5. **Recommandation** :
+   - Le gate P6-A1.1 doit d'abord implémenter l'**Autorité Rollup** (tables, trigger de sécurité, fonctions) de façon purement structurelle, sans lancer l'orchestration (P6-A1.2 Worker/Réconciliation) ni le backfill (P6-A1.3).
+
+**IMPACT** :
+Le futur gate P6-A1.1 devra respecter ces invariants. Conformément au protocole, aucune création de la migration `000022` ni du code de rollup n'a été effectuée à ce stade.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

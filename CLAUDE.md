@@ -423,9 +423,7 @@ supprimé. Aucun CI GitHub n'était visible avant merge; validation locale
 post-merge : **36 migrations**, P6-A0 **40/235**, suite **835/5988**, Pint
 **347**, rollback/concurrence/diff-check verts.
 
-**P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION PIPELINE IMPLÉMENTÉ — EN ATTENTE DE
-REVUE/MERGE** sur `p6-a1-0-durable-order-crm-attribution` (**D-045**), base
-`8f4e91c`. La migration unique `000021` crée une outbox transactionnelle sans
+**P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION PIPELINE TERMINÉ ET MERGÉ** (PR #32 sur `77652f2`, **D-045**). La migration unique `000021` crée une outbox transactionnelle sans
 PII et une attribution immuable. Les nouveaux checkouts appliquent le contrat
 e-mail `3..254`; un replay exact peut encore retourner un Order historique valide
 jusqu'à 320 caractères avant le contrôle de nouvelle création. Le schéma Commerce
@@ -440,7 +438,7 @@ vente à un nouveau contact de même e-mail. Validation : **37 migrations**,
 P6-A1.0 **48/285**, suite **883/6273**, Pint **367**, concurrence/rollback/
 diff-check verts.
 
-**P6-A1.1 CURRENCY-SAFE COMMERCE ROLLUP AUTHORITY NON COMMENCÉ** (**D-044**).
+**P6-A1.1 CURRENCY-SAFE COMMERCE ROLLUP AUTHORITY AUDITÉ** (**D-046**) mais **NON IMPLÉMENTÉ**.
 La projection future reste `(contact_id,currency)`, BIGINT, net payé moins
 remboursé, reconstruite idempotemment depuis Commerce. Aucune migration `000022`,
 aucun worker rollup, backfill, UI, segment, campagne, P6-A2+, P7 ou P5-A3D.

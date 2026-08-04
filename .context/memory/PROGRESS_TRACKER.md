@@ -16,7 +16,7 @@ P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (P
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
-P6 CRM & MARKETING  : ███░░░░░░░  P6-A0 TERMINÉ/MERGÉ ; P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION IMPLÉMENTÉ, EN ATTENTE DE REVUE/MERGE (D-045)
+P6 CRM & MARKETING  : ████░░░░░░  P6-A0 et P6-A1.0 TERMINÉS ET MERGÉS (D-043, D-045) ; Audit P6-A1.1 consigné (D-046)
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
@@ -514,12 +514,13 @@ Foundation**.
 ## P6 — CRM & MARKETING
 Statut : **P6-A0 CRM IDENTITY, CONSENT AND AUTHORIZATION FOUNDATION TERMINÉ,
 MERGÉ ET VALIDÉ** via PR #31, head `3276fef`, merge `47888d0` (D-043).
-**P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION PIPELINE IMPLÉMENTÉ, EN ATTENTE DE
-REVUE/MERGE** sur `p6-a1-0-durable-order-crm-attribution` (D-045). P6-A1.1+,
-P6-A2+, P7 et P5-A3D restent non commencés.
+**P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION PIPELINE TERMINÉ ET MERGÉ** via PR #32 sur `77652f2` (D-045).
+**Audit P6-A1.1 (Rollup Authority) CONSIGNÉ** (D-046). L'implémentation P6-A1.1,
+P6-A1.2+, P6-A2+, P7 et P5-A3D restent non commencés.
 
 | Tâche | Statut |
 |-------|--------|
+| **P6-A1.0 merge** | ✅ PR #32 mergée sur `77652f2`; CI #39 succès complet (syntaxe, Pint, tests, PG roles) |
 | **P6-A0 merge** | ✅ PR #31, head `3276fef12d94f25e91fe6386e153ae3130424eb1`, merge `47888d0992aa5664e82341e52f6c3a68c4b0b15a`; CI GitHub non observé avant merge, validation locale complète verte |
 | **P6-A0 migration `000020`** | ✅ Frontière historique P6-A0 : deux tables uniquement, 36 migrations; `000021` appartient exclusivement au gate P6-A1.0 |
 | Identité CRM | ✅ E-mail exact normalisé par `trim` + CITEXT; aucune fusion alias/nom/IP/appareil/cookie/Visitor; `user_id` non autoritatif |
@@ -546,7 +547,7 @@ P6-A2+, P7 et P5-A3D restent non commencés.
 | Affiliation | ⏸️ **AFFILIATION NON FONDÉE — HORS PREMIER GATE P6**; aucune table/service, D-014 impose plus tard un compte et des tables dédiées |
 | Exports | ⏸️ après identité, consentement, segments et membership fiables; futur job privé audité, borné, expirant et protégé contre les formules CSV |
 | Découpage | ✅ P6-A0 → A1.0 attribution → A1.1 autorité rollup → A1.2 worker/réconciliation → A1.3 backfill explicite → A2 segments → B0 vues → B1 exports → C paniers/relances → D affiliation |
-| Prochain gate | ⛔ `P6-A1.1 — Currency-safe Commerce Rollup Authority` NON COMMENCÉ; aucune migration `000022`, aucun rollup/worker/backfill/UI/segment/campagne |
+| Prochain gate | ⛔ `P6-A1.1 — Currency-safe Commerce Rollup Authority` AUDITÉ (D-046) mais NON IMPLÉMENTÉ; aucune migration `000022`, aucun rollup/worker/backfill/UI/segment/campagne |
 
 ## P7 — BLOG & SEO
 | Tâche | Statut |
