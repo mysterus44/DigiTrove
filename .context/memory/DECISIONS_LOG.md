@@ -3702,5 +3702,14 @@ conserver : `crm_contacts`, `crm_marketing_consent_events`,
 `crm_order_attribution_outbox`, `crm_order_attributions`, `orders`, `payments`,
 `refunds`, `digitrove_crm_executor`.
 
+### D-046.1 : Implémentation P6-A1.1 — Currency-safe Commerce Rollup Authority ✅
+CONTEXTE : Le plan P6-A1.1 (D-046) est audité et prêt à implémenter. L'implémentation doit respecter strictement les décisions architecturales posées, notamment l'utilisation du `session_replication_role` dans les tests afin d'éprouver la suppression d'un rollup lié à un contact "sans commande".
+CHOIX :
+1. **Migration 000022** : crée la table `crm_contact_commerce_rollups` selon le schéma exact, et la fonction PostgreSQL `refresh_crm_contact_commerce_rollup(contact BIGINT, curr VARCHAR(3))`. La table et la fonction sont possédées par `digitrove_crm_executor`. La fonction est `SECURITY DEFINER` avec un `search_path` fixe.
+2. **Gestion de l'ambiguïté des colonnes** : la fonction PostgreSQL utilise le paramètre `#variable_conflict use_column` pour résoudre les collisions de nom entre les paramètres d'entrée et les colonnes de tables (`contact_id` et `currency`).
+3. **Immutabilité et tests** : Les tests (Authority, Concurrency, Privileges, Rollback, Schema) couvrent les cas (17 tests, 74 assertions). Le test vérifiant la suppression d'un rollup lorsque le contact n'a plus d'attributions actives utilise `DB::statement("SET session_replication_role = 'replica';")` temporairement pour contourner l'immuabilité stricte des commandes sans compromettre le schéma de production.
+4. **Verrous consultatifs** : la fonction de rafraîchissement prend un `pg_advisory_xact_lock` sur l'ID du contact pour sérialiser le recalcul concurrent.
+IMPACT : Fin de la phase P6-A1.1. P6-A1.2 (worker et réconciliation) est prêt à être conçu.
+
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

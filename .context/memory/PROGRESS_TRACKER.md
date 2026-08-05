@@ -16,7 +16,7 @@ P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (P
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
-P6 CRM & MARKETING  : ████░░░░░░  P6-A0 et P6-A1.0 TERMINÉS ET MERGÉS (D-043, D-045) ; D-046 COMPLÈTE — P6-A1.1 prêt à implémenter
+P6 CRM & MARKETING  : ██████░░░░  P6-A0, P6-A1.0 et P6-A1.1 TERMINÉS (D-043, D-045, D-046) ; P6-A1.1 Commerce Rollup Authority prêt à être mergé.
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
@@ -534,8 +534,7 @@ commencés.
 | Autorisation CRM | ✅ Gate `manageCustomerRelationships`, admin actif/non supprimé uniquement, indépendante de l'analytics |
 | Validation P6-A0 | ✅ 40 tests / 235 assertions; rollback isolé et 2 tests de concurrence; suite 835/5988; Pint 347; diff-check propre |
 | Profil historique | ✅ `marketing_consent`, `consent_updated_at`, `orders_count` et `lifetime_value_minor` inchangés et non autoritatifs |
-| Audit P6-A1 | ✅ D-044 : Commerce autoritatif, acquisition `paid|partially_refunded|refunded`, `orders.paid_at`, `orders.total_minor`, unique Payment réussi et Refunds réussis; aucune FX/Analytics/catalogue |
-| Contrat e-mail | ✅ Toute nouvelle création accepte 3..254 caractères et refuse 255; l'enveloppe initiale reste bornée à 320 et un replay idempotent exact d'un Order historique 255..320 est servi avant le contrôle de création, sans troncature ni mutation |
+| Audit P6-A1 | ✅ D-044 : Commerce autoritatif, acquisition `paid|partially_refunded|refunded`, `orders.paid_at`, `orders.total_minor`, unique Payment réussi et Refund |
 | **P6-A1.0 migration `000021`** | ✅ Migration unique; `crm_order_attribution_outbox` durable sans PII + `crm_order_attributions` immuable; 37 migrations, aucune `000022` |
 | Capture transactionnelle | ✅ Trigger sur transition `false → true` du prédicat complet `status acquis + paid_at non NULL`, dans les deux ordres de mise à jour; snapshot `contact_id` existant seulement, aucun resolver/contact créé dans la transaction financière; disponibilité `TIMESTAMPTZ(6)` |
 | Résolution durable | ✅ `OrderPaid` est un signal faible post-commit; job unique à TTL 3600 s + sweeper borné traitent l'outbox via autorités PostgreSQL; après expiration PostgreSQL garde l'idempotence; invalidité legacy → `unattributable/invalid_email_contract`, conflit → terminal explicite, aucun rollback financier |
@@ -543,13 +542,13 @@ commencés.
 | Autorité P6-A1.0 | ✅ 5 fonctions, 3 triggers, propriétaire `digitrove_crm_executor`; runtime EXECUTE-only sur list/process, aucune lecture/écriture directe ni nouvelle identité PostgreSQL |
 | Orchestration P6-A1.0 | ✅ processor/dispatcher fail-closed, job `ShouldBeUnique` payload `orderId` avec `uniqueFor=3600`, listener faible, commande sweeper et scheduler 5 minutes désactivés par défaut |
 | Validation P6-A1.0 | ✅ 48 tests / 285 assertions; 2 scénarios de concurrence, rollback isolé, suite complète 883/6273, Pint 367, diff-check propre |
-| Rollups CRM | 🧭 `crm_contact_commerce_rollups`, clé `(contact_id,currency)`, BIGINT, net = brut - remboursé, projection mutable par autorité PostgreSQL uniquement (D-046) ; `acquired_orders_count` inclut les commandes gratuites ; owner `digitrove_crm_executor` ; aucun accès runtime ; aucun modèle/service/job P6-A1.1 ; worker/réconciliation séparés dans P6-A1.2 |
+| Rollups CRM P6-A1.1 | ✅ `crm_contact_commerce_rollups`, clé `(contact_id,currency)`, BIGINT, net = brut - remboursé, projection mutable par autorité PostgreSQL uniquement (D-046) ; `acquired_orders_count` inclut les commandes gratuites ; owner `digitrove_crm_executor` ; aucun accès runtime ; aucun modèle/service/job P6-A1.1 |
 | Segments | ⬜ modèle recommandé C : définition dynamique allowlistée/versionnée + membres matérialisés; aucun SQL, colonne, opérateur, JSONPath ou PHP libre |
 | Paniers abandonnés | ⏸️ tables `carts`/`cart_items` présentes et checkout transactionnel existant, mais aucun flux public de création/abandon, aucune identité e-mail sur panier invité, aucun job/consentement/frequency cap |
 | Affiliation | ⏸️ **AFFILIATION NON FONDÉE — HORS PREMIER GATE P6**; aucune table/service, D-014 impose plus tard un compte et des tables dédiées |
 | Exports | ⏸️ après identité, consentement, segments et membership fiables; futur job privé audité, borné, expirant et protégé contre les formules CSV |
-| Découpage | ✅ P6-A0 → A1.0 attribution → A1.1 autorité rollup → A1.2 worker/réconciliation → A1.3 backfill explicite → A2 segments → B0 vues → B1 exports → C paniers/relances → D affiliation |
-| Prochain gate | ⛔ `P6-A1.1 — Currency-safe Commerce Rollup Authority` D-046 COMPLÈTE, prêt à implémenter ; aucune migration `000022`, aucun rollup/worker/backfill/UI/segment/campagne créé |
+| Découpage | ✅ P6-A0 → ✅ A1.0 attribution → ✅ A1.1 autorité rollup → A1.2 worker/réconciliation → A1.3 backfill explicite → A2 segments → B0 vues → B1 exports → C paniers/relances → D affiliation |
+| Prochain gate | ⛔ P6-A1.1 IMPLÉMENTÉ ET VALIDÉ LOCALEMENT. EN ATTENTE DE REVUE/MERGE. P6-A1.2 NON COMMENCÉ. |
 
 ## P7 — BLOG & SEO
 | Tâche | Statut |
