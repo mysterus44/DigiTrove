@@ -105,6 +105,23 @@ final class CrmConfig
         return $batchSize;
     }
 
+    public static function commerceRollupBackfillEnabled(): bool
+    {
+        return self::boolean(
+            'crm.commerce_rollup_backfill.enabled',
+            'The CRM commerce rollup backfill flag is invalid.',
+        );
+    }
+
+    public static function assertCommerceRollupBackfillEnabled(): void
+    {
+        self::assertEnabled();
+
+        if (! self::commerceRollupBackfillEnabled()) {
+            throw new RuntimeException('CRM commerce rollup backfill is disabled.');
+        }
+    }
+
     private static function boolean(string $key, string $message): bool
     {
         $value = config($key, false);

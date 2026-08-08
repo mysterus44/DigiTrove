@@ -59,6 +59,8 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Checkout/OrderService.php',
     // P6-A0 (D-043) — EXECUTE-only CRM identity and consent authorities.
     'Crm/Concerns/UsesCrmAuthority.php',
+    // P6-A1.3 (D-048) — explicit historical backfill operator client.
+    'Crm/CrmCommerceRollupBackfillService.php',
     // P6-A1.2 (D-047) — durable rollup refresh orchestration clients.
     'Crm/CrmCommerceRollupRefreshDispatcher.php',
     'Crm/CrmCommerceRollupRefreshProcessor.php',
@@ -448,7 +450,7 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(39)
+        ->and(DB::table('migrations')->count())->toBe(40)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')

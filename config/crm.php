@@ -11,4 +11,7 @@ return [
         'processing_enabled' => env('CRM_COMMERCE_ROLLUP_REFRESH_PROCESSING_ENABLED', false),
         'batch_size' => env('CRM_COMMERCE_ROLLUP_REFRESH_BATCH_SIZE', 50),
     ],
+    'commerce_rollup_backfill' => [
+        'enabled' => env('CRM_COMMERCE_ROLLUP_BACKFILL_ENABLED', false),
+    ],
 ];
