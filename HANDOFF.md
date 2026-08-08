@@ -7,8 +7,13 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Codex
-- **Date** : 2026-08-04
+- **Date** : 2026-08-05
 - **Branche git active** : `p0-foundations-laravel13` (stable). P6-A1.0 a été mergé (PR #32 sur `77652f2`).
+- **P6-A1.1 IMPLÉMENTÉ ET VALIDÉ LOCALEMENT**
+  **EN ATTENTE DE REVUE/MERGE**
+  **P6-A1.2 NON COMMENCÉ**
+  P6-A1.1 (Currency-safe Commerce Rollup Authority) ajoute la table `crm_contact_commerce_rollups` (migration 000022, **38 migrations**), la fonction SECURITY DEFINER `refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR)` et les tests de contrat, privilèges, rollback ACL et concurrence PostgreSQL. Ciblé P6-A1.1 **38 tests / 169 assertions** ; suite complète re-jouée verte (**921 tests / 6442 assertions**), Pint vert.
+
 - **P5-A2 AUTHORITATIVE ROLLUPS AND PARTITION OPERATIONS TERMINÉ, MERGÉ ET
   VALIDÉ** via [PR #28](https://github.com/mysterus44/DigiTrove/pull/28), head
   `03063db8acf0b974ab9369f72d188f8cb52df71b`, merge
@@ -501,19 +506,31 @@
 
 ## 🛑 PROCHAINE TÂCHE
 
-## ⛔ P6-A1.1 — Currency-safe Commerce Rollup Authority
+## ⛔ P6-A1.2 — Currency-safe Commerce Rollup Worker & Reconciliation
 
-**Statut** : AUDIT COMPLET (D-046) — IMPLÉMENTATION NON COMMENCÉE.
+**Statut** : NON COMMENCÉ.
 
-**P6-A1.0 TERMINÉ, MERGÉ ET VALIDÉ** — PR #32, head
-`562d83ef661ca83bc1e3909363d6b9a226d4c6ed`, merge
-`77652f2b309a737dea46ec45c6ad5cbf13e849e8`, CI #39 success.
+**P6-A1.1 IMPLÉMENTÉ ET VALIDÉ LOCALEMENT — EN ATTENTE DE REVUE/MERGE.** P6-A1.2 NON COMMENCÉ, interdit avant merge et clôture de P6-A1.1.
 
-Le contrat complet D-046 fige : table `crm_contact_commerce_rollups`, PK
-`(contact_id,currency)`, projection mutable par autorité PostgreSQL uniquement,
-owner `digitrove_crm_executor`, aucun accès runtime, aucun modèle/service/job
-applicatif. La future migration serait `000022`, mais elle n'existe pas.
-P6-A1.2 (worker/réconciliation) et P6-A1.3 (backfill) sont séparés.
+La migration `000022` crée la table `crm_contact_commerce_rollups` et la fonction `SECURITY DEFINER` `refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR)`, toutes deux possédées par `digitrove_crm_executor`.
+La fonction résout l'ambiguïté des colonnes par des paramètres préfixés `p_` et des objets qualifiés `public.`, utilise `ON CONFLICT ON CONSTRAINT`, un calcul intermédiaire NUMERIC avec contrôle de débordement BIGINT, et un `pg_advisory_xact_lock` par contact/devise.
+Le `down()` révoque `SELECT` sur `payments`/`refunds` pour `digitrove_crm_executor` afin de restaurer exactement la frontière `000021`.
+Les cinq tests (Authority, Concurrency, Privileges, Rollback ACL, Schema) valident un contrat exhaustif : **38 tests / 169 assertions** (`--filter=P6A11`). Aucun test ne contourne l'immuabilité des commandes ni ne désactive de trigger. Pint exécuté. P6-A1.1 est contenu sur la branche `p6-a1-1-currency-safe-commerce-rollup`.
+
+### 2026-08-05 — Codex (P6-A1.1 Commerce Rollup Authority implémenté)
+- Fait : Implémentation et hardening P6-A1.1 (migration 000022, tests de schémas, concurrence, autorité PostgreSQL, contrats de sécurité).
+- État build/tests : Suite complète 921 tests / 6424 assertions, Pint vert, diff clean.
+- Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-046 clôturée (implémentation de la projection `crm_contact_commerce_rollups` en BIGINT).
+- Laisse à : P6-A1.1 IMPLÉMENTÉ ET VALIDÉ LOCALEMENT. EN ATTENTE DE REVUE/MERGE. P6-A1.2 NON COMMENCÉ.
+
+### 2026-08-05 — Codex (P6-A1.0 clôture)
+
+- Ajout de la migration `000022` créant la table des rollups, possédée par `digitrove_crm_executor`, sans privilège pour `PUBLIC` ou `digitrove_runtime`.
+- Ajout de la fonction `refresh_crm_contact_commerce_rollup`, `SECURITY DEFINER`, possédée par `digitrove_crm_executor`.
+- Les privilèges `SELECT` sur les tables constitutives ont été octroyés.
+- Tous les tests P6-A1.1 (Autorité, Concurrence, Privilèges, Rollback, Schema) sont terminés, verts et formatés par Pint.
+- Concurrence PostgreSQL réelle validée avec `pg_advisory_xact_lock`.
+- La suppression d'un rollup obsolète (`acquired_orders_count = 0`) est éprouvée en insérant directement une projection périmée via la connexion propriétaire puis en rappelant l'autorité de refresh — sans contournement d'immuabilité de commande ni désactivation de trigger.
 
 ### 2026-08-04 — Codex (hardening pré-PR P6-A1.0)
 
