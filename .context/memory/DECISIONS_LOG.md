@@ -3702,8 +3702,8 @@ conserver : `crm_contacts`, `crm_marketing_consent_events`,
 `crm_order_attribution_outbox`, `crm_order_attributions`, `orders`, `payments`,
 `refunds`, `digitrove_crm_executor`.
 
-### D-046.1 : Implémentation P6-A1.1 — Currency-safe Commerce Rollup Authority (PRÉ-MERGE) ✅
-CONTEXTE : Le plan P6-A1.1 (D-046) est implémenté et validé localement sur la branche `p6-a1-1-currency-safe-commerce-rollup`, EN ATTENTE DE REVUE/MERGE. P6-A1.2 NON COMMENCÉ, interdit avant merge et clôture de P6-A1.1.
+### D-046.1 : Implémentation P6-A1.1 — Currency-safe Commerce Rollup Authority ✅ (MERGÉ)
+CONTEXTE : Le plan P6-A1.1 (D-046) est implémenté, validé et **mergé sur la stable** via PR #33 (head `732d491`, merge `8fe6cfa`, CI #40 success : Syntax / Pint / Tests / runtime privilege boundary). P6-A1.2 (orchestration durable du refresh) devient le prochain gate actif ; P6-A1.3 (backfill) reste non commencé.
 CHOIX :
 1. **Migration 000022** (38 migrations, aucune `000023`) : crée la table `crm_contact_commerce_rollups` (PK `(contact_id, currency)`, `net_revenue_minor` GENERATED STORED) et l'unique fonction PostgreSQL `refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR)`. Table et fonction possédées par `digitrove_crm_executor` ; fonction `SECURITY DEFINER`, `search_path` fixe, objets qualifiés `public.`.
 2. **Gestion de l'ambiguïté des colonnes** : résolue par des paramètres préfixés `p_` et des références de tables qualifiées/aliasées — sans directive de résolution de conflit de variables. L'UPSERT utilise `ON CONFLICT ON CONSTRAINT crm_contact_commerce_rollups_pkey`.
@@ -3711,7 +3711,7 @@ CHOIX :
 4. **Verrous consultatifs** : `pg_advisory_xact_lock` par contact/devise pour sérialiser le recalcul concurrent.
 5. **Tests** : Authority, Concurrency, Privileges, Rollback ACL, Schema — **38 tests / 169 assertions** (`--filter=P6A11`). La suppression d'un rollup obsolète (`acquired_orders_count = 0`) est éprouvée en insérant directement une projection périmée via la connexion propriétaire puis en rappelant l'autorité — sans contournement d'immuabilité de commande ni désactivation de trigger. Runtime et PUBLIC sans accès ; executor propriétaire ; aucun nouveau rôle ; aucune couche applicative.
 6. **Rollback (D-046.1)** : le `down()` de `000022` révoque `SELECT` sur `payments` et `refunds` pour `digitrove_crm_executor` AVANT de supprimer la fonction et la table, restaurant exactement la frontière `000021`. Prouvé par un test ACL avant/up/down via `has_table_privilege`/`has_function_privilege`.
-IMPACT : P6-A1.1 prêt pour revue. P6-A1.2 (worker et réconciliation) reste NON COMMENCÉ et interdit avant merge et clôture de P6-A1.1.
+IMPACT : P6-A1.1 clôturé et mergé (autorité financière du rollup en place). P6-A1.2 (orchestration durable du refresh + réconciliation) est désormais le gate actif ; P6-A1.3 (backfill historique explicite) reste non commencé.
 
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]

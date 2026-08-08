@@ -438,9 +438,10 @@ vente à un nouveau contact de même e-mail. Validation : **37 migrations**,
 P6-A1.0 **48/285**, suite **883/6273**, Pint **367**, concurrence/rollback/
 diff-check verts.
 
-**P6-A1.1 CURRENCY-SAFE COMMERCE ROLLUP AUTHORITY — IMPLÉMENTÉ ET VALIDÉ
-LOCALEMENT, EN ATTENTE DE REVUE/MERGE (D-046 / D-046.1). P6-A1.2 NON COMMENCÉ,
-INTERDIT AVANT MERGE ET CLÔTURE P6-A1.1.** La migration `000022`
+**P6-A1.1 CURRENCY-SAFE COMMERCE ROLLUP AUTHORITY — TERMINÉ, MERGÉ ET VALIDÉ**
+via [PR #33](https://github.com/mysterus44/DigiTrove/pull/33), head `732d491`,
+merge `8fe6cfa`, CI #40 success (D-046 / D-046.1). **P6-A1.2 est le PROCHAIN GATE
+ACTIF ; P6-A1.3 (backfill historique) reste non commencé.** La migration `000022`
 (`2026_07_14_000022_create_crm_contact_commerce_rollups.php`, **38 migrations**,
 aucune `000023`) crée la table `crm_contact_commerce_rollups`, PK
 `(contact_id,currency)`, projection mutable par autorité PostgreSQL uniquement

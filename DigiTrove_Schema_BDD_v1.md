@@ -524,7 +524,7 @@ traitement; il n'a aucun accès direct aux tables/séquences. Le propriétaire r
 Validation : **37 migrations**, P6-A1.0 **48/285**, suite **883/6273**, Pint
 **367**, concurrence, rollback isolé et diff-check verts. Aucune `000022`, aucun
 rollup, worker LOGIN, backfill, UI, segment ou campagne. Prochain gate séparé :
-**P6-A1.1 — Currency-safe Commerce Rollup Authority**, IMPLÉMENTÉ (migration 000022) ET VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE. Le worker EXECUTE-only et la réconciliation restent P6-A1.2 (non commencé).
+**P6-A1.1 — Currency-safe Commerce Rollup Authority**, TERMINÉ, MERGÉ ET VALIDÉ (migration 000022, PR #33, merge `8fe6cfa`, CI #40). L'orchestration durable du refresh (worker EXECUTE-only, réconciliation) est P6-A1.2 (PROCHAIN GATE ACTIF) ; le backfill historique est P6-A1.3 (non commencé).
 
 Les gates de rollup devront couvrir Orders payants/gratuits, pending/review
 ignorés, refunds partiels/complets/multiples, devises séparées, absence de total
@@ -532,11 +532,12 @@ global, replay, ordre inverse, worker EXECUTE-only et réconciliation.
 
 ---
 
-### CONTRAT P6-A1.1 — IMPLÉMENTÉ (migration 000022), EN ATTENTE DE REVUE/MERGE
+### CONTRAT P6-A1.1 — TERMINÉ, MERGÉ ET VALIDÉ (migration 000022)
 
 > **D-046 / D-046.1 — La migration `000022`, la table, la fonction et les ACL
-> ci-dessous existent sur la branche `p6-a1-1-currency-safe-commerce-rollup` et
-> sont validées localement. Aucun rôle nouveau n'est créé. P6-A1.2+ non commencé.**
+> ci-dessous sont mergées sur la stable (PR #33, merge `8fe6cfa`, CI #40 success).
+> Aucun rôle nouveau n'est créé. P6-A1.2 (orchestration durable) est le prochain
+> gate actif ; P6-A1.3 (backfill) reste non commencé.**
 
 Table : `crm_contact_commerce_rollups`.
 Migration : `2026_07_14_000022_create_crm_contact_commerce_rollups.php`.

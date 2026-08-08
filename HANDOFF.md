@@ -6,13 +6,12 @@
 
 ## 📍 ÉTAT ACTUEL
 
-- **Dernier agent** : Codex
-- **Date** : 2026-08-05
-- **Branche git active** : `p0-foundations-laravel13` (stable). P6-A1.0 a été mergé (PR #32 sur `77652f2`).
-- **P6-A1.1 IMPLÉMENTÉ ET VALIDÉ LOCALEMENT**
-  **EN ATTENTE DE REVUE/MERGE**
-  **P6-A1.2 NON COMMENCÉ**
-  P6-A1.1 (Currency-safe Commerce Rollup Authority) ajoute la table `crm_contact_commerce_rollups` (migration 000022, **38 migrations**), la fonction SECURITY DEFINER `refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR)` et les tests de contrat, privilèges, rollback ACL et concurrence PostgreSQL. Ciblé P6-A1.1 **38 tests / 169 assertions** ; suite complète re-jouée verte (**921 tests / 6442 assertions**), Pint vert.
+- **Dernier agent** : Claude Code
+- **Date** : 2026-08-08
+- **Branche git active** : `p0-foundations-laravel13` (stable). P6-A1.0 mergé (PR #32 sur `77652f2`) ; **P6-A1.1 mergé (PR #33 sur `8fe6cfa`)**.
+- **P6-A1.1 TERMINÉ, MERGÉ ET VALIDÉ** via [PR #33](https://github.com/mysterus44/DigiTrove/pull/33), head `732d491ef1071e117f45501fa8e877fe7c1a76a8`, merge `8fe6cfa7261eb5b2068b9b46095df5d1eb9f1b21`, CI #40 success.
+  **P6-A1.2 = PROCHAIN GATE ACTIF. P6-A1.3 (backfill) NON COMMENCÉ.**
+  P6-A1.1 (Currency-safe Commerce Rollup Authority) ajoute la table `crm_contact_commerce_rollups` (migration 000022, **38 migrations**), la fonction SECURITY DEFINER `refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR)` possédée par `digitrove_crm_executor` (autorité financière ; `down()` révoque `SELECT` sur `payments`/`refunds`) et les tests de contrat, privilèges, rollback ACL et concurrence PostgreSQL. P6A11 **38 / 169** ; suite complète **921 / 6442** ; Pint **374** ; CI #40 vert (Syntax / Pint / Tests / runtime privilege boundary).
 
 - **P5-A2 AUTHORITATIVE ROLLUPS AND PARTITION OPERATIONS TERMINÉ, MERGÉ ET
   VALIDÉ** via [PR #28](https://github.com/mysterus44/DigiTrove/pull/28), head
@@ -506,22 +505,25 @@
 
 ## 🛑 PROCHAINE TÂCHE
 
-## ⛔ P6-A1.2 — Currency-safe Commerce Rollup Worker & Reconciliation
+## 🚧 P6-A1.2 — Durable Rollup Refresh Orchestration & Reconciliation
 
-**Statut** : NON COMMENCÉ.
+**Statut** : PROCHAIN GATE ACTIF (P6-A1.1 mergé via PR #33).
 
-**P6-A1.1 IMPLÉMENTÉ ET VALIDÉ LOCALEMENT — EN ATTENTE DE REVUE/MERGE.** P6-A1.2 NON COMMENCÉ, interdit avant merge et clôture de P6-A1.1.
+P6-A1.1 a livré l'**autorité financière** `refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR)` (migration 000022, owner `digitrove_crm_executor`). P6-A1.2 orchestre **durablement** l'appel à cette autorité, sans jamais recalculer les montants lui-même :
 
-La migration `000022` crée la table `crm_contact_commerce_rollups` et la fonction `SECURITY DEFINER` `refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR)`, toutes deux possédées par `digitrove_crm_executor`.
-La fonction résout l'ambiguïté des colonnes par des paramètres préfixés `p_` et des objets qualifiés `public.`, utilise `ON CONFLICT ON CONSTRAINT`, un calcul intermédiaire NUMERIC avec contrôle de débordement BIGINT, et un `pg_advisory_xact_lock` par contact/devise.
-Le `down()` révoque `SELECT` sur `payments`/`refunds` pour `digitrove_crm_executor` afin de restaurer exactement la frontière `000021`.
-Les cinq tests (Authority, Concurrency, Privileges, Rollback ACL, Schema) valident un contrat exhaustif : **38 tests / 169 assertions** (`--filter=P6A11`). Aucun test ne contourne l'immuabilité des commandes ni ne désactive de trigger. Pint exécuté. P6-A1.1 est contenu sur la branche `p6-a1-1-currency-safe-commerce-rollup`.
+- outbox transactionnelle **coalescée** par `(contact_id, currency)` avec compteur de génération (`requested_generation >= processed_generation`) — pas une ligne par Refund ;
+- signaux PostgreSQL : `AFTER INSERT` sur `crm_order_attributions` et transition `→ succeeded` sur `refunds` (contact issu **uniquement** de l'attribution, jamais de l'e-mail) ;
+- autorités `enqueue` / `list_due` / `process` SECURITY DEFINER, runtime **EXECUTE-only** sur `list_due`/`process` seulement ;
+- worker unique `ShouldBeUnique` (payload `contactId + currency`), dispatcher borné, sweeper de **recovery** (pas de backfill), scheduler **désactivé par défaut** ;
+- migration **000023** (39 migrations), aucun backfill historique, aucun nouveau rôle.
+
+**Frontière** : P6-A1.2 = orchestration durable/recovery ; **P6-A1.3 = backfill historique explicite** (non commencé).
 
 ### 2026-08-05 — Codex (P6-A1.1 Commerce Rollup Authority implémenté)
 - Fait : Implémentation et hardening P6-A1.1 (migration 000022, tests de schémas, concurrence, autorité PostgreSQL, contrats de sécurité).
 - État build/tests : Suite complète 921 tests / 6424 assertions, Pint vert, diff clean.
 - Décisions prises (→ aussi dans DECISIONS_LOG.md) : D-046 clôturée (implémentation de la projection `crm_contact_commerce_rollups` en BIGINT).
-- Laisse à : P6-A1.1 IMPLÉMENTÉ ET VALIDÉ LOCALEMENT. EN ATTENTE DE REVUE/MERGE. P6-A1.2 NON COMMENCÉ.
+- Laisse à : P6-A1.1 TERMINÉ, MERGÉ ET VALIDÉ (PR #33, merge `8fe6cfa`, CI #40). P6-A1.2 = PROCHAIN GATE ACTIF ; P6-A1.3 non commencé.
 
 ### 2026-08-05 — Codex (P6-A1.0 clôture)
 
