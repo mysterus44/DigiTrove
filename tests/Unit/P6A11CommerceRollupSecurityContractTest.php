@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 $root = dirname(__DIR__, 2);
 
-it('adds exactly one migration with no code surface and no 000023', function () use ($root) {
+it('keeps the P6-A1.1 authority as pure schema (000022) with no rollup-authority app surface', function () use ($root) {
+    // P6-A1.2 (D-047) legitimately adds 000023 and its own orchestration app layer,
+    // so the migration frontier now sits at 39 with no 000024 yet.
     $migrations = glob($root.'/database/migrations/*.php') ?: [];
-    expect($migrations)->toHaveCount(38);
+    expect($migrations)->toHaveCount(39);
 
-    // 000022 exists
-    $m22 = glob($root.'/database/migrations/2026_07_14_000022*.php') ?: [];
-    expect($m22)->toHaveCount(1);
+    // 000022 (P6-A1.1) and 000023 (P6-A1.2) exist; 000024 does not.
+    expect(glob($root.'/database/migrations/2026_07_14_000022*.php') ?: [])->toHaveCount(1)
+        ->and(glob($root.'/database/migrations/2026_07_14_000023*.php') ?: [])->toHaveCount(1)
+        ->and(glob($root.'/database/migrations/2026_07_14_000024*.php') ?: [])->toBe([]);
 
-    // 000023 does not exist
-    $m23 = glob($root.'/database/migrations/2026_07_14_000023*.php') ?: [];
-    expect($m23)->toBe([]);
-
-    // No Eloquent model, no service, no job, no command, no controller for rollups
+    // P6-A1.1 itself introduced no Crm*Rollup* model/service/job/command/controller;
+    // the P6-A1.2 orchestration classes are named Process*/Sweep*/…RollupRefresh* and
+    // live under app/Services/Crm/, so none of these authority-shaped globs match.
     $appFiles = array_merge(
         glob($root.'/app/Models/Crm*Rollup*.php') ?: [],
         glob($root.'/app/Services/Crm*Rollup*.php') ?: [],
