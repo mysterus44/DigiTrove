@@ -67,8 +67,8 @@ it('adds no migration operation API export or worker execution surface', functio
     );
     $surface = implode("\n", array_map('file_get_contents', $surfaceFiles));
 
-    expect($migrations)->toHaveCount(38)
-        ->and(glob($root.'/database/migrations/2026_07_14_000023*.php') ?: [])->toBe([])
+    expect($migrations)->toHaveCount(39)
+        ->and(glob($root.'/database/migrations/2026_07_14_000024*.php') ?: [])->toBe([])
         ->and($surface)->not->toContain('Artisan::call')
         ->not->toContain('Process::run')
         ->not->toContain('analytics:rollup')

@@ -524,7 +524,7 @@ traitement; il n'a aucun accès direct aux tables/séquences. Le propriétaire r
 Validation : **37 migrations**, P6-A1.0 **48/285**, suite **883/6273**, Pint
 **367**, concurrence, rollback isolé et diff-check verts. Aucune `000022`, aucun
 rollup, worker LOGIN, backfill, UI, segment ou campagne. Prochain gate séparé :
-**P6-A1.1 — Currency-safe Commerce Rollup Authority**, TERMINÉ, MERGÉ ET VALIDÉ (migration 000022, PR #33, merge `8fe6cfa`, CI #40). L'orchestration durable du refresh (worker EXECUTE-only, réconciliation) est P6-A1.2 (PROCHAIN GATE ACTIF) ; le backfill historique est P6-A1.3 (non commencé).
+**P6-A1.1 — Currency-safe Commerce Rollup Authority**, TERMINÉ, MERGÉ ET VALIDÉ (migration 000022, PR #33, merge `8fe6cfa`, CI #40). L'orchestration durable du refresh (worker EXECUTE-only, réconciliation) est P6-A1.2 (IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, migration 000023, EN ATTENTE DE REVUE/MERGE — voir contrat P6-A1.2 ci-dessous) ; le backfill historique est P6-A1.3 (non commencé).
 
 Les gates de rollup devront couvrir Orders payants/gratuits, pending/review
 ignorés, refunds partiels/complets/multiples, devises séparées, absence de total
@@ -599,6 +599,81 @@ restaurant exactement la frontière `000021`. Conserve : `crm_contacts`,
 `crm_marketing_consent_events`, `crm_order_attribution_outbox`,
 `crm_order_attributions`, `orders`, `payments`, `refunds`,
 `digitrove_crm_executor`. Prouvé par un test ACL avant/up/down.
+
+---
+
+### CONTRAT P6-A1.2 — Durable Rollup Refresh Orchestration (migration 000023, IMPLÉMENTÉ, PRÉ-MERGE)
+
+> **D-047 — Migration unique `000023`
+> (`2026_07_14_000023_create_durable_crm_rollup_refresh_pipeline.php`), 39 migrations,
+> aucune `000024`, aucun backfill. Implémenté et validé localement, EN ATTENTE DE
+> REVUE/MERGE. Orchestre durablement l'autorité `refresh_crm_contact_commerce_rollup`
+> SANS jamais recalculer les montants.**
+
+Table : `crm_commerce_rollup_refresh_outbox` (owner `digitrove_crm_executor`).
+PK : `(contact_id, currency)`.
+
+```sql
+-- MIGRÉ — migration 000023
+crm_commerce_rollup_refresh_outbox
+    contact_id            BIGINT NOT NULL REFERENCES crm_contacts(id) ON DELETE RESTRICT
+    currency              VARCHAR(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$')
+    requested_generation  BIGINT NOT NULL CHECK (requested_generation >= 1)
+    processed_generation  BIGINT NOT NULL DEFAULT 0 CHECK (processed_generation >= 0)
+                          -- invariant : requested_generation >= processed_generation
+    attempt_count         INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0)
+    available_at          TIMESTAMPTZ(6) NOT NULL DEFAULT clock_timestamp()
+    last_error_code       VARCHAR(5) NULL   -- SQLSTATE, jamais de PII
+    terminal_at           TIMESTAMPTZ(6) NULL
+    terminal_reason       VARCHAR(32) NULL  -- allowlist : transient_exhausted / value_overflow /
+                          -- contact_missing / invalid_input / unexpected
+    PRIMARY KEY (contact_id, currency)
+```
+
+Colonnes **interdites** : `email`, `customer_email`, `name`, `phone`, `user_id`,
+`visitor_id`, `order_id`, `payment_id`, payload order/refund, JSON libre, exception
+brute, stack trace, tout montant.
+
+**Coalescing / génération** : chaque événement source valide **incrémente**
+`requested_generation` (une seule ligne par `(contact_id, currency)`, jamais une ligne
+par refund). `process` capture la génération observée sous verrou `FOR UPDATE` et
+avance `processed_generation` sans écraser une génération plus récente ; une génération
+concurrente arrivée pendant le traitement **n'est jamais perdue** (le verrou de ligne
+est le point de sérialisation).
+
+**Signaux (triggers)** : `AFTER INSERT` sur `crm_order_attributions` (contact =
+`NEW.contact_id`, devise = `orders.currency`) ; `AFTER INSERT OR UPDATE OF status` sur
+`refunds` pour la première entrée en `succeeded` (`succeeded` terminal/immuable ⇒
+`false → true` suffit), résolvant refund→payment→order→attribution. **Le contact vient
+uniquement de l'attribution**, jamais de l'e-mail ; un refund `succeeded` sans
+attribution n'invente aucun contact.
+
+**Autorités** (SECURITY DEFINER, owner `digitrove_crm_executor`, `search_path` fixe,
+objets qualifiés) : `enqueue_crm_commerce_rollup_refresh(contact, currency)` (UPSERT
+`ON CONFLICT ON CONSTRAINT`, réactive un terminal sur nouvel événement) ;
+`list_due_crm_commerce_rollup_refreshes(limit 1..100)` → `(contact_id, currency,
+requested_generation)` ; `process_crm_commerce_rollup_refresh(contact, currency)`
+(verrou, appelle l'autorité de refresh, avance la génération, idempotent/replay-safe,
+retry transient borné, terminal explicite sur overflow/intégrité, jamais de clamp).
+
+**ACL** : aucun nouveau rôle. Runtime **EXECUTE sur `list_due` et `process`
+uniquement** ; jamais `SELECT`/`DML` sur l'outbox, jamais `EXECUTE` sur `enqueue`, les
+triggers, ou `refresh_crm_contact_commerce_rollup`. PUBLIC sans accès.
+
+**Couche Laravel** : job ID-only `ProcessCrmCommerceRollupRefresh` (`ShouldBeUnique`,
+`contactId`+`currency`, `uniqueFor=3600`, `afterCommit`, aucun calcul monétaire) ;
+sweeper `crm:sweep-commerce-rollup-refresh` (**recovery du durable, aucun backfill**) ;
+scheduler 5 min **désactivé par défaut** (`CRM_COMMERCE_ROLLUP_REFRESH_PROCESSING_ENABLED`).
+
+**Rollback `000023`** : drop des triggers `crm_order_attributions_rollup_refresh_trigger`
+et `refunds_rollup_refresh_trigger`, révocation `EXECUTE` runtime, drop des cinq
+fonctions et de l'outbox — restaure exactement la frontière `000022`. Conserve
+`refresh_crm_contact_commerce_rollup`, `crm_contact_commerce_rollups`,
+`crm_order_attributions(_outbox)`, `orders`/`payments`/`refunds`,
+`digitrove_crm_executor`. Prouvé par un test rollback avant/up/down.
+
+**Frontière** : P6-A1.2 = orchestration durable / recovery ; **P6-A1.3 = backfill
+historique explicite** (non commencé, aucune `000024`).
 
 ---
 

@@ -69,6 +69,42 @@ final class CrmConfig
         return $batchSize;
     }
 
+    public static function commerceRollupRefreshProcessingEnabled(): bool
+    {
+        return self::boolean(
+            'crm.commerce_rollup_refresh.processing_enabled',
+            'The CRM commerce rollup refresh processing flag is invalid.',
+        );
+    }
+
+    public static function assertCommerceRollupRefreshProcessingEnabled(): void
+    {
+        self::assertEnabled();
+
+        if (! self::commerceRollupRefreshProcessingEnabled()) {
+            throw new RuntimeException('CRM commerce rollup refresh processing is disabled.');
+        }
+    }
+
+    public static function commerceRollupRefreshBatchSize(): int
+    {
+        $value = config('crm.commerce_rollup_refresh.batch_size', 50);
+        $valid = (is_int($value) && ! is_bool($value))
+            || (is_string($value) && preg_match('/\A[1-9][0-9]*\z/', $value) === 1);
+
+        if (! $valid) {
+            throw new RuntimeException('The CRM commerce rollup refresh batch size is invalid.');
+        }
+
+        $batchSize = (int) $value;
+
+        if ($batchSize < 1 || $batchSize > 100) {
+            throw new RuntimeException('The CRM commerce rollup refresh batch size is invalid.');
+        }
+
+        return $batchSize;
+    }
+
     private static function boolean(string $key, string $message): bool
     {
         $value = config($key, false);

@@ -36,6 +36,15 @@ if (CrmConfig::orderAttributionProcessingEnabled()) {
     }
 }
 
+if (CrmConfig::commerceRollupRefreshProcessingEnabled()) {
+    $crmRollupRefreshSchedule = Schedule::command('crm:sweep-commerce-rollup-refresh')->everyFiveMinutes();
+    $crmRollupRefreshSchedule->withoutOverlapping();
+
+    if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
+        $crmRollupRefreshSchedule->onOneServer();
+    }
+}
+
 if (AnalyticsOperationsConfig::enabled()) {
     $analyticsSchedules = [];
 

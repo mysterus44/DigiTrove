@@ -16,7 +16,7 @@ P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (P
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
-P6 CRM & MARKETING  : ██████░░░░  P6-A0, P6-A1.0 et P6-A1.1 TERMINÉS ET MERGÉS (D-043, D-045, D-046/D-046.1 ; P6-A1.1 = PR #33, merge 8fe6cfa, CI #40) ; P6-A1.2 Durable Rollup Refresh Orchestration = PROCHAIN GATE ACTIF ; P6-A1.3 (backfill) NON COMMENCÉ.
+P6 CRM & MARKETING  : ███████░░░  P6-A0, P6-A1.0, P6-A1.1 MERGÉS ; P6-A1.2 Durable Rollup Refresh Orchestration IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE (D-047, migration 000023) ; P6-A1.3 (backfill historique) NON COMMENCÉ.
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
@@ -548,7 +548,7 @@ commencés.
 | Affiliation | ⏸️ **AFFILIATION NON FONDÉE — HORS PREMIER GATE P6**; aucune table/service, D-014 impose plus tard un compte et des tables dédiées |
 | Exports | ⏸️ après identité, consentement, segments et membership fiables; futur job privé audité, borné, expirant et protégé contre les formules CSV |
 | Découpage | ✅ P6-A0 → ✅ A1.0 attribution → ✅ A1.1 autorité rollup → A1.2 worker/réconciliation → A1.3 backfill explicite → A2 segments → B0 vues → B1 exports → C paniers/relances → D affiliation |
-| Prochain gate | 🚧 P6-A1.1 TERMINÉ, MERGÉ ET VALIDÉ (PR #33, merge 8fe6cfa, CI #40). **P6-A1.2 — Durable Rollup Refresh Orchestration & Reconciliation = PROCHAIN GATE ACTIF** (migration 000023, orchestration durable de `refresh_crm_contact_commerce_rollup`, sans backfill). P6-A1.3 (backfill historique) non commencé. |
+| Prochain gate | 🚧 P6-A1.2 — Durable Rollup Refresh Orchestration & Reconciliation **IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE** (D-047, migration 000023 : outbox coalescée `(contact_id,currency)`, signaux attribution/refund, autorités `enqueue`/`list_due`/`process` SECURITY DEFINER, runtime EXECUTE-only list/process, scheduler désactivé par défaut, aucun backfill). **P6-A1.3 (backfill historique explicite) = PROCHAIN GATE, NON COMMENCÉ.** |
 
 ## P7 — BLOG & SEO
 | Tâche | Statut |
