@@ -673,7 +673,94 @@ fonctions et de l'outbox — restaure exactement la frontière `000022`. Conserv
 `digitrove_crm_executor`. Prouvé par un test rollback avant/up/down.
 
 **Frontière** : P6-A1.2 = orchestration durable / recovery ; **P6-A1.3 = backfill
-historique explicite** (non commencé, aucune `000024`).
+historique explicite** (migration `000024`, contrat ci-dessous).
+
+---
+
+### CONTRAT P6-A1.3 — Explicit Historical Backfill (migration 000024, IMPLÉMENTÉ, PRÉ-MERGE)
+
+> **D-048 — Migration unique `000024`
+> (`2026_07_14_000024_create_crm_commerce_rollup_backfill_runs.php`), 40 migrations,
+> aucune `000025`. Implémenté et validé localement, EN ATTENTE DE REVUE/MERGE.
+> Outil OPÉRATEUR explicite : il ne calcule aucun montant et n'écrit que dans
+> l'outbox P6-A1.2, via l'autorité d'enqueue.**
+
+Table : `crm_commerce_rollup_backfill_runs` (owner `digitrove_crm_executor`).
+
+```sql
+-- MIGRÉ — migration 000024
+crm_commerce_rollup_backfill_runs
+    id                      BIGSERIAL PRIMARY KEY
+    attribution_order_id_high_water_mark BIGINT NOT NULL CHECK (>= 0)
+    batch_size              INTEGER NOT NULL CHECK (batch_size BETWEEN 1 AND 100)
+    cursor_contact_id       BIGINT NULL CHECK (cursor_contact_id IS NULL OR cursor_contact_id > 0)
+    cursor_currency         VARCHAR(3) NULL CHECK (cursor_currency IS NULL OR cursor_currency ~ '^[A-Z]{3}$')
+                            -- cursor_contact_id et cursor_currency : tous deux NULL ou tous deux non NULL
+    batches_processed_count BIGINT NOT NULL DEFAULT 0 CHECK (>= 0)
+    enqueued_pairs_count    BIGINT NOT NULL DEFAULT 0 CHECK (>= 0)
+    status                  VARCHAR(16) NOT NULL  -- ready | running | completed | failed
+    last_error_code         VARCHAR(5) NULL CHECK (~ '^[0-9A-Z]{5}$')   -- SQLSTATE seul
+    started_at / completed_at / failed_at TIMESTAMPTZ(6) NULL  -- cohérents avec status
+    created_at / updated_at TIMESTAMPTZ(6)
+-- index unique partiel : au plus UN run actif (status IN ('ready','running'))
+```
+
+Colonnes **interdites** : `email`, `name`, `phone`, `user_id`, `visitor_id`,
+`order_id`, `refund_id`, payload JSON, message d'exception, stack trace, SQL brut.
+
+**Source** : `crm_order_attributions INNER JOIN orders` avec
+`status IN ('paid','partially_refunded','refunded') AND paid_at IS NOT NULL`.
+Contact = `crm_order_attributions.contact_id`, devise = `orders.currency`. **Aucun
+e-mail, resolver, User/Visitor stitching, consentement, Analytics ou catalogue.**
+
+**High-water mark (borne, PAS un snapshot MVCC)** : `crm_order_attributions` n'a
+**pas** de colonne `id` (PK = `order_id`) et **aucun marqueur d'insertion
+autoritatif** (`attributed_at` est `timestamp(0)` ET fourni par l'appelant). La borne
+gelée au démarrage est `attribution_order_id_high_water_mark = COALESCE(MAX(order_id), 0)`.
+Sémantique exacte : **toute attribution présente au démarrage vérifie
+`order_id <= HWM`** ; la réciproque n'est pas revendiquée. Contrat de course :
+attribution tardive sur un **nouvel** Order (`> HWM`) ⇒ ignorée ici, enqueue par le
+trigger P6-A1.2 ; sur un **ancien** Order (`<= HWM`) ⇒ enqueue par le même trigger,
+que le backfill la revoie ou non ; **double couverture inoffensive** (coalescing
+A1.2 + recalcul autoritatif A1.1). Le système est **race-safe**, pas
+snapshot-isolé. **Finitude** : attributions immuables et au plus une par Order
+(PK = `order_id`) ⇒ domaine candidat borné ⇒ le parcours keyset termine toujours.
+
+**Pagination** : keyset `(contact_id, currency)`, ordre `contact_id ASC,
+currency ASC`, **jamais d'`OFFSET`**, curseur durable, candidats `DISTINCT`
+(100 Orders XOF d'un contact = 1 couple ; XOF + USD = 2 couples).
+
+**Autorités** (SECURITY DEFINER, owner executor, `search_path` fixe) :
+`current_crm_commerce_rollup_backfill_high_water_mark`,
+`list_crm_commerce_rollup_backfill_candidates` (READ-ONLY, dry-run),
+`start_crm_commerce_rollup_backfill`, `get_crm_commerce_rollup_backfill_run`,
+`process_crm_commerce_rollup_backfill_batch`,
+`retry_crm_commerce_rollup_backfill_run`. `process_batch` **sélectionne lui-même**
+les couples : le runtime ne peut jamais injecter une identité dans `enqueue`.
+Batch transactionnel ; échec ⇒ sous-transaction annulée (aucun curseur, compteur
+ni enqueue partiel) + SQLSTATE seul ; retry d'un `failed` **explicite**.
+
+**Commande** : `crm:backfill-commerce-rollups`, **dry-run par défaut**. Mutation
+seulement avec `--execute` **ET** `CRM_COMMERCE_ROLLUP_BACKFILL_ENABLED=true`.
+Options `--run`, `--batch-size` (1..100), `--max-batches` (1..100),
+`--retry-failed`. **Aucun job, scheduler ou listener de backfill.**
+
+**Idempotence** : c'est le **résultat financier** qui est idempotent, pas la
+génération. Un nouveau backfill peut ré-enqueue un couple ; P6-A1.2 coalesce et
+P6-A1.1 reconstruit autoritativement.
+
+**ACL** : aucun nouveau rôle. Runtime `EXECUTE` sur les six autorités seulement ;
+jamais `SELECT`/`DML` sur la table de runs ; jamais `EXECUTE` sur `enqueue`
+(P6-A1.2) ni `refresh` (P6-A1.1). PUBLIC sans accès.
+
+**Rollback `000024`** : révoque les `EXECUTE` runtime, supprime les six fonctions
+et la table — restaure exactement la frontière `000023`. Conserve P6-A1.2,
+P6-A1.1, P6-A1.0, P6-A0, Commerce et les rôles. Prouvé avant/up/down.
+
+**Frontière suivante** : **P6-A2 — Typed Versioned CRM Segments**, architecture
+gelée par **D-049** (définitions typées allowlistées, versions immuables,
+générations atomiques, critères monétaires currency-scoped, consentement séparé).
+**NON COMMENCÉ, aucun code, aucune migration `000025`.**
 
 ---
 

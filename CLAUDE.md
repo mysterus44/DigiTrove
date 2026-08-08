@@ -475,8 +475,44 @@ mince : job ID-only `ProcessCrmCommerceRollupRefresh` (`ShouldBeUnique`,
 `contactId`+`currency` seul, aucun calcul monétaire), sweeper
 `crm:sweep-commerce-rollup-refresh` (**recovery du durable, aucun backfill**),
 scheduler 5 min **désactivé par défaut**. Le `down()` restaure exactement la
-frontière `000022`. **P6-A1.3 (backfill historique explicite) = GATE ACTIF**
-(migration `000024`) ; **P6-A2 (Segments) non commencé**, aucune `000025`.
+frontière `000022`.
+
+**P6-A1.3 EXPLICIT HISTORICAL COMMERCE ROLLUP BACKFILL — IMPLÉMENTÉ ET VALIDÉ
+LOCALEMENT, EN ATTENTE DE REVUE/MERGE (D-048).** La migration `000024`
+(`2026_07_14_000024_create_crm_commerce_rollup_backfill_runs.php`, **40
+migrations**, aucune `000025`) ajoute l'**outil opérateur explicite** qui retrouve
+les couples `(contact_id, currency)` historiques et les **injecte dans le pipeline
+P6-A1.2** — il ne calcule aucun montant, ne crée ni contact ni attribution, ne mute
+ni Commerce ni la table rollup. Source autoritative unique :
+`crm_order_attributions ⋈ orders` acquis (**aucun e-mail, resolver, User/Visitor
+stitching ni Analytics**). ⚠️ `crm_order_attributions` n'a **pas** de colonne `id`
+(PK = `order_id`) et **aucun marqueur d'insertion autoritatif** (`attributed_at` est
+`timestamp(0)` ET fourni par l'appelant) : la borne gelée est un **high-water mark**
+`attribution_order_id_high_water_mark = MAX(order_id)`, **pas un snapshot MVCC**.
+Sémantique exacte : toute attribution présente au démarrage vérifie `order_id <= HWM`
+(la réciproque n'est pas revendiquée). Le système est **race-safe** grâce au trigger
+P6-A1.2 — une attribution tardive est toujours enqueue par lui, et la double
+couverture est inoffensive (coalescing A1.2, recalcul autoritatif A1.1). **Finitude** :
+attributions immuables + au plus une par Order ⇒ domaine borné ⇒ le run termine. **Keyset** `(contact_id, currency)` sans `OFFSET`, curseur
+durable, couples `DISTINCT`. Table de runs audités (statuts `ready|running|
+completed|failed`, `last_error_code` SQLSTATE **seulement**, aucune PII) avec
+**index unique partiel garantissant un seul run actif**. Six autorités
+`SECURITY DEFINER` (owner `digitrove_crm_executor`) ; runtime **EXECUTE-only** sur
+ces autorités, **jamais** `SELECT`/`DML` sur la table de runs, **jamais** `EXECUTE`
+sur `enqueue` (P6-A1.2) ni `refresh` (P6-A1.1) ; PUBLIC sans accès ; aucun nouveau
+rôle. Commande `crm:backfill-commerce-rollups` **dry-run par défaut** : mutation
+seulement avec **`--execute` ET `CRM_COMMERCE_ROLLUP_BACKFILL_ENABLED=true`**
+(double barrière), batches transactionnels bornés (≤100×100 par invocation),
+run **resumable**, retry d'un `failed` **explicite**. **Aucun job, scheduler ou
+listener de backfill** : le seul pipeline asynchrone reste P6-A1.2. Le `down()`
+restaure exactement la frontière `000023`.
+
+**P6-A2 (Typed Versioned CRM Segments) : architecture AUDITÉE ET GELÉE (D-049) —
+NON COMMENCÉ, aucun code, aucune migration `000025`.** Définitions typées et
+allowlistées (jamais de SQL/colonne/opérateur/JSONPath/callable libre), versions
+immuables, générations matérialisées publiées atomiquement (aucune demi-génération
+visible), critères monétaires **currency-scoped** (aucun LTV global, aucun FX,
+aucun float), consentement marketing **séparé** de l'appartenance au segment.
 Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —
