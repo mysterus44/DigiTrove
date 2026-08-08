@@ -45,6 +45,15 @@ if (CrmConfig::commerceRollupRefreshProcessingEnabled()) {
     }
 }
 
+if (CrmConfig::segmentRebuildProcessingEnabled()) {
+    $crmSegmentSchedule = Schedule::command('crm:sweep-segment-generations')->everyFiveMinutes();
+    $crmSegmentSchedule->withoutOverlapping();
+
+    if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
+        $crmSegmentSchedule->onOneServer();
+    }
+}
+
 if (AnalyticsOperationsConfig::enabled()) {
     $analyticsSchedules = [];
 

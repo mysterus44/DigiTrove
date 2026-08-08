@@ -14,4 +14,9 @@ return [
     'commerce_rollup_backfill' => [
         'enabled' => env('CRM_COMMERCE_ROLLUP_BACKFILL_ENABLED', false),
     ],
+    'segment_rebuild' => [
+        'enabled' => env('CRM_SEGMENT_REBUILD_ENABLED', false),
+        'processing_enabled' => env('CRM_SEGMENT_REBUILD_PROCESSING_ENABLED', false),
+        'batch_size' => env('CRM_SEGMENT_REBUILD_BATCH_SIZE', 50),
+    ],
 ];
