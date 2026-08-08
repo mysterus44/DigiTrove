@@ -455,10 +455,11 @@ Le `down()` révoque `SELECT` sur `payments`/`refunds` pour restaurer exactement
 frontière `000021`. Aucun worker rollup, backfill, UI, segment, campagne,
 P6-A1.2+, P6-A2+, P7 ou P5-A3D.
 
-**P6-A1.2 DURABLE ROLLUP REFRESH ORCHESTRATION & RECONCILIATION — IMPLÉMENTÉ ET
-VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE (D-047).** La migration `000023`
+**P6-A1.2 DURABLE ROLLUP REFRESH ORCHESTRATION & RECONCILIATION — TERMINÉ, MERGÉ
+ET VALIDÉ** via PR #34, head `a75eef6`, merge `7dc78aff`, CI #41 success (D-047).
+La migration `000023`
 (`2026_07_14_000023_create_durable_crm_rollup_refresh_pipeline.php`, **39
-migrations**, aucune `000024`) orchestre durablement l'appel à l'autorité
+migrations**) orchestre durablement l'appel à l'autorité
 `refresh_crm_contact_commerce_rollup` **sans jamais recalculer les montants** :
 outbox `crm_commerce_rollup_refresh_outbox` coalescée par `(contact_id, currency)`
 avec compteur de génération (`requested_generation >= processed_generation`, aucune
@@ -474,8 +475,8 @@ mince : job ID-only `ProcessCrmCommerceRollupRefresh` (`ShouldBeUnique`,
 `contactId`+`currency` seul, aucun calcul monétaire), sweeper
 `crm:sweep-commerce-rollup-refresh` (**recovery du durable, aucun backfill**),
 scheduler 5 min **désactivé par défaut**. Le `down()` restaure exactement la
-frontière `000022`. **P6-A1.3 (backfill historique explicite) = prochain gate, non
-commencé** ; aucune `000024`, aucun code de backfill avant son ouverture.
+frontière `000022`. **P6-A1.3 (backfill historique explicite) = GATE ACTIF**
+(migration `000024`) ; **P6-A2 (Segments) non commencé**, aucune `000025`.
 Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —

@@ -524,7 +524,7 @@ traitement; il n'a aucun accès direct aux tables/séquences. Le propriétaire r
 Validation : **37 migrations**, P6-A1.0 **48/285**, suite **883/6273**, Pint
 **367**, concurrence, rollback isolé et diff-check verts. Aucune `000022`, aucun
 rollup, worker LOGIN, backfill, UI, segment ou campagne. Prochain gate séparé :
-**P6-A1.1 — Currency-safe Commerce Rollup Authority**, TERMINÉ, MERGÉ ET VALIDÉ (migration 000022, PR #33, merge `8fe6cfa`, CI #40). L'orchestration durable du refresh (worker EXECUTE-only, réconciliation) est P6-A1.2 (IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, migration 000023, EN ATTENTE DE REVUE/MERGE — voir contrat P6-A1.2 ci-dessous) ; le backfill historique est P6-A1.3 (non commencé).
+**P6-A1.1 — Currency-safe Commerce Rollup Authority**, TERMINÉ, MERGÉ ET VALIDÉ (migration 000022, PR #33, merge `8fe6cfa`, CI #40). L'orchestration durable du refresh (worker EXECUTE-only, réconciliation) est P6-A1.2 (TERMINÉ, MERGÉ ET VALIDÉ, migration 000023, PR #34, merge `7dc78aff`, CI #41 — voir contrat P6-A1.2 ci-dessous) ; le backfill historique explicite est P6-A1.3 (migration 000024, GATE ACTIF).
 
 Les gates de rollup devront couvrir Orders payants/gratuits, pending/review
 ignorés, refunds partiels/complets/multiples, devises séparées, absence de total
@@ -602,7 +602,7 @@ restaurant exactement la frontière `000021`. Conserve : `crm_contacts`,
 
 ---
 
-### CONTRAT P6-A1.2 — Durable Rollup Refresh Orchestration (migration 000023, IMPLÉMENTÉ, PRÉ-MERGE)
+### CONTRAT P6-A1.2 — Durable Rollup Refresh Orchestration (migration 000023, TERMINÉ ET MERGÉ)
 
 > **D-047 — Migration unique `000023`
 > (`2026_07_14_000023_create_durable_crm_rollup_refresh_pipeline.php`), 39 migrations,

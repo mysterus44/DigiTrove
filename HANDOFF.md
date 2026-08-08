@@ -8,9 +8,10 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-08-08
-- **Branche git active** : `p0-foundations-laravel13` (stable). P6-A1.0 mergé (PR #32 sur `77652f2`) ; **P6-A1.1 mergé (PR #33 sur `8fe6cfa`)**.
+- **Branche git active** : `p0-foundations-laravel13` (stable). P6-A1.0 mergé (PR #32 sur `77652f2`) ; P6-A1.1 mergé (PR #33 sur `8fe6cfa`) ; **P6-A1.2 mergé (PR #34 sur `7dc78aff`)**.
+- **P6-A1.2 TERMINÉ, MERGÉ ET VALIDÉ** via PR #34, head `a75eef68b0621a438395a152bb5e481d0d256a0e`, merge `7dc78aff8a89aaff513efbb1239d5f943d7d21df`, **CI #41 SUCCESS**. Baseline post-merge : **967 tests / 6639 assertions**, P6A12 **46 / 196**, Pint **390 fichiers**, **39 migrations** (dernière `000023`).
+  **P6-A1.3 (Explicit Historical Commerce Rollup Backfill) = GATE ACTIF. P6-A2 (Typed Versioned CRM Segments) : architecture gelée (D-049), NON COMMENCÉ.**
 - **P6-A1.1 TERMINÉ, MERGÉ ET VALIDÉ** via [PR #33](https://github.com/mysterus44/DigiTrove/pull/33), head `732d491ef1071e117f45501fa8e877fe7c1a76a8`, merge `8fe6cfa7261eb5b2068b9b46095df5d1eb9f1b21`, CI #40 success.
-  **P6-A1.2 (Durable Rollup Refresh Orchestration) IMPLÉMENTÉ ET VALIDÉ LOCALEMENT sur `p6-a1-2-durable-rollup-refresh-orchestration` (D-047, migration 000023), EN ATTENTE DE REVUE/MERGE. P6-A1.3 (backfill historique) NON COMMENCÉ.**
   P6-A1.1 (Currency-safe Commerce Rollup Authority) ajoute la table `crm_contact_commerce_rollups` (migration 000022), la fonction SECURITY DEFINER `refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR)` possédée par `digitrove_crm_executor` (autorité financière ; `down()` révoque `SELECT` sur `payments`/`refunds`) et les tests de contrat, privilèges, rollback ACL et concurrence PostgreSQL. CI #40 vert (Syntax / Pint / Tests / runtime privilege boundary).
 
 - **P6-A1.2 DURABLE ROLLUP REFRESH ORCHESTRATION & RECONCILIATION** (D-047, **migration 000023**, 39 migrations) : outbox `crm_commerce_rollup_refresh_outbox` coalescée par `(contact_id, currency)` avec compteur de génération (`requested_generation >= processed_generation`), owner `digitrove_crm_executor`. Signaux PostgreSQL `AFTER INSERT` sur `crm_order_attributions` et `→ succeeded` sur `refunds` (contact issu **uniquement** de l'attribution). Autorités `enqueue`/`list_due`/`process` SECURITY DEFINER ; runtime **EXECUTE-only sur `list_due` et `process`**, jamais l'outbox/enqueue/refresh ; PUBLIC sans accès ; aucun nouveau rôle. `process` sérialise via `FOR UPDATE` (aucune génération concurrente perdue), retry transient borné, terminal explicite sur overflow/intégrité, jamais de clamp. Couche Laravel mince : job ID-only `ProcessCrmCommerceRollupRefresh` (`ShouldBeUnique`), sweeper `crm:sweep-commerce-rollup-refresh` (**recovery, aucun backfill**), scheduler 5 min **désactivé par défaut**. **P6-A1.2 ne recalcule aucun montant** ; le backfill historique est P6-A1.3.
@@ -507,24 +508,27 @@
 
 ## 🛑 PROCHAINE TÂCHE
 
-## ⛔ P6-A1.3 — Historical Rollup Backfill (NON COMMENCÉ)
+## 🚧 P6-A1.3 — Explicit Historical Commerce Rollup Backfill (GATE ACTIF)
 
-**Statut** : NON COMMENCÉ. Bloqué jusqu'au merge de P6-A1.2.
+**Statut** : GATE ACTIF (P6-A1.2 mergé via PR #34). Migration prévue : `000024`.
 
-P6-A1.2 (mergé une fois revu) fournit le pipeline durable qui rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouveau** refund `succeeded` survient. Il ne reconstruit PAS l'historique déjà présent avant l'activation. P6-A1.3 devra, dans son propre gate isolé :
+P6-A1.2 rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouveau** refund `succeeded` survient, mais ne reconstruit pas l'historique antérieur. P6-A1.3 est l'**outil opérateur explicite** qui retrouve les couples `(contact_id, currency)` historiques et les **injecte dans le pipeline P6-A1.2** :
 
-- balayer de façon bornée les `crm_order_attributions` et refunds `succeeded` **historiques** sans double comptage ;
-- réutiliser l'autorité `enqueue`/`process` existante (aucune seconde logique financière) ;
-- rester idempotent, reprenable, et désactivé par défaut ;
-- documenter et tester la frontière stricte : **P6-A1.2 = recovery du durable ; P6-A1.3 = backfill historique explicite**.
+- source autoritative unique : `crm_order_attributions INNER JOIN orders` (statut acquis + `paid_at` non NULL) — **aucun e-mail, resolver, Visitor/User stitching, ni Analytics** ;
+- **snapshot figé** `snapshot_max_attribution_id` au démarrage du run : les attributions postérieures sont déjà captées par le trigger P6-A1.2 et ne rallongent jamais un run historique ;
+- **keyset pagination** `(contact_id, currency)`, aucun `OFFSET`, cursor durable, couples `DISTINCT` ;
+- **dry-run par défaut** ; mutation seulement avec `--execute` **et** `CRM_COMMERCE_ROLLUP_BACKFILL_ENABLED=true` (double barrière) ;
+- batches transactionnels bornés, run durable **resumable**, retry d'un run `failed` explicite ;
+- **aucun job/scheduler/listener de backfill** : le seul pipeline asynchrone reste P6-A1.2 ;
+- P6-A1.3 ne calcule aucun montant, ne crée aucun contact/attribution, ne mute ni Commerce ni la table rollup.
 
-Aucune migration `000024`, aucun code de backfill ne doit exister avant l'ouverture formelle de P6-A1.3.
+**Après P6-A1.3** : **P6-A2 — Typed Versioned CRM Segments** (NON COMMENCÉ, aucune migration `000025`, aucun code).
 
 ### 2026-08-08 — Claude Code (P6-A1.2 Durable Rollup Refresh Orchestration implémenté)
 - Fait : migration `000023` (outbox coalescée, cinq autorités PostgreSQL, deux triggers, ACL runtime EXECUTE-only) + couche Laravel mince (job ID-only, sweeper, scheduler désactivé par défaut) + 8 fichiers de tests P6-A1.2 (Schema, Signals, Privileges, Rollback, Concurrency, Job, Sweeper, SecurityContract).
 - État build/tests : voir le dernier rapport (suite complète verte, Pint vert, 39 migrations). Compteurs de migration des phases antérieures relevés 38→39.
 - Décisions prises (→ DECISIONS_LOG.md) : **D-047** (orchestration durable ; frontière A1.1 autorité / A1.2 orchestration / A1.3 backfill).
-- Laisse à : P6-A1.2 IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE. P6-A1.3 (backfill) NON COMMENCÉ, interdit avant merge de P6-A1.2.
+- Laisse à : P6-A1.2 TERMINÉ, MERGÉ ET VALIDÉ (PR #34, merge `7dc78aff`, CI #41). P6-A1.3 = gate actif.
 
 ### 2026-08-05 — Codex (P6-A1.1 Commerce Rollup Authority implémenté)
 - Fait : Implémentation et hardening P6-A1.1 (migration 000022, tests de schémas, concurrence, autorité PostgreSQL, contrats de sécurité).

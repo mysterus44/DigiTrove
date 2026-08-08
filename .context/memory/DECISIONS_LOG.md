@@ -3716,8 +3716,8 @@ IMPACT : P6-A1.1 clôturé et mergé (autorité financière du rollup en place).
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]
 
-### D-047 : P6-A1.2 — Durable Rollup Refresh Orchestration & Reconciliation (PRÉ-MERGE) ✅
-CONTEXTE : P6-A1.1 a livré l'**autorité financière** `refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR)`. P6-A1.2 orchestre **durablement** l'appel à cette autorité sans jamais recalculer les montants. Implémenté et validé localement sur `p6-a1-2-durable-rollup-refresh-orchestration`, EN ATTENTE DE REVUE/MERGE. **P6-A1.3 (backfill historique) NON COMMENCÉ.**
+### D-047 : P6-A1.2 — Durable Rollup Refresh Orchestration & Reconciliation ✅ (MERGÉ)
+CONTEXTE : P6-A1.1 a livré l'**autorité financière** `refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR)`. P6-A1.2 orchestre **durablement** l'appel à cette autorité sans jamais recalculer les montants. **TERMINÉ, MERGÉ ET VALIDÉ** via PR #34, head `a75eef68b0621a438395a152bb5e481d0d256a0e`, merge `7dc78aff8a89aaff513efbb1239d5f943d7d21df`, **CI #41 SUCCESS** (Syntax / Pint / Tests / runtime privilege boundary). **P6-A1.3 (backfill historique explicite) devient le gate actif.**
 
 **Frontière fondamentale** : P6-A1.1 = autorité financière ; **P6-A1.2 = orchestration durable / recovery** ; P6-A1.3 = backfill historique explicite. La vérité financière reste Orders + refunds `succeeded` + attribution immuable — jamais Redis, jamais Analytics, jamais PHP.
 
