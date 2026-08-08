@@ -508,9 +508,11 @@
 
 ## 🛑 PROCHAINE TÂCHE
 
-## 🚧 P6-A1.3 — Explicit Historical Commerce Rollup Backfill (GATE ACTIF)
+## 🚧 P6-A2 — Typed Versioned CRM Segments (GATE ACTIF)
 
-**Statut** : IMPLÉMENTÉ ET VALIDÉ LOCALEMENT sur `p6-a1-3-explicit-historical-backfill` (D-048, migration `000024`, **40 migrations**), EN ATTENTE DE REVUE/MERGE.
+**Statut** : P6-A1.3 est TERMINÉ, MERGÉ ET VALIDÉ (PR #35, merge `106ffb0a`, CI #42, D-048, **40 migrations**). P6-A2 est le gate actif.
+
+### Rappel P6-A1.3 (mergé)
 
 P6-A1.2 rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouveau** refund `succeeded` survient, mais ne reconstruit pas l'historique antérieur. P6-A1.3 est l'**outil opérateur explicite** qui retrouve les couples `(contact_id, currency)` historiques et les **injecte dans le pipeline P6-A1.2** :
 
@@ -524,13 +526,15 @@ P6-A1.2 rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouve
 
 ⚠️ **Adaptation au schéma réel** : `crm_order_attributions` n'a **pas** de colonne `id` (sa PK **est** `order_id`) et **aucun marqueur d'insertion autoritatif** n'existe (`attributed_at` est `timestamp(0)` ET fourni par l'appelant). La borne est donc un **high-water mark**, pas un snapshot : le run est **race-safe** (trigger P6-A1.2), pas snapshot-isolé. **Finitude** : attributions immuables + au plus une attribution par Order (PK = `order_id`) ⇒ domaine candidat borné ⇒ le run termine toujours.
 
-**Après P6-A1.3** : **P6-A2 — Typed Versioned CRM Segments**, architecture **auditée et gelée dans D-049** (définitions typées allowlistées, versions immuables, générations matérialisées publiées atomiquement, critères monétaires **currency-scoped** sans LTV global, consentement séparé de l'appartenance). **NON COMMENCÉ : aucun code, aucune migration `000025`.**
+### P6-A2 — Typed Versioned CRM Segments
+
+Architecture **gelée dans D-049** : définitions typées allowlistées (aucun SQL/colonne/opérateur/JSONPath libre), versions immuables, générations matérialisées publiées **atomiquement**, critères commerce **currency-scoped** (aucun LTV global, aucun FX, aucun float), consentement marketing **séparé** de l'appartenance au segment. Migration `000025` (41 migrations). **P6-B0 (CRM Admin Views) NON COMMENCÉ.**
 
 ### 2026-08-08 — Claude Code (P6-A1.3 Explicit Historical Backfill implémenté)
 - Fait : migration `000024` (table de runs durables audités, six autorités SECURITY DEFINER, index unique partiel « un seul run actif », ACL runtime EXECUTE-only) + service et commande opérateur dry-run-par-défaut + 8 fichiers de tests P6-A1.3 (Schema, Candidates, RunAuthority, Command, Concurrency, Privileges, Rollback, SecurityContract).
 - État build/tests : voir le dernier rapport. Compteurs de migration relevés 39→40 **uniquement** sur les assertions d'état courant ; frontières 37 (`000021`) et 39 (`000023`) inchangées.
 - Décisions prises (→ DECISIONS_LOG.md) : **D-048** (backfill historique explicite) et **D-049** (architecture P6-A2 gelée, plan seulement).
-- Laisse à : P6-A1.3 IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE. P6-A2 NON COMMENCÉ.
+- Laisse à : P6-A1.3 TERMINÉ, MERGÉ ET VALIDÉ (PR #35, merge `106ffb0a`, CI #42). P6-A2 = gate actif.
 
 ### 2026-08-08 — Claude Code (P6-A1.2 Durable Rollup Refresh Orchestration implémenté)
 - Fait : migration `000023` (outbox coalescée, cinq autorités PostgreSQL, deux triggers, ACL runtime EXECUTE-only) + couche Laravel mince (job ID-only, sweeper, scheduler désactivé par défaut) + 8 fichiers de tests P6-A1.2 (Schema, Signals, Privileges, Rollback, Concurrency, Job, Sweeper, SecurityContract).

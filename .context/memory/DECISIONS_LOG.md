@@ -3716,8 +3716,8 @@ IMPACT : P6-A1.1 clôturé et mergé (autorité financière du rollup en place).
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]
 
-### D-048 : P6-A1.3 — Explicit Historical Commerce Rollup Backfill (PRÉ-MERGE) ✅
-CONTEXTE : P6-A1.2 rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouveau** refund `succeeded` survient, mais ne reconstruit pas l'historique antérieur. P6-A1.3 est l'**outil opérateur explicite** qui retrouve les couples historiques et les injecte dans le pipeline P6-A1.2. Implémenté et validé localement sur `p6-a1-3-explicit-historical-backfill`, EN ATTENTE DE REVUE/MERGE. **P6-A2 (Segments) NON COMMENCÉ.**
+### D-048 : P6-A1.3 — Explicit Historical Commerce Rollup Backfill ✅ (MERGÉ)
+CONTEXTE : P6-A1.2 rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouveau** refund `succeeded` survient, mais ne reconstruit pas l'historique antérieur. P6-A1.3 est l'**outil opérateur explicite** qui retrouve les couples historiques et les injecte dans le pipeline P6-A1.2. **Mergé sur la stable** via PR #35 (head `ba32582`, merge `106ffb0a`, CI #42 success). **P6-A2 (Typed Versioned CRM Segments) devient le gate actif ; P6-B0 non commencé.**
 
 **Frontière figée** : P6-A1.1 = **autorité financière** · P6-A1.2 = **orchestration durable / recovery** · P6-A1.3 = **backfill historique explicite**.
 

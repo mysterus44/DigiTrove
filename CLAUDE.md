@@ -477,8 +477,9 @@ mince : job ID-only `ProcessCrmCommerceRollupRefresh` (`ShouldBeUnique`,
 scheduler 5 min **désactivé par défaut**. Le `down()` restaure exactement la
 frontière `000022`.
 
-**P6-A1.3 EXPLICIT HISTORICAL COMMERCE ROLLUP BACKFILL — IMPLÉMENTÉ ET VALIDÉ
-LOCALEMENT, EN ATTENTE DE REVUE/MERGE (D-048).** La migration `000024`
+**P6-A1.3 EXPLICIT HISTORICAL COMMERCE ROLLUP BACKFILL — TERMINÉ, MERGÉ ET
+VALIDÉ** via PR #35, head `ba32582`, merge `106ffb0a`, CI #42 success (D-048).
+La migration `000024`
 (`2026_07_14_000024_create_crm_commerce_rollup_backfill_runs.php`, **40
 migrations**, aucune `000025`) ajoute l'**outil opérateur explicite** qui retrouve
 les couples `(contact_id, currency)` historiques et les **injecte dans le pipeline

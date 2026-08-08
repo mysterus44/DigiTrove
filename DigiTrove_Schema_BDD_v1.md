@@ -677,7 +677,7 @@ historique explicite** (migration `000024`, contrat ci-dessous).
 
 ---
 
-### CONTRAT P6-A1.3 — Explicit Historical Backfill (migration 000024, IMPLÉMENTÉ, PRÉ-MERGE)
+### CONTRAT P6-A1.3 — Explicit Historical Backfill (migration 000024, TERMINÉ ET MERGÉ)
 
 > **D-048 — Migration unique `000024`
 > (`2026_07_14_000024_create_crm_commerce_rollup_backfill_runs.php`), 40 migrations,

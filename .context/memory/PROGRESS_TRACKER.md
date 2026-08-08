@@ -16,7 +16,7 @@ P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (P
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
-P6 CRM & MARKETING  : ███████░░░  P6-A0, P6-A1.0, P6-A1.1, P6-A1.2 TERMINÉS ET MERGÉS ; P6-A1.3 Explicit Historical Backfill IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE (D-048, migration 000024) ; P6-A2 Segments = architecture GELÉE (D-049), NON COMMENCÉ.
+P6 CRM & MARKETING  : ████████░░  P6-A0 → P6-A1.3 TOUS TERMINÉS ET MERGÉS (D-043, D-045, D-046, D-047, D-048 ; P6-A1.3 = PR #35, merge 106ffb0a, CI #42) ; P6-A2 Typed Versioned CRM Segments = GATE ACTIF (D-049 architecture, D-050 implémentation).
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
@@ -548,7 +548,7 @@ commencés.
 | Affiliation | ⏸️ **AFFILIATION NON FONDÉE — HORS PREMIER GATE P6**; aucune table/service, D-014 impose plus tard un compte et des tables dédiées |
 | Exports | ⏸️ après identité, consentement, segments et membership fiables; futur job privé audité, borné, expirant et protégé contre les formules CSV |
 | Découpage | ✅ P6-A0 → ✅ A1.0 attribution → ✅ A1.1 autorité rollup → A1.2 worker/réconciliation → A1.3 backfill explicite → A2 segments → B0 vues → B1 exports → C paniers/relances → D affiliation |
-| Prochain gate | 🚧 **P6-A1.3 — Explicit Historical Commerce Rollup Backfill IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE** (D-048, migration 000024 : runs durables audités, high-water mark `MAX(order_id)` borné (pas un snapshot MVCC ; race-safety par le trigger P6-A1.2), keyset `(contact_id,currency)` sans OFFSET, dry-run par défaut + `--execute` + feature flag, borné/resumable, enqueue vers P6-A1.2 uniquement, aucun job/scheduler). **P6-A2 (Typed Versioned CRM Segments) : architecture auditée et GELÉE dans D-049 — NON COMMENCÉ, aucun code, aucune migration 000025.** |
+| Prochain gate | 🚧 P6-A1.3 TERMINÉ, MERGÉ ET VALIDÉ (PR #35, merge 106ffb0a, CI #42, D-048). **P6-A2 — Typed Versioned CRM Segments = GATE ACTIF** (D-049 architecture gelée → D-050 implémentation, migration 000025 : DSL typé/allowlisté, versions immuables, générations matérialisées publiées atomiquement, critères commerce currency-scoped, consentement séparé du membership). **P6-B0 (CRM Admin Views) NON COMMENCÉ.** |
 
 ## P7 — BLOG & SEO
 | Tâche | Statut |
