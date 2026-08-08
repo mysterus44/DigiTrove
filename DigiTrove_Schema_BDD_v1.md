@@ -366,7 +366,8 @@ Pint **347**, diff-check, ACL, rollback et concurrence verts.
 Hors P6-A0 : segment, rollup, UI client/Filament, export, campagne, e-mail/SMS,
 panier abandonné, affiliation, fournisseur, route publique, backfill, purge et
 rétention automatique. P6-A1.0 est depuis implémenté dans son gate séparé;
-P6-A1.1+ restent non commencés.
+P6-A1.1 est implémenté (migration 000022) et en attente de revue/merge;
+P6-A1.2+ restent non commencés.
 
 #### P6-A1 — attribution durable implémentée, rollups currency-safe audités (D-044/D-045)
 
@@ -523,7 +524,7 @@ traitement; il n'a aucun accès direct aux tables/séquences. Le propriétaire r
 Validation : **37 migrations**, P6-A1.0 **48/285**, suite **883/6273**, Pint
 **367**, concurrence, rollback isolé et diff-check verts. Aucune `000022`, aucun
 rollup, worker LOGIN, backfill, UI, segment ou campagne. Prochain gate séparé :
-**P6-A1.1 — Currency-safe Commerce Rollup Authority**, non commencé.
+**P6-A1.1 — Currency-safe Commerce Rollup Authority**, IMPLÉMENTÉ (migration 000022) ET VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE. Le worker EXECUTE-only et la réconciliation restent P6-A1.2 (non commencé).
 
 Les gates de rollup devront couvrir Orders payants/gratuits, pending/review
 ignorés, refunds partiels/complets/multiples, devises séparées, absence de total
@@ -531,17 +532,18 @@ global, replay, ordre inverse, worker EXECUTE-only et réconciliation.
 
 ---
 
-### FUTUR CONTRAT P6-A1.1 — NON IMPLÉMENTÉ
+### CONTRAT P6-A1.1 — IMPLÉMENTÉ (migration 000022), EN ATTENTE DE REVUE/MERGE
 
-> **D-046 COMPLÈTE — Aucune migration, table, fonction ou rôle ci-dessous n'existe
-> encore. Ce contrat fige les décisions d'audit pour la future migration `000022`.**
+> **D-046 / D-046.1 — La migration `000022`, la table, la fonction et les ACL
+> ci-dessous existent sur la branche `p6-a1-1-currency-safe-commerce-rollup` et
+> sont validées localement. Aucun rôle nouveau n'est créé. P6-A1.2+ non commencé.**
 
-Table future : `crm_contact_commerce_rollups`.
-Migration future : `2026_07_14_000022_create_crm_contact_commerce_rollups.php`.
+Table : `crm_contact_commerce_rollups`.
+Migration : `2026_07_14_000022_create_crm_contact_commerce_rollups.php`.
 PK : `(contact_id, currency)`.
 
 ```sql
--- FUTUR — NON MIGRÉ
+-- MIGRÉ — migration 000022
 crm_contact_commerce_rollups
     contact_id              BIGINT NOT NULL REFERENCES crm_contacts(id) ON DELETE RESTRICT
     currency                VARCHAR(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$')
@@ -581,7 +583,7 @@ FLOAT/DECIMAL fractionnaire.
 **Cycle de vie** : projection mutable uniquement par autorité PostgreSQL (pas
 append-only). La ligne est supprimée quand `acquired_orders_count = 0`.
 
-**Autorité future** : `refresh_crm_contact_commerce_rollup(p_contact_id, p_currency)`,
+**Autorité** : `refresh_crm_contact_commerce_rollup(p_contact_id, p_currency)`,
 SECURITY DEFINER, owner `digitrove_crm_executor`, `search_path` fixe, advisory
 transaction lock, UPSERT/DELETE atomique, READ COMMITTED, idempotente, aucune
 lecture Analytics, aucune création contact/attribution.
@@ -590,10 +592,12 @@ lecture Analytics, aucune création contact/attribution.
 nouveau rôle). Runtime sans SELECT/DML/EXECUTE. PUBLIC sans accès. Worker
 EXECUTE dans P6-A1.2 uniquement.
 
-**Rollback `000022`** : supprime la fonction de refresh, la table et les privilèges
-P6-A1.1. Conserve : `crm_contacts`, `crm_marketing_consent_events`,
-`crm_order_attribution_outbox`, `crm_order_attributions`, `orders`, `payments`,
-`refunds`, `digitrove_crm_executor`.
+**Rollback `000022`** : le `down()` révoque `SELECT` sur `payments` et `refunds`
+pour `digitrove_crm_executor`, puis supprime la fonction de refresh et la table —
+restaurant exactement la frontière `000021`. Conserve : `crm_contacts`,
+`crm_marketing_consent_events`, `crm_order_attribution_outbox`,
+`crm_order_attributions`, `orders`, `payments`, `refunds`,
+`digitrove_crm_executor`. Prouvé par un test ACL avant/up/down.
 
 ---
 

@@ -16,7 +16,7 @@ P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (P
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
-P6 CRM & MARKETING  : ██████░░░░  P6-A0, P6-A1.0 et P6-A1.1 TERMINÉS (D-043, D-045, D-046) ; P6-A1.1 Commerce Rollup Authority prêt à être mergé.
+P6 CRM & MARKETING  : ██████░░░░  P6-A0 et P6-A1.0 TERMINÉS ET MERGÉS (D-043, D-045) ; P6-A1.1 Commerce Rollup Authority IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE (D-046, D-046.1) ; P6-A1.2 NON COMMENCÉ.
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
