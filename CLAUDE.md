@@ -440,10 +440,9 @@ diff-check verts.
 
 **P6-A1.1 CURRENCY-SAFE COMMERCE ROLLUP AUTHORITY — TERMINÉ, MERGÉ ET VALIDÉ**
 via [PR #33](https://github.com/mysterus44/DigiTrove/pull/33), head `732d491`,
-merge `8fe6cfa`, CI #40 success (D-046 / D-046.1). **P6-A1.2 est le PROCHAIN GATE
-ACTIF ; P6-A1.3 (backfill historique) reste non commencé.** La migration `000022`
-(`2026_07_14_000022_create_crm_contact_commerce_rollups.php`, **38 migrations**,
-aucune `000023`) crée la table `crm_contact_commerce_rollups`, PK
+merge `8fe6cfa`, CI #40 success (D-046 / D-046.1). La migration `000022`
+(`2026_07_14_000022_create_crm_contact_commerce_rollups.php`) crée la table
+`crm_contact_commerce_rollups`, PK
 `(contact_id,currency)`, projection mutable par autorité PostgreSQL uniquement
 (pas append-only), owner `digitrove_crm_executor`, aucun accès runtime ni PUBLIC,
 aucun modèle/service/job/listener/commande/scheduler. Une unique fonction
@@ -455,6 +454,28 @@ inclut les commandes gratuites ; les refunds `succeeded` sont agrégés par Orde
 Le `down()` révoque `SELECT` sur `payments`/`refunds` pour restaurer exactement la
 frontière `000021`. Aucun worker rollup, backfill, UI, segment, campagne,
 P6-A1.2+, P6-A2+, P7 ou P5-A3D.
+
+**P6-A1.2 DURABLE ROLLUP REFRESH ORCHESTRATION & RECONCILIATION — IMPLÉMENTÉ ET
+VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE (D-047).** La migration `000023`
+(`2026_07_14_000023_create_durable_crm_rollup_refresh_pipeline.php`, **39
+migrations**, aucune `000024`) orchestre durablement l'appel à l'autorité
+`refresh_crm_contact_commerce_rollup` **sans jamais recalculer les montants** :
+outbox `crm_commerce_rollup_refresh_outbox` coalescée par `(contact_id, currency)`
+avec compteur de génération (`requested_generation >= processed_generation`, aucune
+PII), signaux PostgreSQL `AFTER INSERT` sur `crm_order_attributions` et `→ succeeded`
+sur `refunds` (contact **uniquement** issu de l'attribution, jamais de l'e-mail ; un
+refund `succeeded` avant attribution n'invente aucun contact), autorités
+`enqueue`/`list_due`/`process` SECURITY DEFINER (owner `digitrove_crm_executor`),
+runtime **EXECUTE-only sur `list_due` et `process`** (jamais l'outbox, enqueue ou
+refresh ; PUBLIC sans accès ; aucun nouveau rôle). `process` sérialise via `FOR
+UPDATE` (génération concurrente jamais perdue), retry transient borné, terminal
+explicite sur overflow/intégrité, jamais de clamp ni de faux succès. Couche Laravel
+mince : job ID-only `ProcessCrmCommerceRollupRefresh` (`ShouldBeUnique`,
+`contactId`+`currency` seul, aucun calcul monétaire), sweeper
+`crm:sweep-commerce-rollup-refresh` (**recovery du durable, aucun backfill**),
+scheduler 5 min **désactivé par défaut**. Le `down()` restaure exactement la
+frontière `000022`. **P6-A1.3 (backfill historique explicite) = prochain gate, non
+commencé** ; aucune `000024`, aucun code de backfill avant son ouverture.
 Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —

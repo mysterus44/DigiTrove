@@ -10,8 +10,10 @@
 - **Date** : 2026-08-08
 - **Branche git active** : `p0-foundations-laravel13` (stable). P6-A1.0 mergé (PR #32 sur `77652f2`) ; **P6-A1.1 mergé (PR #33 sur `8fe6cfa`)**.
 - **P6-A1.1 TERMINÉ, MERGÉ ET VALIDÉ** via [PR #33](https://github.com/mysterus44/DigiTrove/pull/33), head `732d491ef1071e117f45501fa8e877fe7c1a76a8`, merge `8fe6cfa7261eb5b2068b9b46095df5d1eb9f1b21`, CI #40 success.
-  **P6-A1.2 = PROCHAIN GATE ACTIF. P6-A1.3 (backfill) NON COMMENCÉ.**
-  P6-A1.1 (Currency-safe Commerce Rollup Authority) ajoute la table `crm_contact_commerce_rollups` (migration 000022, **38 migrations**), la fonction SECURITY DEFINER `refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR)` possédée par `digitrove_crm_executor` (autorité financière ; `down()` révoque `SELECT` sur `payments`/`refunds`) et les tests de contrat, privilèges, rollback ACL et concurrence PostgreSQL. P6A11 **38 / 169** ; suite complète **921 / 6442** ; Pint **374** ; CI #40 vert (Syntax / Pint / Tests / runtime privilege boundary).
+  **P6-A1.2 (Durable Rollup Refresh Orchestration) IMPLÉMENTÉ ET VALIDÉ LOCALEMENT sur `p6-a1-2-durable-rollup-refresh-orchestration` (D-047, migration 000023), EN ATTENTE DE REVUE/MERGE. P6-A1.3 (backfill historique) NON COMMENCÉ.**
+  P6-A1.1 (Currency-safe Commerce Rollup Authority) ajoute la table `crm_contact_commerce_rollups` (migration 000022), la fonction SECURITY DEFINER `refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR)` possédée par `digitrove_crm_executor` (autorité financière ; `down()` révoque `SELECT` sur `payments`/`refunds`) et les tests de contrat, privilèges, rollback ACL et concurrence PostgreSQL. CI #40 vert (Syntax / Pint / Tests / runtime privilege boundary).
+
+- **P6-A1.2 DURABLE ROLLUP REFRESH ORCHESTRATION & RECONCILIATION** (D-047, **migration 000023**, 39 migrations) : outbox `crm_commerce_rollup_refresh_outbox` coalescée par `(contact_id, currency)` avec compteur de génération (`requested_generation >= processed_generation`), owner `digitrove_crm_executor`. Signaux PostgreSQL `AFTER INSERT` sur `crm_order_attributions` et `→ succeeded` sur `refunds` (contact issu **uniquement** de l'attribution). Autorités `enqueue`/`list_due`/`process` SECURITY DEFINER ; runtime **EXECUTE-only sur `list_due` et `process`**, jamais l'outbox/enqueue/refresh ; PUBLIC sans accès ; aucun nouveau rôle. `process` sérialise via `FOR UPDATE` (aucune génération concurrente perdue), retry transient borné, terminal explicite sur overflow/intégrité, jamais de clamp. Couche Laravel mince : job ID-only `ProcessCrmCommerceRollupRefresh` (`ShouldBeUnique`), sweeper `crm:sweep-commerce-rollup-refresh` (**recovery, aucun backfill**), scheduler 5 min **désactivé par défaut**. **P6-A1.2 ne recalcule aucun montant** ; le backfill historique est P6-A1.3.
 
 - **P5-A2 AUTHORITATIVE ROLLUPS AND PARTITION OPERATIONS TERMINÉ, MERGÉ ET
   VALIDÉ** via [PR #28](https://github.com/mysterus44/DigiTrove/pull/28), head
@@ -505,19 +507,24 @@
 
 ## 🛑 PROCHAINE TÂCHE
 
-## 🚧 P6-A1.2 — Durable Rollup Refresh Orchestration & Reconciliation
+## ⛔ P6-A1.3 — Historical Rollup Backfill (NON COMMENCÉ)
 
-**Statut** : PROCHAIN GATE ACTIF (P6-A1.1 mergé via PR #33).
+**Statut** : NON COMMENCÉ. Bloqué jusqu'au merge de P6-A1.2.
 
-P6-A1.1 a livré l'**autorité financière** `refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR)` (migration 000022, owner `digitrove_crm_executor`). P6-A1.2 orchestre **durablement** l'appel à cette autorité, sans jamais recalculer les montants lui-même :
+P6-A1.2 (mergé une fois revu) fournit le pipeline durable qui rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouveau** refund `succeeded` survient. Il ne reconstruit PAS l'historique déjà présent avant l'activation. P6-A1.3 devra, dans son propre gate isolé :
 
-- outbox transactionnelle **coalescée** par `(contact_id, currency)` avec compteur de génération (`requested_generation >= processed_generation`) — pas une ligne par Refund ;
-- signaux PostgreSQL : `AFTER INSERT` sur `crm_order_attributions` et transition `→ succeeded` sur `refunds` (contact issu **uniquement** de l'attribution, jamais de l'e-mail) ;
-- autorités `enqueue` / `list_due` / `process` SECURITY DEFINER, runtime **EXECUTE-only** sur `list_due`/`process` seulement ;
-- worker unique `ShouldBeUnique` (payload `contactId + currency`), dispatcher borné, sweeper de **recovery** (pas de backfill), scheduler **désactivé par défaut** ;
-- migration **000023** (39 migrations), aucun backfill historique, aucun nouveau rôle.
+- balayer de façon bornée les `crm_order_attributions` et refunds `succeeded` **historiques** sans double comptage ;
+- réutiliser l'autorité `enqueue`/`process` existante (aucune seconde logique financière) ;
+- rester idempotent, reprenable, et désactivé par défaut ;
+- documenter et tester la frontière stricte : **P6-A1.2 = recovery du durable ; P6-A1.3 = backfill historique explicite**.
 
-**Frontière** : P6-A1.2 = orchestration durable/recovery ; **P6-A1.3 = backfill historique explicite** (non commencé).
+Aucune migration `000024`, aucun code de backfill ne doit exister avant l'ouverture formelle de P6-A1.3.
+
+### 2026-08-08 — Claude Code (P6-A1.2 Durable Rollup Refresh Orchestration implémenté)
+- Fait : migration `000023` (outbox coalescée, cinq autorités PostgreSQL, deux triggers, ACL runtime EXECUTE-only) + couche Laravel mince (job ID-only, sweeper, scheduler désactivé par défaut) + 8 fichiers de tests P6-A1.2 (Schema, Signals, Privileges, Rollback, Concurrency, Job, Sweeper, SecurityContract).
+- État build/tests : voir le dernier rapport (suite complète verte, Pint vert, 39 migrations). Compteurs de migration des phases antérieures relevés 38→39.
+- Décisions prises (→ DECISIONS_LOG.md) : **D-047** (orchestration durable ; frontière A1.1 autorité / A1.2 orchestration / A1.3 backfill).
+- Laisse à : P6-A1.2 IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE. P6-A1.3 (backfill) NON COMMENCÉ, interdit avant merge de P6-A1.2.
 
 ### 2026-08-05 — Codex (P6-A1.1 Commerce Rollup Authority implémenté)
 - Fait : Implémentation et hardening P6-A1.1 (migration 000022, tests de schémas, concurrence, autorité PostgreSQL, contrats de sécurité).
