@@ -213,9 +213,16 @@ return new class extends Migration
 
     public function down(): void
     {
+        // Rollback restores the exact 000021 privilege boundary: every GRANT issued
+        // by up() must be revoked here, otherwise digitrove_crm_executor keeps SELECT
+        // on payments/refunds after the phase is rolled back. Dropping the function
+        // and table alone would leave those P6-A1.1 privileges behind (D-046.1).
         DB::unprepared(<<<'SQL'
-            DROP FUNCTION IF EXISTS refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR);
-            DROP TABLE IF EXISTS crm_contact_commerce_rollups;
+            REVOKE SELECT ON TABLE public.payments FROM digitrove_crm_executor;
+            REVOKE SELECT ON TABLE public.refunds FROM digitrove_crm_executor;
+
+            DROP FUNCTION IF EXISTS public.refresh_crm_contact_commerce_rollup(BIGINT, VARCHAR);
+            DROP TABLE IF EXISTS public.crm_contact_commerce_rollups;
         SQL);
     }
 };
