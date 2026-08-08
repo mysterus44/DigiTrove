@@ -850,10 +850,13 @@ passent par `list_crm_segment_current_members` (qui exige `published`) et voient
 donc l'ancienne génération **entière**, puis la nouvelle **entière**.
 Publier une nouvelle version est **refusé** tant qu'une génération est active.
 
-**Autorités** (16 fonctions, owner executor, `search_path` fixe) : validateur et
-matcher **internes** (`validate_crm_segment_definition_v1`,
-`crm_segment_contact_matches_v1`, + deux helpers de typage) — **jamais exposés au
-runtime** ; 11 autorités bornées exposées : `create_crm_segment`,
+**Autorités** (**18 fonctions** = 11 runtime + 4 internes + 3 trigger, owner
+executor, `search_path` fixe) : **4 internes jamais exposées au runtime** —
+`validate_crm_segment_definition_v1(jsonb)`,
+`validate_crm_segment_definition_v1_int(jsonb)`,
+`validate_crm_segment_definition_v1_ts(jsonb)` (helpers de typage INT64/RFC3339)
+et `crm_segment_contact_matches_v1(bigint, jsonb)` ;
+11 autorités bornées exposées : `create_crm_segment`,
 `create_crm_segment_version`, `publish_crm_segment_version`, `get_crm_segment`,
 `list_crm_segments`, `start_crm_segment_generation`,
 `process_crm_segment_generation_batch`, `retry_crm_segment_generation`,
@@ -871,7 +874,7 @@ uniquement ; **jamais** sur le validateur/matcher internes, **jamais**
 `SELECT`/`DML` sur les quatre tables. PUBLIC sans accès.
 
 **Rollback `000025`** : drop des 3 triggers, révocation des `EXECUTE` runtime, drop
-des 16 fonctions, drop **explicite** des FK composites circulaires (**jamais
+des **18** fonctions, drop **explicite** des FK composites circulaires (**jamais
 `CASCADE`**) puis des quatre tables — restaure exactement la frontière `000024`.
 
 **Frontière suivante** : **P6-B0 — CRM Admin Views**, architecture gelée par

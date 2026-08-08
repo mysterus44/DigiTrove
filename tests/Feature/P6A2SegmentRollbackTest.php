@@ -31,6 +31,54 @@ it('rolls back to the exact 000024 boundary while preserving every earlier phase
             'crm_segment_generations',
             'crm_segment_generation_members',
         ];
+        // EXACT inventory of every function 000025 creates, by full typed signature.
+        // A function added to the migration without being added here (and therefore to
+        // its rollback) makes this test fail: the guard is FAIL-CLOSED.
+        //
+        // 11 runtime authorities + 4 internal (validator, its two typing helpers, the
+        // matcher) + 3 trigger functions = 18.
+        $segmentSignatures = [
+            // Runtime authorities.
+            'public.create_crm_segment(character varying)',
+            'public.create_crm_segment_version(bigint, jsonb)',
+            'public.publish_crm_segment_version(bigint)',
+            'public.get_crm_segment(bigint)',
+            'public.list_crm_segments(bigint, integer)',
+            'public.start_crm_segment_generation(bigint, integer)',
+            'public.process_crm_segment_generation_batch(bigint)',
+            'public.retry_crm_segment_generation(bigint)',
+            'public.get_crm_segment_generation(bigint)',
+            'public.list_due_crm_segment_generations(integer)',
+            'public.list_crm_segment_current_members(bigint, bigint, integer)',
+            // Internal — never callable by the runtime. The two typing helpers are the
+            // objects a previous version of this test failed to notice.
+            'public.validate_crm_segment_definition_v1(jsonb)',
+            'public.validate_crm_segment_definition_v1_int(jsonb)',
+            'public.validate_crm_segment_definition_v1_ts(jsonb)',
+            'public.crm_segment_contact_matches_v1(bigint, jsonb)',
+            // Trigger functions.
+            'public.enforce_crm_segment_version_immutability()',
+            'public.enforce_crm_segment_generation_immutability()',
+            'public.enforce_crm_segment_generation_member_immutability()',
+        ];
+
+        // Resolves a typed signature to an OID, or null when the function is absent.
+        $procExists = static fn (string $signature): bool => $pdo
+            ->query("SELECT to_regprocedure('".$signature."')")
+            ->fetchColumn() !== null;
+
+        $procOwner = static fn (string $signature): string => (string) $pdo
+            ->query("SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE oid = to_regprocedure('".$signature."')")
+            ->fetchColumn();
+
+        $procPriv = static fn (string $role, string $signature): bool => (bool) $pdo
+            ->query("SELECT has_function_privilege('".$role."', to_regprocedure('".$signature."'), 'EXECUTE')")
+            ->fetchColumn();
+
+        $publicMayExecute = static fn (string $signature): bool => (bool) $pdo
+            ->query("SELECT COALESCE((SELECT bool_or(a.privilege_type = 'EXECUTE') FROM pg_proc p CROSS JOIN LATERAL aclexplode(p.proacl) a WHERE p.oid = to_regprocedure('".$signature."') AND a.grantee = 0), FALSE)")
+            ->fetchColumn();
+
         $segmentFunctions = [
             'validate_crm_segment_definition_v1',
             'crm_segment_contact_matches_v1',
@@ -57,6 +105,11 @@ it('rolls back to the exact 000024 boundary while preserving every earlier phase
         foreach ($segmentFunctions as $function) {
             expect($functionExists($function))->toBeFalse();
         }
+        // NOT ONE of the 18 signatures may exist at the 000024 frontier — including the
+        // two typing helpers.
+        foreach ($segmentSignatures as $signature) {
+            expect($procExists($signature))->toBeFalse();
+        }
 
         // ── 2. APPLY 000025 ── tables, authorities and runtime grants appear.
         $result = $harness->applyExactMigrations([$boundary]);
@@ -68,6 +121,26 @@ it('rolls back to the exact 000024 boundary while preserving every earlier phase
         foreach ($segmentFunctions as $function) {
             expect($functionExists($function))->toBeTrue();
         }
+
+        // Every one of the 18 exists, is owned by the restricted executor, and is
+        // closed to PUBLIC.
+        foreach ($segmentSignatures as $signature) {
+            expect($procExists($signature))->toBeTrue()
+                ->and($procOwner($signature))->toBe('digitrove_crm_executor')
+                ->and($publicMayExecute($signature))->toBeFalse();
+        }
+
+        // The internal validator, its typing helpers and the matcher stay unreachable
+        // from the runtime; the 11 bounded authorities are reachable.
+        foreach ([
+            'public.validate_crm_segment_definition_v1(jsonb)',
+            'public.validate_crm_segment_definition_v1_int(jsonb)',
+            'public.validate_crm_segment_definition_v1_ts(jsonb)',
+            'public.crm_segment_contact_matches_v1(bigint, jsonb)',
+        ] as $internal) {
+            expect($procPriv('digitrove_runtime', $internal))->toBeFalse();
+        }
+        expect($procPriv('digitrove_runtime', 'public.process_crm_segment_generation_batch(bigint)'))->toBeTrue();
 
         expect($fnPriv('digitrove_runtime', 'process_crm_segment_generation_batch(bigint)'))->toBeTrue()
             // The internal matcher stays out of reach even while P6-A2 is installed.
@@ -83,6 +156,16 @@ it('rolls back to the exact 000024 boundary while preserving every earlier phase
         foreach ($segmentFunctions as $function) {
             expect($functionExists($function))->toBeFalse();
         }
+
+        // THE guard that would have caught the leaked helpers: the intersection between
+        // what 000025 created and what still exists must be EMPTY.
+        $surviving = array_values(array_filter($segmentSignatures, $procExists));
+        expect($surviving)->toBe([]);
+
+        // No P6-A2 trigger and no P6-A2 table-owned index survives either.
+        expect((bool) $pdo->query("SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname LIKE 'crm_segment%')")->fetchColumn())->toBeFalse()
+            ->and((bool) $pdo->query("SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname LIKE 'crm_segment%')")->fetchColumn())->toBeFalse()
+            ->and((bool) $pdo->query("SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname LIKE 'crm_segment%')")->fetchColumn())->toBeFalse();
 
         // ── Every earlier phase survives untouched. ──
         expect($tableExists('crm_commerce_rollup_backfill_runs'))->toBeTrue()
@@ -104,6 +187,22 @@ it('rolls back to the exact 000024 boundary while preserving every earlier phase
             ->and($tableExists('events'))->toBeTrue()
             ->and((bool) $pdo->query("SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname = 'digitrove_crm_executor')")->fetchColumn())->toBeTrue()
             ->and((bool) $pdo->query("SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname = 'digitrove_runtime')")->fetchColumn())->toBeTrue();
+
+        // The P6-A1.x authorities survive with their EXACT signatures.
+        foreach ([
+            'public.refresh_crm_contact_commerce_rollup(bigint, character varying)',
+            'public.enqueue_crm_commerce_rollup_refresh(bigint, character varying)',
+            'public.process_crm_commerce_rollup_refresh(bigint, character varying)',
+            'public.list_due_crm_commerce_rollup_refreshes(integer)',
+            'public.current_crm_commerce_rollup_backfill_high_water_mark()',
+            'public.process_crm_commerce_rollup_backfill_batch(bigint)',
+            'public.resolve_crm_contact(character varying, character varying, bigint, bigint)',
+        ] as $preserved) {
+            expect($procExists($preserved))->toBeTrue();
+        }
+
+        // The 000024 frontier is restored exactly: 40 applied migrations.
+        expect($harness->ranMigrations())->toHaveCount(40);
     } finally {
         $harness->drop();
     }

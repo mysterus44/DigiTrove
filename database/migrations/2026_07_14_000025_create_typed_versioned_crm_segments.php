@@ -42,6 +42,10 @@ return new class extends Migration
 {
     private const VALIDATE_SIGNATURE = 'public.validate_crm_segment_definition_v1(jsonb)';
 
+    private const VALIDATE_INT_SIGNATURE = 'public.validate_crm_segment_definition_v1_int(jsonb)';
+
+    private const VALIDATE_TS_SIGNATURE = 'public.validate_crm_segment_definition_v1_ts(jsonb)';
+
     private const MATCHES_SIGNATURE = 'public.crm_segment_contact_matches_v1(bigint, jsonb)';
 
     private const CREATE_SEGMENT_SIGNATURE = 'public.create_crm_segment(character varying)';
@@ -81,10 +85,42 @@ return new class extends Migration
         self::LIST_MEMBERS_SIGNATURE,
     ];
 
+    /**
+     * Internal authorities: never granted to the runtime. The two typing helpers are
+     * part of this set — they are real P6-A2 objects and must be owned, locked down and
+     * dropped exactly like the validator that calls them.
+     *
+     * Order matters for DROP: the callers come before the helpers they call.
+     */
     private const INTERNAL_SIGNATURES = [
-        self::VALIDATE_SIGNATURE,
         self::MATCHES_SIGNATURE,
+        self::VALIDATE_SIGNATURE,
+        self::VALIDATE_INT_SIGNATURE,
+        self::VALIDATE_TS_SIGNATURE,
     ];
+
+    private const TRIGGER_FUNCTION_SIGNATURES = [
+        'public.enforce_crm_segment_version_immutability()',
+        'public.enforce_crm_segment_generation_immutability()',
+        'public.enforce_crm_segment_generation_member_immutability()',
+    ];
+
+    /**
+     * THE canonical inventory of every function this migration creates (18 total:
+     * 11 runtime authorities + 4 internal + 3 trigger functions). Ownership, lockdown
+     * and rollback all iterate this single source of truth, so a function can never be
+     * created without also being owned, revoked and dropped.
+     *
+     * @return list<string>
+     */
+    private function allFunctionSignatures(): array
+    {
+        return [
+            ...self::RUNTIME_SIGNATURES,
+            ...self::INTERNAL_SIGNATURES,
+            ...self::TRIGGER_FUNCTION_SIGNATURES,
+        ];
+    }
 
     public function up(): void
     {
@@ -106,13 +142,8 @@ return new class extends Migration
             DB::statement('REVOKE EXECUTE ON FUNCTION '.$signature.' FROM digitrove_runtime');
         }
 
-        foreach ([
-            ...self::RUNTIME_SIGNATURES,
-            ...self::INTERNAL_SIGNATURES,
-            'public.enforce_crm_segment_version_immutability()',
-            'public.enforce_crm_segment_generation_immutability()',
-            'public.enforce_crm_segment_generation_member_immutability()',
-        ] as $signature) {
+        // Every function this migration created — no exception, no CASCADE.
+        foreach ($this->allFunctionSignatures() as $signature) {
             DB::statement('DROP FUNCTION IF EXISTS '.$signature);
         }
 
@@ -280,7 +311,7 @@ return new class extends Migration
         $this->createGenerationAuthorities();
         $this->createReadAuthorities();
 
-        foreach ([...self::RUNTIME_SIGNATURES, ...self::INTERNAL_SIGNATURES, 'public.enforce_crm_segment_version_immutability()', 'public.enforce_crm_segment_generation_immutability()', 'public.enforce_crm_segment_generation_member_immutability()'] as $signature) {
+        foreach ($this->allFunctionSignatures() as $signature) {
             DB::statement('ALTER FUNCTION '.$signature.' OWNER TO digitrove_crm_executor');
         }
     }
@@ -527,14 +558,9 @@ return new class extends Migration
             $$;
             SQL);
 
-        foreach ([
-            'public.validate_crm_segment_definition_v1_int(jsonb)',
-            'public.validate_crm_segment_definition_v1_ts(jsonb)',
-        ] as $signature) {
-            DB::statement('ALTER FUNCTION '.$signature.' OWNER TO digitrove_crm_executor');
-            DB::statement('REVOKE ALL ON FUNCTION '.$signature.' FROM PUBLIC');
-            DB::statement('REVOKE ALL ON FUNCTION '.$signature.' FROM digitrove_runtime');
-        }
+        // Ownership and ACL for the helpers are applied by the canonical inventory in
+        // createFunctions()/lockDownPrivileges() — deliberately NOT here, so there is
+        // exactly one source of truth and nothing can be created without being dropped.
     }
 
     private function createMatcher(): void
@@ -1345,13 +1371,7 @@ return new class extends Migration
             DB::statement('REVOKE ALL ON TABLE public.'.$table.' FROM digitrove_runtime');
         }
 
-        foreach ([
-            ...self::RUNTIME_SIGNATURES,
-            ...self::INTERNAL_SIGNATURES,
-            'public.enforce_crm_segment_version_immutability()',
-            'public.enforce_crm_segment_generation_immutability()',
-            'public.enforce_crm_segment_generation_member_immutability()',
-        ] as $signature) {
+        foreach ($this->allFunctionSignatures() as $signature) {
             DB::statement('REVOKE ALL ON FUNCTION '.$signature.' FROM PUBLIC');
             DB::statement('REVOKE ALL ON FUNCTION '.$signature.' FROM digitrove_runtime');
         }
