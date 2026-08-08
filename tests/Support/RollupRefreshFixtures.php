@@ -60,6 +60,29 @@ final class RollupRefreshFixtures
         });
     }
 
+    /**
+     * A non-acquired order (no paid_at, no succeeded payment). Commerce still requires
+     * at least one order_item, so the row is built inside one transaction.
+     */
+    public static function pendingOrder(int $totalMinor = 1000, string $currency = 'XOF', string $status = 'pending'): int
+    {
+        return self::owner()->transaction(function () use ($totalMinor, $currency, $status): int {
+            $orderNumber = 'DGT-2026-'.substr(str_shuffle('ABCDEFGHJKMNPQRSTVWXYZ23456789'), 0, 10);
+            self::owner()->insert(
+                "INSERT INTO orders (public_id, order_number, checkout_idempotency_hash, customer_email, currency, total_minor, status, subtotal_minor, discount_minor, tax_minor, placed_at, expires_at, paid_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NOW(), NOW() + interval '1 day', NULL, NOW(), NOW())",
+                [Str::uuid(), $orderNumber, hash('sha256', Str::random(32)), 'pending_'.strtolower(Str::random(10)).'@example.com', $currency, $totalMinor, $status, $totalMinor],
+            );
+            $orderId = (int) self::owner()->getPdo()->lastInsertId();
+
+            self::owner()->insert(
+                "INSERT INTO order_items (order_id, product_id, purchased_product_id, product_name_snapshot, product_slug_snapshot, product_type_snapshot, unit_price_minor, quantity, line_subtotal_minor, line_discount_minor, line_total_minor, currency, created_at, updated_at) VALUES (?, NULL, 1, 'P', 'p', 'ebook', ?, 1, ?, 0, ?, ?, NOW(), NOW())",
+                [$orderId, $totalMinor, $totalMinor, $totalMinor, $currency],
+            );
+
+            return $orderId;
+        });
+    }
+
     public static function attribute(int $orderId, int $contactId): void
     {
         self::owner()->insert(
