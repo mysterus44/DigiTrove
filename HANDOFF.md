@@ -510,19 +510,27 @@
 
 ## 🚧 P6-A1.3 — Explicit Historical Commerce Rollup Backfill (GATE ACTIF)
 
-**Statut** : GATE ACTIF (P6-A1.2 mergé via PR #34). Migration prévue : `000024`.
+**Statut** : IMPLÉMENTÉ ET VALIDÉ LOCALEMENT sur `p6-a1-3-explicit-historical-backfill` (D-048, migration `000024`, **40 migrations**), EN ATTENTE DE REVUE/MERGE.
 
 P6-A1.2 rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouveau** refund `succeeded` survient, mais ne reconstruit pas l'historique antérieur. P6-A1.3 est l'**outil opérateur explicite** qui retrouve les couples `(contact_id, currency)` historiques et les **injecte dans le pipeline P6-A1.2** :
 
 - source autoritative unique : `crm_order_attributions INNER JOIN orders` (statut acquis + `paid_at` non NULL) — **aucun e-mail, resolver, Visitor/User stitching, ni Analytics** ;
-- **snapshot figé** `snapshot_max_attribution_id` au démarrage du run : les attributions postérieures sont déjà captées par le trigger P6-A1.2 et ne rallongent jamais un run historique ;
+- **high-water mark borné** `attribution_order_id_high_water_mark = MAX(order_id)` gelé au démarrage : toute attribution présente au démarrage vérifie `order_id <= HWM` (ce n'est **pas** un snapshot MVCC ; une attribution tardive sur un ancien Order peut aussi le vérifier). La sécurité de course vient du trigger P6-A1.2, qui enqueue toute nouvelle attribution ; la double couverture est inoffensive (coalescing A1.2 + recalcul autoritatif A1.1) ;
 - **keyset pagination** `(contact_id, currency)`, aucun `OFFSET`, cursor durable, couples `DISTINCT` ;
 - **dry-run par défaut** ; mutation seulement avec `--execute` **et** `CRM_COMMERCE_ROLLUP_BACKFILL_ENABLED=true` (double barrière) ;
 - batches transactionnels bornés, run durable **resumable**, retry d'un run `failed` explicite ;
 - **aucun job/scheduler/listener de backfill** : le seul pipeline asynchrone reste P6-A1.2 ;
 - P6-A1.3 ne calcule aucun montant, ne crée aucun contact/attribution, ne mute ni Commerce ni la table rollup.
 
-**Après P6-A1.3** : **P6-A2 — Typed Versioned CRM Segments** (NON COMMENCÉ, aucune migration `000025`, aucun code).
+⚠️ **Adaptation au schéma réel** : `crm_order_attributions` n'a **pas** de colonne `id` (sa PK **est** `order_id`) et **aucun marqueur d'insertion autoritatif** n'existe (`attributed_at` est `timestamp(0)` ET fourni par l'appelant). La borne est donc un **high-water mark**, pas un snapshot : le run est **race-safe** (trigger P6-A1.2), pas snapshot-isolé. **Finitude** : attributions immuables + au plus une attribution par Order (PK = `order_id`) ⇒ domaine candidat borné ⇒ le run termine toujours.
+
+**Après P6-A1.3** : **P6-A2 — Typed Versioned CRM Segments**, architecture **auditée et gelée dans D-049** (définitions typées allowlistées, versions immuables, générations matérialisées publiées atomiquement, critères monétaires **currency-scoped** sans LTV global, consentement séparé de l'appartenance). **NON COMMENCÉ : aucun code, aucune migration `000025`.**
+
+### 2026-08-08 — Claude Code (P6-A1.3 Explicit Historical Backfill implémenté)
+- Fait : migration `000024` (table de runs durables audités, six autorités SECURITY DEFINER, index unique partiel « un seul run actif », ACL runtime EXECUTE-only) + service et commande opérateur dry-run-par-défaut + 8 fichiers de tests P6-A1.3 (Schema, Candidates, RunAuthority, Command, Concurrency, Privileges, Rollback, SecurityContract).
+- État build/tests : voir le dernier rapport. Compteurs de migration relevés 39→40 **uniquement** sur les assertions d'état courant ; frontières 37 (`000021`) et 39 (`000023`) inchangées.
+- Décisions prises (→ DECISIONS_LOG.md) : **D-048** (backfill historique explicite) et **D-049** (architecture P6-A2 gelée, plan seulement).
+- Laisse à : P6-A1.3 IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE. P6-A2 NON COMMENCÉ.
 
 ### 2026-08-08 — Claude Code (P6-A1.2 Durable Rollup Refresh Orchestration implémenté)
 - Fait : migration `000023` (outbox coalescée, cinq autorités PostgreSQL, deux triggers, ACL runtime EXECUTE-only) + couche Laravel mince (job ID-only, sweeper, scheduler désactivé par défaut) + 8 fichiers de tests P6-A1.2 (Schema, Signals, Privileges, Rollback, Concurrency, Job, Sweeper, SecurityContract).
