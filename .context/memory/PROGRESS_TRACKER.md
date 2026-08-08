@@ -543,12 +543,12 @@ commencés.
 | Orchestration P6-A1.0 | ✅ processor/dispatcher fail-closed, job `ShouldBeUnique` payload `orderId` avec `uniqueFor=3600`, listener faible, commande sweeper et scheduler 5 minutes désactivés par défaut |
 | Validation P6-A1.0 | ✅ 48 tests / 285 assertions; 2 scénarios de concurrence, rollback isolé, suite complète 883/6273, Pint 367, diff-check propre |
 | Rollups CRM P6-A1.1 | ✅ `crm_contact_commerce_rollups`, clé `(contact_id,currency)`, BIGINT, net = brut - remboursé, projection mutable par autorité PostgreSQL uniquement (D-046) ; `acquired_orders_count` inclut les commandes gratuites ; owner `digitrove_crm_executor` ; aucun accès runtime ; aucun modèle/service/job P6-A1.1 |
-| Segments | ⬜ modèle recommandé C : définition dynamique allowlistée/versionnée + membres matérialisés; aucun SQL, colonne, opérateur, JSONPath ou PHP libre |
+| Segments | 🚧 IMPLÉMENTÉ P6-A2 (D-050, migration 000025, pré-merge) — ancien plan : ⬜ modèle recommandé C : définition dynamique allowlistée/versionnée + membres matérialisés; aucun SQL, colonne, opérateur, JSONPath ou PHP libre |
 | Paniers abandonnés | ⏸️ tables `carts`/`cart_items` présentes et checkout transactionnel existant, mais aucun flux public de création/abandon, aucune identité e-mail sur panier invité, aucun job/consentement/frequency cap |
 | Affiliation | ⏸️ **AFFILIATION NON FONDÉE — HORS PREMIER GATE P6**; aucune table/service, D-014 impose plus tard un compte et des tables dédiées |
 | Exports | ⏸️ après identité, consentement, segments et membership fiables; futur job privé audité, borné, expirant et protégé contre les formules CSV |
 | Découpage | ✅ P6-A0 → ✅ A1.0 attribution → ✅ A1.1 autorité rollup → A1.2 worker/réconciliation → A1.3 backfill explicite → A2 segments → B0 vues → B1 exports → C paniers/relances → D affiliation |
-| Prochain gate | 🚧 P6-A1.3 TERMINÉ, MERGÉ ET VALIDÉ (PR #35, merge 106ffb0a, CI #42, D-048). **P6-A2 — Typed Versioned CRM Segments = GATE ACTIF** (D-049 architecture gelée → D-050 implémentation, migration 000025 : DSL typé/allowlisté, versions immuables, générations matérialisées publiées atomiquement, critères commerce currency-scoped, consentement séparé du membership). **P6-B0 (CRM Admin Views) NON COMMENCÉ.** |
+| Prochain gate | 🚧 **P6-A2 — Typed Versioned CRM Segments IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE** (D-049 architecture → **D-050** implémentation, migration 000025, 41 migrations : DSL typé/allowlisté sans SQL libre, versions immuables, générations matérialisées publiées **atomiquement**, critères commerce **currency-scoped**, consentement **séparé** du membership, runtime EXECUTE-only). **P6-B0 (CRM Admin Views) : architecture gelée dans D-051 — NON COMMENCÉ, aucun code, aucune migration 000026.** |
 
 ## P7 — BLOG & SEO
 | Tâche | Statut |
