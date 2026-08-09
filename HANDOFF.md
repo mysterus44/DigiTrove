@@ -84,6 +84,17 @@ correct. Le trait expose désormais un hook `crmGateExtraCondition()` : **la for
 **Exports** (sélecteur de segment), pas depuis le détail du segment, parce que le contrat
 `P6B0SecurityContractTest` prouve que B0 n'expose **aucune** affordance d'export.
 
+⚠️ **Frontières historiques déplacées — toutes révélées par la SUITE COMPLÈTE, aucune
+par les campagnes ciblées** (c'est exactement leur utilité) : `P5A3AnalyticsSecurity
+ContractTest` portait le **même glob trop large** que son jumeau P5-A3C (même correctif :
+inventaire explicite des 11 fichiers Analytics, `toHaveCount(11)` fail-closed, **pas**
+d'exclusion « ignorer CRM ») ; **trois inventaires exacts de routes `download`** et
+**deux inventaires de fichiers fail-closed** nomment désormais explicitement la route,
+le contrôleur et le job d'export, pour qu'une quatrième surface de téléchargement reste
+impossible à introduire sans décision ; **cinq compteurs `DB::table('migrations')
+->count()`** relevés 42 → 43. Les bornes de **rollback** (41 pour `000025`, 42 pour
+`000026`) restent **inchangées** — ce sont des frontières historiques, pas l'état courant.
+
 **Validation ciblée** : B0+B1 agrégé **197 tests / 1112 assertions**, Pint **463 fichiers**,
 **43 migrations**, rollback isolé vert.
 
