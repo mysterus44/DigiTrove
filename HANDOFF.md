@@ -526,9 +526,9 @@ P6-A1.2 rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouve
 
 ⚠️ **Adaptation au schéma réel** : `crm_order_attributions` n'a **pas** de colonne `id` (sa PK **est** `order_id`) et **aucun marqueur d'insertion autoritatif** n'existe (`attributed_at` est `timestamp(0)` ET fourni par l'appelant). La borne est donc un **high-water mark**, pas un snapshot : le run est **race-safe** (trigger P6-A1.2), pas snapshot-isolé. **Finitude** : attributions immuables + au plus une attribution par Order (PK = `order_id`) ⇒ domaine candidat borné ⇒ le run termine toujours.
 
-### P6-A2 — Typed Versioned CRM Segments — **IMPLÉMENTÉ, EN ATTENTE DE REVUE/MERGE**
+### P6-A2 — Typed Versioned CRM Segments — **TERMINÉ, MERGÉ ET VALIDÉ**
 
-**Statut** : implémenté et validé localement sur `p6-a2-typed-versioned-crm-segments` (**D-050**, migration `000025`, **41 migrations**, aucune `000026`).
+**Statut** : mergé via PR #36 (head `ea562c7`, merge `920eb1b9`, CI #43 success ; D-050, migration `000025`, **41 migrations**). **P6-B0 (CRM Admin Views) = GATE ACTIF (D-051).** P6-B1 (exports) non commencé.
 
 Quatre tables (`crm_segments`, `crm_segment_versions`, `crm_segment_generations`, `crm_segment_generation_members`) ; DSL V1 typé/allowlisté validé **dans PostgreSQL** (aucun SQL libre, clés exactes, INT64 strict, RFC3339 UTC absolu, enums réels `active|anonymized` et `guest_order|verified_account`) ; critères commerce **currency-scoped** (rollup absent ⇒ FALSE pour **tous** les opérateurs, y compris `neq`) ; versions **immuables dès l'INSERT** ; générations matérialisées par keyset borné — le curseur avance sur le dernier contact **SCANNÉ**, jamais le dernier matché — et **publiées atomiquement** via `current_generation_id` ; pointeurs protégés par **FK composites** (un segment ne peut structurellement pas pointer vers la version d'un autre) ; runtime **EXECUTE-only** sur 11 autorités bornées, jamais sur le validateur/matcher internes ni sur les tables ; **consentement marketing jamais lu** par le matcher ; job ID-only (`generationId` seul, ≤ 10 batches/exécution), sweeper, commande opérateur **preview par défaut**, scheduler **désactivé par défaut**. Aucune UI, route ni ressource Filament.
 
@@ -544,7 +544,7 @@ Architecture **gelée dans D-049** : définitions typées allowlistées (aucun S
 - Fait : migration `000025` (4 tables, **18 fonctions** (11 autorités runtime + 4 internes dont validateur, ses **deux helpers de typage** et matcher, + 3 fonctions trigger), 3 triggers d'immuabilité, FK composites same-segment, index unique partiel « une génération active », ACL runtime EXECUTE-only) + couche Laravel mince (service, job ID-only, dispatcher, sweeper, commande opérateur, scheduler off) + 11 fichiers de tests P6-A2.
 - État build/tests : voir le dernier rapport. Compteurs de migration relevés 40→41 **uniquement** sur l'état courant ; frontières **37** (000021), **39** (000023) et **40** (000024) inchangées.
 - Décisions prises (→ DECISIONS_LOG.md) : **D-050** (implémentation P6-A2) et **D-051** (architecture P6-B0 gelée, plan seulement).
-- Laisse à : P6-A2 IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE. P6-B0 NON COMMENCÉ.
+- Laisse à : P6-A2 TERMINÉ, MERGÉ ET VALIDÉ (PR #36, merge `920eb1b9`, CI #43). P6-B0 = gate actif.
 
 ### 2026-08-08 — Claude Code (P6-A1.3 Explicit Historical Backfill implémenté)
 - Fait : migration `000024` (table de runs durables audités, six autorités SECURITY DEFINER, index unique partiel « un seul run actif », ACL runtime EXECUTE-only) + service et commande opérateur dry-run-par-défaut + 8 fichiers de tests P6-A1.3 (Schema, Candidates, RunAuthority, Command, Concurrency, Privileges, Rollback, SecurityContract).

@@ -762,7 +762,7 @@ P6-A1.1, P6-A1.0, P6-A0, Commerce et les rôles. Prouvé avant/up/down.
 
 ---
 
-### CONTRAT P6-A2 — Typed Versioned CRM Segments (migration 000025, IMPLÉMENTÉ, PRÉ-MERGE)
+### CONTRAT P6-A2 — Typed Versioned CRM Segments (migration 000025, TERMINÉ ET MERGÉ)
 
 > **D-049 (architecture) → D-050 (implémentation). Migration unique `000025`
 > (`2026_07_14_000025_create_typed_versioned_crm_segments.php`), 41 migrations,

@@ -3716,8 +3716,8 @@ IMPACT : P6-A1.1 clôturé et mergé (autorité financière du rollup en place).
 ## À AJOUTER AU FIL DU PROJET
 [Chaque nouvelle décision importante vient ici, datée.]
 
-### D-050 : P6-A2 — Typed Versioned CRM Segments — IMPLEMENTATION (PRÉ-MERGE) ✅
-CONTEXTE : D-049 avait gelé l'architecture. D-050 fige le résultat **réel** implémenté et validé localement sur `p6-a2-typed-versioned-crm-segments`, EN ATTENTE DE REVUE/MERGE. **P6-B0 (vues admin CRM) NON COMMENCÉ.**
+### D-050 : P6-A2 — Typed Versioned CRM Segments — IMPLEMENTATION ✅ (MERGÉ)
+CONTEXTE : D-049 avait gelé l'architecture. D-050 fige le résultat **réel**, **mergé sur la stable** via PR #36 (head `ea562c7`, merge `920eb1b9`, CI #43 success). **P6-B0 (CRM Admin Views) devient le gate actif ; P6-B1 (exports) non commencé.**
 
 **Divergences constatées entre D-049 et le schéma réel** (auditées avant tout code) :
 - `crm_contacts.status` ∈ {`active`, `anonymized`} — il n'existe **pas** de valeur `archived` ; `crm_contacts.origin` ∈ {`guest_order`, `verified_account`}. L'allowlist d'enum reprend **exactement** ces valeurs.

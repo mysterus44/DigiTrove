@@ -508,8 +508,9 @@ run **resumable**, retry d'un `failed` **explicite**. **Aucun job, scheduler ou
 listener de backfill** : le seul pipeline asynchrone reste P6-A1.2. Le `down()`
 restaure exactement la frontière `000023`.
 
-**P6-A2 TYPED VERSIONED CRM SEGMENTS — IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, EN
-ATTENTE DE REVUE/MERGE (D-049 architecture → D-050 implémentation).** La migration
+**P6-A2 TYPED VERSIONED CRM SEGMENTS — TERMINÉ, MERGÉ ET VALIDÉ** via PR #36,
+head `ea562c7`, merge `920eb1b9`, CI #43 success (D-049 architecture → D-050
+implémentation). La migration
 `000025` (`2026_07_14_000025_create_typed_versioned_crm_segments.php`, **41
 migrations**, aucune `000026`) crée quatre tables — `crm_segments`,
 `crm_segment_versions`, `crm_segment_generations`,
