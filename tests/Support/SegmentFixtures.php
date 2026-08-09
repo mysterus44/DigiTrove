@@ -118,6 +118,33 @@ final class SegmentFixtures
         return $generationId;
     }
 
+    /**
+     * Drive a generation into `failed` the only honest way: make a real batch fail
+     * atomically. The status is never written by hand — the immutability trigger would
+     * refuse it, and a hand-written status would not prove the failure path at all.
+     *
+     * Returns the failed generation id.
+     */
+    public static function failGeneration(int $segmentId, int $batchSize = 1): int
+    {
+        $generationId = (int) self::owner()->selectOne(
+            'SELECT * FROM start_crm_segment_generation(?, ?)',
+            [$segmentId, $batchSize],
+        )->generation_id;
+
+        self::owner()->statement('SET ROLE digitrove_crm_executor');
+
+        try {
+            self::owner()->statement('ALTER TABLE public.crm_segment_generation_members ADD CONSTRAINT p6b0_force_failure CHECK (contact_id < 0) NOT VALID');
+            self::owner()->selectOne('SELECT * FROM process_crm_segment_generation_batch(?)', [$generationId]);
+        } finally {
+            self::owner()->statement('ALTER TABLE public.crm_segment_generation_members DROP CONSTRAINT IF EXISTS p6b0_force_failure');
+            self::owner()->statement('RESET ROLE');
+        }
+
+        return $generationId;
+    }
+
     /** @return list<int> */
     public static function currentMembers(int $segmentId, int $limit = 100): array
     {

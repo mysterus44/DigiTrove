@@ -168,6 +168,57 @@ final class CrmSegmentService
         });
     }
 
+    /**
+     * Bounded keyset listing over the P6-A2 authority. No OFFSET, no direct table read.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function listSegments(?int $afterSegmentId, int $limit): array
+    {
+        return $this->call(function () use ($afterSegmentId, $limit): array {
+            $rows = $this->crmConnection()->select(
+                'SELECT * FROM public.list_crm_segments(?::bigint, ?::integer)',
+                [$afterSegmentId, $limit],
+            );
+
+            return array_map(static fn (object $r): array => [
+                'segment_id' => (int) $r->segment_id,
+                'name' => (string) $r->name,
+                'status' => (string) $r->status,
+                'current_version_number' => $r->current_version_number === null ? null : (int) $r->current_version_number,
+                'current_generation_id' => $r->current_generation_id === null ? null : (int) $r->current_generation_id,
+                'current_members_count' => $r->current_members_count === null ? null : (int) $r->current_members_count,
+                'generation_published_at' => $r->generation_published_at,
+            ], $rows);
+        });
+    }
+
+    /** @return array<string, mixed>|null */
+    public function segment(int $segmentId): ?array
+    {
+        return $this->call(function () use ($segmentId): ?array {
+            $row = $this->crmConnection()->selectOne(
+                'SELECT * FROM public.get_crm_segment(?::bigint)',
+                [$segmentId],
+            );
+
+            if ($row === null) {
+                return null;
+            }
+
+            return [
+                'segment_id' => (int) $row->segment_id,
+                'name' => (string) $row->name,
+                'status' => (string) $row->status,
+                'current_version_id' => $row->current_version_id === null ? null : (int) $row->current_version_id,
+                'current_version_number' => $row->current_version_number === null ? null : (int) $row->current_version_number,
+                'current_generation_id' => $row->current_generation_id === null ? null : (int) $row->current_generation_id,
+                'current_members_count' => $row->current_members_count === null ? null : (int) $row->current_members_count,
+                'generation_published_at' => $row->generation_published_at,
+            ];
+        });
+    }
+
     /** @return list<int> Contact ids of the CURRENT published generation only. */
     public function currentMembers(int $segmentId, ?int $afterContactId, int $limit): array
     {

@@ -93,10 +93,17 @@ it('uses no dynamic SQL, trigger bypass or FX in the migration', function () {
         ->not->toMatch('/\bREAL\b/');
 });
 
-it('adds no segment UI, route or Filament resource in this gate', function () {
-    expect(glob(app_path('Filament/**/*Segment*.php')) ?: [])->toBe([])
+it('adds no segment UI or route beyond the single P6-B0 admin page', function () {
+    // P6-A2 itself shipped no UI at all. P6-B0 (D-052) then added EXACTLY ONE admin
+    // panel page over the A2 authorities. It is named explicitly rather than excluded
+    // by a pattern, so any OTHER segment UI — a resource, a widget, a second page —
+    // still fails this guard.
+    expect(glob(app_path('Filament/**/*Segment*.php')) ?: [])
+        ->toBe([app_path('Filament/Pages/CrmSegments.php')])
         ->and(glob(app_path('Http/Controllers/*Segment*.php')) ?: [])->toBe([]);
 
+    // The page is a Filament panel page: it is reachable only through the admin panel's
+    // authenticated prefix. No PUBLIC segment route exists at any point.
     $routes = implode("\n", array_map(
         static fn (string $p): string => file_exists($p) ? file_get_contents($p) : '',
         [base_path('routes/web.php'), base_path('routes/api.php')],
