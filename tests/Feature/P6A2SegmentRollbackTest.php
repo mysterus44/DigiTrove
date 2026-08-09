@@ -31,9 +31,13 @@ it('rolls back to the exact 000024 boundary while preserving every earlier phase
             'crm_segment_generations',
             'crm_segment_generation_members',
         ];
-        // EXACT inventory of every function 000025 creates, by full typed signature.
-        // A function added to the migration without being added here (and therefore to
-        // its rollback) makes this test fail: the guard is FAIL-CLOSED.
+        // FAIL-CLOSED P6-A2 function inventory: pg_catalog must expose EXACTLY these 18
+        // typed signatures after UP, and NONE after DOWN.
+        //
+        // The proof does not rely on this hand-written list alone. `$actualSignatures`
+        // below reads the real set from pg_catalog and is compared for SET EQUALITY, so
+        // a 19th P6-A2 function omitted from both the migration inventory and this list
+        // still turns the test red (19 actual != 18 expected).
         //
         // 11 runtime authorities + 4 internal (validator, its two typing helpers, the
         // matcher) + 3 trigger functions = 18.
@@ -61,6 +65,29 @@ it('rolls back to the exact 000024 boundary while preserving every earlier phase
             'public.enforce_crm_segment_generation_immutability()',
             'public.enforce_crm_segment_generation_member_immutability()',
         ];
+
+        sort($segmentSignatures);
+
+        // The REAL set of P6-A2 functions, read from pg_catalog rather than declared.
+        //
+        // Naming predicate: every function 000025 creates carries `crm_segment` in its
+        // proname, and no earlier phase (P6-A0/A1.0/A1.1/A1.2/A1.3) creates any such
+        // function — asserted below by the empty set at the 000024 frontier. Filtering
+        // by owner would be wrong: digitrove_crm_executor also owns P6-A0/A1 functions.
+        $actualSignatures = static function () use ($pdo): array {
+            // oidvectortypes() yields the ARGUMENT TYPES only; identity_arguments would
+            // also carry the parameter names (`p_generation_id bigint`).
+            $rows = $pdo->query(<<<'SQL'
+                SELECT 'public.' || p.proname || '(' || pg_catalog.oidvectortypes(p.proargtypes) || ')' AS signature
+                FROM pg_proc p
+                JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public'
+                  AND p.proname LIKE '%crm_segment%'
+                ORDER BY signature
+                SQL)->fetchAll(PDO::FETCH_COLUMN);
+
+            return array_map('strval', $rows);
+        };
 
         // Resolves a typed signature to an OID, or null when the function is absent.
         $procExists = static fn (string $signature): bool => $pdo
@@ -111,6 +138,10 @@ it('rolls back to the exact 000024 boundary while preserving every earlier phase
             expect($procExists($signature))->toBeFalse();
         }
 
+        // 0 — and this also validates the naming predicate itself: no earlier phase
+        // owns a function matching it.
+        expect($actualSignatures())->toBe([]);
+
         // ── 2. APPLY 000025 ── tables, authorities and runtime grants appear.
         $result = $harness->applyExactMigrations([$boundary]);
         expect($result)->toContain('2026_07_14_000025_create_typed_versioned_crm_segments');
@@ -121,6 +152,12 @@ it('rolls back to the exact 000024 boundary while preserving every earlier phase
         foreach ($segmentFunctions as $function) {
             expect($functionExists($function))->toBeTrue();
         }
+
+        // 18 — SET EQUALITY against pg_catalog, not mere inclusion. An extra P6-A2
+        // function that nobody inventoried makes this fail (19 != 18), which is what
+        // makes the guard genuinely fail-closed.
+        expect($actualSignatures())->toBe($segmentSignatures)
+            ->and($actualSignatures())->toHaveCount(18);
 
         // Every one of the 18 exists, is owned by the restricted executor, and is
         // closed to PUBLIC.
@@ -157,8 +194,11 @@ it('rolls back to the exact 000024 boundary while preserving every earlier phase
             expect($functionExists($function))->toBeFalse();
         }
 
-        // THE guard that would have caught the leaked helpers: the intersection between
-        // what 000025 created and what still exists must be EMPTY.
+        // 0 — THE guard. Read from pg_catalog, so it covers the two leaked helpers, the
+        // trigger functions, and any future P6-A2 function nobody remembered to drop.
+        expect($actualSignatures())->toBe([]);
+
+        // Kept for a precise regression message when a known signature survives.
         $surviving = array_values(array_filter($segmentSignatures, $procExists));
         expect($surviving)->toBe([]);
 
