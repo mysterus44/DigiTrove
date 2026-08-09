@@ -546,14 +546,42 @@ Laravel mince (service, job **ID-only**, dispatcher, sweeper, commande opérateu
 **preview par défaut**, scheduler **désactivé par défaut**) ; **aucune UI, route
 ni ressource Filament**. Le `down()` restaure exactement la frontière `000024`.
 
-**P6-B0 (CRM Admin Views) : architecture AUDITÉE ET GELÉE (D-051) — NON COMMENCÉ,
-aucun code, aucune migration `000026`.** Panel admin + Gate
-`manageCustomerRelationships` fail-closed, aucune donnée CRM publique, aucune
-reconstruction financière côté UI, montants toujours avec devise explicite et
-**aucun total multi-devises**, recherche contact par **e-mail normalisé exact**
-seulement (jamais de reconstitution d'un e-mail anonymisé), constructeur de
-critères produisant **uniquement le DSL V1** (aucun éditeur SQL/JSON libre), et
-séparation stricte consentement / appartenance / éligibilité d'envoi.
+**P6-B0 (CRM Admin Views) : IMPLÉMENTÉ, VALIDÉ PAR CAMPAGNES CIBLÉES, EN ATTENTE
+DE PR/CI** (D-052, branche `p6-b0-crm-admin-views`). ⚠️ D-051 annonçait « aucune
+migration » : **faux**. Le runtime n'a **aucun `SELECT`** sur une table `crm_*` et,
+si toutes les autorités **Segments** existaient déjà (P6-A2), il n'existait
+**aucune** autorité pour parcourir les contacts, chercher par e-mail exact, lire une
+timeline de consentement, lire les faits commerce par devise, lister les
+appartenances courantes ou l'historique des versions. **P6-B0.1 ajoute la migration
+`000026`** (**42 migrations**, aucune `000027`) avec les **7 autorités de lecture**
+manquantes — toutes `STABLE` + `SECURITY DEFINER`, owner `digitrove_crm_executor`,
+`search_path` épinglé, **aucun nouveau rôle**, PUBLIC sans accès, runtime
+**EXECUTE-only**, `down()` restaurant exactement `000025`.
+Panel admin + Gate `manageCustomerRelationships` fail-closed **re-vérifiée dans
+chaque action**, aucune donnée CRM publique, aucune reconstruction financière côté
+UI, montants en unités mineures exactes avec devise explicite et **aucun total
+multi-devises** ni **division par 100** (XOF exposant 0 vs USD exposant 2, aucune
+table d'exposants auditée), recherche contact par **e-mail normalisé exact dans
+l'autorité** (jamais en PHP, aucun wildcard ; un contact anonymisé a `email IS NULL`
+— adresse **physiquement absente**, ni masquée ni retrouvable), constructeur de
+critères **structuré** produisant **uniquement le DSL V1** (aucun textarea, éditeur
+JSON, éditeur de code ni SQL ; entiers en **nombres JSON**, dates **RFC3339 UTC
+absolues**), et séparation stricte consentement / appartenance / éligibilité
+d'envoi. **PostgreSQL reste l'autorité finale** : appelé hors builder avec 7
+définitions invalides, il les refuse toutes et **aucune version n'est créée**.
+Aucun envoi, aucun export (P6-B1).
+⚠️ **Aucune suite complète locale B0 n'a été exécutée ni revendiquée** — elle est
+différée au stack B1 qui contient B0. P6B0+P6B01 **113 tests / 655 assertions**,
+Pint **446 fichiers**.
+**Trois contrats historiques corrigés en portée (jamais affaiblis)** : P5-A3C
+(inventaire explicite des 11 fichiers Analytics, `toHaveCount(11)` fail-closed,
++2 tests prouvant que le garde garde ses dents et que le CRM est hors périmètre),
+P6-A0 (`/(?<!acquired_)orders_count/` — ⚠️ **échec préexistant** introduit par
+`0a62eb5`, campagne non rejouée à l'époque), P6-A2 (la page B0 autorisée est
+**nommée**, toute autre UI segment échoue toujours). `Tests\Support\SourceScanner`
+scanne du **code** (commentaires retirés) : sinon un fichier qui documente ce qu'il
+refuse de faire déclenche sa propre alarme.
+**PROCHAIN GATE : P6-B1 — Private Audited CRM Exports (non commencé).**
 Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —

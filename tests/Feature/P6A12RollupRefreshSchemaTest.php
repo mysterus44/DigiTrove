@@ -26,9 +26,9 @@ function p6a12Constraint(string $name): bool
 it('keeps 000023 as exactly one migration while the frontier moved to 000024', function () {
     $root = dirname(__DIR__, 2);
     // P6-A1.3 (D-048) legitimately adds 000024; 000025 does not exist yet.
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(41)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(42)
         ->and(glob($root.'/database/migrations/2026_07_14_000023*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000026*.php'))->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000027*.php'))->toBe([]);
 });
 
 it('creates the outbox with exactly the durable coordination columns and no PII', function () {

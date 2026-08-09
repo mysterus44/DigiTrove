@@ -877,11 +877,53 @@ uniquement ; **jamais** sur le validateur/matcher internes, **jamais**
 des **18** fonctions, drop **explicite** des FK composites circulaires (**jamais
 `CASCADE`**) puis des quatre tables — restaure exactement la frontière `000024`.
 
-**Frontière suivante** : **P6-B0 — CRM Admin Views**, architecture gelée par
-**D-051** (panel admin + Gate `manageCustomerRelationships` fail-closed, montants
-toujours avec devise explicite et aucun total multi-devises, recherche par e-mail
-normalisé exact, aucun éditeur SQL/JSON libre, séparation consentement/appartenance/
-éligibilité). **NON COMMENCÉ, aucun code, aucune migration `000026`.**
+### CONTRAT P6-B0.1 — CRM Admin Read Authorities (migration 000026, IMPLÉMENTÉ)
+
+> **42 migrations, `000026` présente, aucune `000027`. Validé par campagnes
+> ciblées, EN ATTENTE DE PR/CI.** (D-052)
+
+**Pourquoi une migration alors que D-051 annonçait « aucune migration »** : le rôle
+`digitrove_runtime` ne détient **aucun `SELECT`** sur une table `crm_*`. Toutes les
+autorités **Segments** existaient déjà (P6-A2), mais il n'en existait **aucune** pour
+parcourir les contacts, chercher par e-mail exact, lire une timeline de consentement,
+lire les faits commerce par devise, lister les appartenances courantes d'un contact ou
+l'historique des versions d'un segment. L'UI n'était donc constructible qu'en cassant la
+frontière de lecture (interdit) ou en ajoutant le **minimum** d'autorités manquantes.
+
+**7 fonctions**, toutes **`STABLE`** (PostgreSQL interdit structurellement toute
+mutation), **`SECURITY DEFINER`**, owner `digitrove_crm_executor`, `search_path`
+épinglé `pg_catalog, public, pg_temp`, objets qualifiés `public.` :
+
+| Autorité | Bornes |
+|---|---|
+| `list_crm_contacts(bigint, varchar, varchar, integer)` | keyset `id >`, limite 1..100, filtres statut/origine **allowlistés** (`22023` sinon) |
+| `get_crm_contact(bigint)` | identifiant ≥ 1 |
+| `find_crm_contact_by_exact_email(varchar)` | `lower(btrim())` sur CITEXT, **égalité exacte**, `LIMIT 1` ; hors bornes 3..254 ⇒ **retour vide, pas d'exception** (anti-oracle) |
+| `list_crm_contact_consent_events(bigint, bigint, integer)` | keyset `id >`, limite 1..100 |
+| `list_crm_contact_commerce_rollups(bigint)` | **une ligne par devise**, jamais de somme |
+| `list_crm_contact_segment_memberships(bigint, bigint, integer)` | génération **publiée courante** uniquement |
+| `list_crm_segment_versions(bigint, integer, integer)` | keyset `version_number >`, limite 1..100 |
+
+**ACL** : **aucun nouveau rôle**. Pour chaque fonction : `REVOKE ALL … FROM PUBLIC`,
+`REVOKE ALL … FROM digitrove_runtime`, puis `GRANT EXECUTE … TO digitrove_runtime`. Le
+`REVOKE` précède délibérément le `GRANT` : il retire ce qu'une règle de privilèges par
+défaut aurait pu accorder, puis rend exactement un verbe. Le runtime ne reçoit **jamais**
+`SELECT` sur une table `crm_*`.
+
+**Invariants applicatifs** : aucun `OFFSET` (prouvé par `pg_get_functiondef`, pas par
+grep) ; aucun `LIKE`/`ILIKE`/fuzzy ; anonymisé ⇒ `email IS NULL` par le CHECK d'état
+P6-A0, donc l'ancienne adresse est **physiquement absente** (ce n'est pas un masquage et
+elle est irrécupérable) ; montants en **unités mineures exactes avec devise explicite**,
+**aucun total multi-devises**, **aucune division par 100** (XOF exposant 0 vs USD
+exposant 2, aucune table d'exposants auditée dans le dépôt) ; le constructeur de critères
+n'émet que du **DSL V1** et `validate_crm_segment_definition_v1` reste **l'autorité
+finale** ; aucune route publique, aucun envoi, aucun export.
+
+**Rollback `000026`** : pour chaque signature, `REVOKE EXECUTE … FROM digitrove_runtime`
+puis `DROP FUNCTION IF EXISTS` — restaure exactement la frontière `000025`.
+
+**Frontière suivante** : **P6-B1 — Private Audited CRM Exports** (migration `000027`
+attendue). **NON COMMENCÉ.**
 
 ---
 

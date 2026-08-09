@@ -26,7 +26,11 @@ it('keeps CRM services behind PostgreSQL authorities and sensitive parameters', 
         ->and($sources)->not->toContain('DB::table(')
         ->and($sources)->not->toContain('customer_profiles')
         ->and($sources)->not->toContain('lifetime_value_minor')
-        ->and($sources)->not->toContain('orders_count')
+        // The ban targets the LEGACY denormalised profile column `orders_count`, not
+        // `acquired_orders_count` — the real, currency-scoped P6-A1.1 rollup column the
+        // P6-B0 admin read layer legitimately surfaces. A bare substring test conflated
+        // the two and would have forced the honest column to be renamed or hidden.
+        ->and($sources)->not->toMatch('/(?<!acquired_)orders_count/')
         ->and($sources)->not->toContain('visitor_id')
         ->and($sources)->not->toContain('Mail::')
         ->and($sources)->not->toContain('Notification::')
