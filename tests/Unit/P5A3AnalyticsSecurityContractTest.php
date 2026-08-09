@@ -66,12 +66,27 @@ it('keeps dashboard queries projection-only read-only and identity-free', functi
         ->not->toContain('visitor_id=');
 });
 
-it('keeps the Filament surface read-only and free of operations or exports', function () use ($root) {
+it('keeps the ANALYTICS Filament surface read-only and free of operations or exports', function () use ($root) {
+    // Enumerated EXPLICITLY, like its P5-A3C sibling. The previous version globbed
+    // `app/Filament/Pages/*.php` and so annexed every page of every other domain: the
+    // P6-B1 CRM export page would have failed an ANALYTICS contract for a reason that
+    // has nothing to do with analytics. The guard is AIMED, not weakened — there is no
+    // "ignore CRM" exclusion, and a new analytics page/widget must be listed to be
+    // covered.
     $files = array_merge(
-        glob($root.'/app/Filament/Pages/*.php') ?: [],
-        glob($root.'/app/Filament/Widgets/*.php') ?: [],
-        glob($root.'/resources/views/filament/widgets/*.blade.php') ?: [],
+        [$root.'/app/Filament/Pages/AnalyticsDashboard.php'],
+        glob($root.'/app/Filament/Widgets/Analytics*.php') ?: [],
+        glob($root.'/resources/views/filament/widgets/analytics-*.blade.php') ?: [],
     );
+
+    // Fail closed: a renamed or deleted analytics file must break this test rather than
+    // silently shrink the scanned surface and report a vacuous pass.
+    expect($files)->toHaveCount(11);
+
+    foreach ($files as $file) {
+        expect(is_file($file))->toBeTrue("analytics surface file is missing: {$file}");
+    }
+
     $surface = implode("\n", array_map('file_get_contents', $files));
 
     expect($surface)->not->toContain('Artisan::call')
@@ -82,4 +97,12 @@ it('keeps the Filament surface read-only and free of operations or exports', fun
         ->not->toContain('csv')
         ->not->toContain('digitrove_analytics_worker')
         ->not->toContain('SQLSTATE');
+
+    // The CRM pages exist and are deliberately OUTSIDE this analytics surface.
+    $crmPages = glob($root.'/app/Filament/Pages/Crm*.php') ?: [];
+    expect($crmPages)->not->toBe([]);
+
+    foreach ($crmPages as $crmPage) {
+        expect($files)->not->toContain($crmPage);
+    }
 });

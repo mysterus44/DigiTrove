@@ -169,7 +169,11 @@ it('allows only the three explicitly reviewed P4-C4/C5 download routes', functio
         ->values()
         ->all();
 
+    // Three DELIVERY routes plus the one P6-B1 (D-054) admin export download, which is
+    // a different thing entirely: panel-authenticated, owner-only, flat 404 otherwise.
+    // Naming it keeps the inventory exact so a new download surface cannot slip in.
     expect($applicationDownloadRoutes)->toBe([
+        'GET|HEAD admin/crm-exports/{export}/download App\Http\Controllers\CrmExportDownloadController',
         'GET|HEAD downloads/{grantPublicId} App\Http\Controllers\DownloadLandingController',
         'GET|HEAD downloads/{grantPublicId}/file App\Http\Controllers\DownloadFileController',
         'POST api/downloads/{grantPublicId}/authorize App\Http\Controllers\Api\DownloadAuthorizationController',
