@@ -38,13 +38,13 @@ it('installs only the P6-A1.1 table with closed physical constraints', function 
         'visitor_id'
     );
 
-    // Verify exactly 42 migrations and the last one is 000026 (P6-B0.1)
+    // Exactly 43 migrations, the last being 000027 (P6-B1 private audited exports).
     $migrations = DB::table('migrations')->orderBy('id')->get();
-    expect($migrations)->toHaveCount(42)
-        ->and($migrations->last()->migration)->toBe('2026_07_14_000026_create_crm_admin_read_authorities');
+    expect($migrations)->toHaveCount(43)
+        ->and($migrations->last()->migration)->toBe('2026_07_14_000027_create_crm_exports_table');
 
-    // No migration 000027 exists
-    expect(glob(database_path('migrations').'/2026_07_14_000027*.php') ?: [])->toBe([]);
+    // No migration 000028 exists (P6-C is frozen architecture only, D-055).
+    expect(glob(database_path('migrations').'/2026_07_14_000028*.php') ?: [])->toBe([]);
 });
 
 it('verifies exact restrictive foreign keys checks and primary key', function () {

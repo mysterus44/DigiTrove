@@ -19,4 +19,15 @@ return [
         'processing_enabled' => env('CRM_SEGMENT_REBUILD_PROCESSING_ENABLED', false),
         'batch_size' => env('CRM_SEGMENT_REBUILD_BATCH_SIZE', 50),
     ],
+    // P6-B1 — three INDEPENDENT switches, all off by default: requesting an export,
+    // processing the queue, and purging expired artefacts are separate capabilities and
+    // must be enable-able separately.
+    'exports' => [
+        'enabled' => env('CRM_EXPORTS_ENABLED', false),
+        'processing_enabled' => env('CRM_EXPORT_PROCESSING_ENABLED', false),
+        'purge_enabled' => env('CRM_EXPORT_PURGE_ENABLED', false),
+        'max_rows' => env('CRM_EXPORT_MAX_ROWS', 10000),
+        'ttl_hours' => env('CRM_EXPORT_TTL_HOURS', 24),
+        'disk' => env('CRM_EXPORT_DISK', 'private'),
+    ],
 ];

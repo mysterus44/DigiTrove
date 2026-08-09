@@ -169,6 +169,110 @@ final class CrmConfig
         return $batchSize;
     }
 
+    // ── P6-B1 exports ────────────────────────────────────────────────────────────
+
+    public static function exportsEnabled(): bool
+    {
+        return self::boolean('crm.exports.enabled', 'The CRM exports flag is invalid.');
+    }
+
+    public static function assertExportsEnabled(): void
+    {
+        self::assertEnabled();
+
+        if (! self::exportsEnabled()) {
+            throw new RuntimeException('CRM exports are disabled.');
+        }
+    }
+
+    public static function exportProcessingEnabled(): bool
+    {
+        return self::boolean('crm.exports.processing_enabled', 'The CRM export processing flag is invalid.');
+    }
+
+    public static function assertExportProcessingEnabled(): void
+    {
+        self::assertExportsEnabled();
+
+        if (! self::exportProcessingEnabled()) {
+            throw new RuntimeException('CRM export processing is disabled.');
+        }
+    }
+
+    public static function exportPurgeEnabled(): bool
+    {
+        return self::boolean('crm.exports.purge_enabled', 'The CRM export purge flag is invalid.');
+    }
+
+    public static function assertExportPurgeEnabled(): void
+    {
+        self::assertEnabled();
+
+        if (! self::exportPurgeEnabled()) {
+            throw new RuntimeException('CRM export purge is disabled.');
+        }
+    }
+
+    /** Bounded 1..50000, validated BEFORE any write so a bad flag never creates a row. */
+    public static function exportMaxRows(): int
+    {
+        return self::boundedInteger('crm.exports.max_rows', 10000, 1, 50000, 'The CRM export row limit is invalid.');
+    }
+
+    /** Bounded 1..168 hours (one week). */
+    public static function exportTtlHours(): int
+    {
+        return self::boundedInteger('crm.exports.ttl_hours', 24, 1, 168, 'The CRM export TTL is invalid.');
+    }
+
+    /**
+     * The export disk MUST be a configured LOCAL, non-public disk. A public disk would
+     * publish CRM identity data at a guessable URL, so the check is on the resolved disk
+     * configuration rather than on the name.
+     */
+    public static function exportDisk(): string
+    {
+        $disk = config('crm.exports.disk', 'private');
+
+        if (! is_string($disk) || preg_match('/\A[a-z0-9_]{1,32}\z/', $disk) !== 1) {
+            throw new RuntimeException('The CRM export disk is invalid.');
+        }
+
+        $configured = config("filesystems.disks.{$disk}");
+
+        // The property that actually matters is UNREACHABILITY, not the `visibility`
+        // key: a local disk with no `url` is not addressable over HTTP at all, whereas a
+        // disk carrying a `url` (or literally the `public` disk) publishes whatever is
+        // written to it at a guessable address.
+        if (! is_array($configured)
+            || $disk === 'public'
+            || ($configured['driver'] ?? null) !== 'local'
+            || array_key_exists('url', $configured)) {
+            throw new RuntimeException('The CRM export disk must be a private, non-served local disk.');
+        }
+
+        return $disk;
+    }
+
+    private static function boundedInteger(string $key, int $default, int $min, int $max, string $message): int
+    {
+        $value = config($key, $default);
+        $valid = (is_int($value) && ! is_bool($value))
+            || (is_string($value) && preg_match('/\A[1-9][0-9]*\z/', $value) === 1);
+
+        if (! $valid) {
+            throw new RuntimeException($message);
+        }
+
+        $int = (int) $value;
+
+        if ($int < $min || $int > $max) {
+            throw new RuntimeException($message);
+        }
+
+        return $int;
+    }
+
     private static function boolean(string $key, string $message): bool
     {
         $value = config($key, false);

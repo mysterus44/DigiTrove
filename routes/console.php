@@ -54,6 +54,26 @@ if (CrmConfig::segmentRebuildProcessingEnabled()) {
     }
 }
 
+// P6-B1 — both schedules are OFF by default and gated on their own flag, so enabling
+// export processing never implicitly enables artefact deletion, and vice versa.
+if (CrmConfig::exportProcessingEnabled()) {
+    $crmExportSweep = Schedule::command('crm:sweep-exports')->everyFiveMinutes();
+    $crmExportSweep->withoutOverlapping();
+
+    if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
+        $crmExportSweep->onOneServer();
+    }
+}
+
+if (CrmConfig::exportPurgeEnabled()) {
+    $crmExportPurge = Schedule::command('crm:purge-expired-exports')->hourly();
+    $crmExportPurge->withoutOverlapping();
+
+    if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
+        $crmExportPurge->onOneServer();
+    }
+}
+
 if (AnalyticsOperationsConfig::enabled()) {
     $analyticsSchedules = [];
 

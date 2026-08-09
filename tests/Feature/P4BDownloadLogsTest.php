@@ -67,6 +67,10 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Crm/CrmCommerceRollupRefreshDispatcher.php',
     'Crm/CrmCommerceRollupRefreshProcessor.php',
     'Crm/CrmContactResolver.php',
+    // P6-B1 (D-054) — EXECUTE-only private audited export authority client and the
+    // generator that writes the file OUTSIDE any database transaction.
+    'Crm/CrmExportGenerator.php',
+    'Crm/CrmExportService.php',
     'Crm/CrmOperationException.php',
     // P6-A1.0 (D-045) — durable EXECUTE-only Order-to-CRM attribution pipeline.
     'Crm/CrmOrderAttributionDispatcher.php',
@@ -455,7 +459,7 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(42)
+        ->and(DB::table('migrations')->count())->toBe(43)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')
@@ -1048,7 +1052,13 @@ it('keeps HEAD commercially inert and allows only the explicitly reviewed downlo
         }
     }
     sort($downloadRoutes);
+    // P4-C4 widened the boundary by two routes; P6-B1 (D-054) adds exactly one more.
+    // The CRM export download is NOT a delivery route: it sits under the admin panel's
+    // authentication middleware, serves an audited artefact only to the admin who
+    // requested it, and refuses everyone else with a flat 404. It is listed here so a
+    // FOURTH download route can never appear unnoticed.
     expect($downloadRoutes)->toBe([
+        'GET|HEAD admin/crm-exports/{export}/download',
         'GET|HEAD downloads/{grantpublicid}',
         'GET|HEAD downloads/{grantpublicid}/file',
         'POST api/downloads/{grantpublicid}/authorize',
@@ -1061,8 +1071,12 @@ it('keeps HEAD commercially inert and allows only the explicitly reviewed downlo
         ->sort()
         ->values()
         ->all();
+    // P6-B1 (D-054) adds the CRM export download controller. Its NAME matches the
+    // `Download.*Controller` pattern, so it is listed explicitly rather than excluded:
+    // the point of this inventory is that nothing download-shaped appears unlisted.
     expect($downloadHttpFiles)->toBe([
         'Http/Controllers/Api/DownloadAuthorizationController.php',
+        'Http/Controllers/CrmExportDownloadController.php',
         'Http/Controllers/DownloadFileController.php',
         'Http/Controllers/DownloadLandingController.php',
         'Services/Delivery/DownloadAuthorizationService.php',
@@ -1084,7 +1098,10 @@ it('keeps HEAD commercially inert and allows only the explicitly reviewed downlo
             ->sort()->values()->all();
         expect($actual)->toBe($allowed);
     };
-    $dirAllowlist('Jobs', ['ProcessCrmCommerceRollupRefresh.php', 'ProcessCrmOrderAttribution.php', 'ProcessCrmSegmentGeneration.php', 'SecureDeliveryJob.php']);
+    // P6-B1 (D-054) adds GenerateCrmExport: an ID-only job that writes a CSV to a
+    // private disk. It is named here so the fail-closed directory guard keeps catching
+    // anything else smuggled into app/Jobs.
+    $dirAllowlist('Jobs', ['GenerateCrmExport.php', 'ProcessCrmCommerceRollupRefresh.php', 'ProcessCrmOrderAttribution.php', 'ProcessCrmSegmentGeneration.php', 'SecureDeliveryJob.php']);
     $dirAllowlist('Listeners', ['QueueCrmOrderAttribution.php', 'QueueSecureDelivery.php']);
     $dirAllowlist('Mail', ['OrderDownloadsReady.php']);
 

@@ -368,7 +368,13 @@ it('keeps digital files private and exposes only the reviewed delivery routes', 
         ->values()
         ->all();
 
+    // An EXACT list, so a new download route must be added here deliberately rather than
+    // appearing unnoticed. P6-B1 (D-054) adds the CRM export download; note it lives
+    // under `admin/`, behind the panel's authentication middleware, and is refused with
+    // a flat 404 unless the requesting admin owns the export — unlike the three public
+    // delivery routes above, which are reached with a grant token.
     expect($downloadUris)->toBe([
+        'admin/crm-exports/{export}/download',
         'api/downloads/{grantPublicId}/authorize',
         'downloads/{grantPublicId}',
         'downloads/{grantPublicId}/file',
