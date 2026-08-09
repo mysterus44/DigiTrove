@@ -122,6 +122,53 @@ final class CrmConfig
         }
     }
 
+    public static function segmentRebuildEnabled(): bool
+    {
+        return self::boolean('crm.segment_rebuild.enabled', 'The CRM segment rebuild flag is invalid.');
+    }
+
+    public static function assertSegmentRebuildEnabled(): void
+    {
+        self::assertEnabled();
+
+        if (! self::segmentRebuildEnabled()) {
+            throw new RuntimeException('CRM segment rebuild is disabled.');
+        }
+    }
+
+    public static function segmentRebuildProcessingEnabled(): bool
+    {
+        return self::boolean('crm.segment_rebuild.processing_enabled', 'The CRM segment rebuild processing flag is invalid.');
+    }
+
+    public static function assertSegmentRebuildProcessingEnabled(): void
+    {
+        self::assertEnabled();
+
+        if (! self::segmentRebuildProcessingEnabled()) {
+            throw new RuntimeException('CRM segment rebuild processing is disabled.');
+        }
+    }
+
+    public static function segmentRebuildBatchSize(): int
+    {
+        $value = config('crm.segment_rebuild.batch_size', 50);
+        $valid = (is_int($value) && ! is_bool($value))
+            || (is_string($value) && preg_match('/\A[1-9][0-9]*\z/', $value) === 1);
+
+        if (! $valid) {
+            throw new RuntimeException('The CRM segment rebuild batch size is invalid.');
+        }
+
+        $batchSize = (int) $value;
+
+        if ($batchSize < 1 || $batchSize > 100) {
+            throw new RuntimeException('The CRM segment rebuild batch size is invalid.');
+        }
+
+        return $batchSize;
+    }
+
     private static function boolean(string $key, string $message): bool
     {
         $value = config($key, false);

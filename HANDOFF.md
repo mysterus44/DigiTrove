@@ -526,9 +526,25 @@ P6-A1.2 rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouve
 
 ⚠️ **Adaptation au schéma réel** : `crm_order_attributions` n'a **pas** de colonne `id` (sa PK **est** `order_id`) et **aucun marqueur d'insertion autoritatif** n'existe (`attributed_at` est `timestamp(0)` ET fourni par l'appelant). La borne est donc un **high-water mark**, pas un snapshot : le run est **race-safe** (trigger P6-A1.2), pas snapshot-isolé. **Finitude** : attributions immuables + au plus une attribution par Order (PK = `order_id`) ⇒ domaine candidat borné ⇒ le run termine toujours.
 
-### P6-A2 — Typed Versioned CRM Segments
+### P6-A2 — Typed Versioned CRM Segments — **IMPLÉMENTÉ, EN ATTENTE DE REVUE/MERGE**
+
+**Statut** : implémenté et validé localement sur `p6-a2-typed-versioned-crm-segments` (**D-050**, migration `000025`, **41 migrations**, aucune `000026`).
+
+Quatre tables (`crm_segments`, `crm_segment_versions`, `crm_segment_generations`, `crm_segment_generation_members`) ; DSL V1 typé/allowlisté validé **dans PostgreSQL** (aucun SQL libre, clés exactes, INT64 strict, RFC3339 UTC absolu, enums réels `active|anonymized` et `guest_order|verified_account`) ; critères commerce **currency-scoped** (rollup absent ⇒ FALSE pour **tous** les opérateurs, y compris `neq`) ; versions **immuables dès l'INSERT** ; générations matérialisées par keyset borné — le curseur avance sur le dernier contact **SCANNÉ**, jamais le dernier matché — et **publiées atomiquement** via `current_generation_id` ; pointeurs protégés par **FK composites** (un segment ne peut structurellement pas pointer vers la version d'un autre) ; runtime **EXECUTE-only** sur 11 autorités bornées, jamais sur le validateur/matcher internes ni sur les tables ; **consentement marketing jamais lu** par le matcher ; job ID-only (`generationId` seul, ≤ 10 batches/exécution), sweeper, commande opérateur **preview par défaut**, scheduler **désactivé par défaut**. Aucune UI, route ni ressource Filament.
+
+⚠️ **Divergences D-049 / schéma réel** : `crm_contacts.status` ∈ {`active`, `anonymized`} (pas d'`archived`) ; `origin` ∈ {`guest_order`, `verified_account`} ; `created_at` est **nullable** et `timestamp(0)` ⇒ NULL rend le critère **explicitement FALSE**.
+
+**Prochain gate** : **P6-B0 — CRM Admin Views**, architecture gelée dans **D-051** (NON COMMENCÉ, aucun code, aucune migration `000026`).
+
+### Rappel D-049 (architecture P6-A2)
 
 Architecture **gelée dans D-049** : définitions typées allowlistées (aucun SQL/colonne/opérateur/JSONPath libre), versions immuables, générations matérialisées publiées **atomiquement**, critères commerce **currency-scoped** (aucun LTV global, aucun FX, aucun float), consentement marketing **séparé** de l'appartenance au segment. Migration `000025` (41 migrations). **P6-B0 (CRM Admin Views) NON COMMENCÉ.**
+
+### 2026-08-08 — Claude Code (P6-A2 Typed Versioned CRM Segments implémenté)
+- Fait : migration `000025` (4 tables, **18 fonctions** (11 autorités runtime + 4 internes dont validateur, ses **deux helpers de typage** et matcher, + 3 fonctions trigger), 3 triggers d'immuabilité, FK composites same-segment, index unique partiel « une génération active », ACL runtime EXECUTE-only) + couche Laravel mince (service, job ID-only, dispatcher, sweeper, commande opérateur, scheduler off) + 11 fichiers de tests P6-A2.
+- État build/tests : voir le dernier rapport. Compteurs de migration relevés 40→41 **uniquement** sur l'état courant ; frontières **37** (000021), **39** (000023) et **40** (000024) inchangées.
+- Décisions prises (→ DECISIONS_LOG.md) : **D-050** (implémentation P6-A2) et **D-051** (architecture P6-B0 gelée, plan seulement).
+- Laisse à : P6-A2 IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, EN ATTENTE DE REVUE/MERGE. P6-B0 NON COMMENCÉ.
 
 ### 2026-08-08 — Claude Code (P6-A1.3 Explicit Historical Backfill implémenté)
 - Fait : migration `000024` (table de runs durables audités, six autorités SECURITY DEFINER, index unique partiel « un seul run actif », ACL runtime EXECUTE-only) + service et commande opérateur dry-run-par-défaut + 8 fichiers de tests P6-A1.3 (Schema, Candidates, RunAuthority, Command, Concurrency, Privileges, Rollback, SecurityContract).

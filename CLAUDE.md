@@ -508,12 +508,51 @@ run **resumable**, retry d'un `failed` **explicite**. **Aucun job, scheduler ou
 listener de backfill** : le seul pipeline asynchrone reste P6-A1.2. Le `down()`
 restaure exactement la frontière `000023`.
 
-**P6-A2 (Typed Versioned CRM Segments) : architecture AUDITÉE ET GELÉE (D-049) —
-NON COMMENCÉ, aucun code, aucune migration `000025`.** Définitions typées et
-allowlistées (jamais de SQL/colonne/opérateur/JSONPath/callable libre), versions
-immuables, générations matérialisées publiées atomiquement (aucune demi-génération
-visible), critères monétaires **currency-scoped** (aucun LTV global, aucun FX,
-aucun float), consentement marketing **séparé** de l'appartenance au segment.
+**P6-A2 TYPED VERSIONED CRM SEGMENTS — IMPLÉMENTÉ ET VALIDÉ LOCALEMENT, EN
+ATTENTE DE REVUE/MERGE (D-049 architecture → D-050 implémentation).** La migration
+`000025` (`2026_07_14_000025_create_typed_versioned_crm_segments.php`, **41
+migrations**, aucune `000026`) crée quatre tables — `crm_segments`,
+`crm_segment_versions`, `crm_segment_generations`,
+`crm_segment_generation_members` — toutes owner `digitrove_crm_executor`.
+**DSL V1 typé et allowlisté** stocké en JSONB mais **jamais interprété comme du
+SQL** : enveloppe exacte `{schema_version, match, criteria}`, 1..50 critères,
+≤ 32768 octets, clés **exactes** par type de critère (toute clé `sql`/`column`/
+`raw`/`path`/… rend la définition invalide), INT64 exact (rejette `1.2`, `"100"`,
+`1e100`, overflow), timestamps **RFC3339 UTC absolus** (aucun « 30 days ago »),
+enums limités aux valeurs **réelles** du dépôt (`active|anonymized`,
+`guest_order|verified_account`). **Tout critère commerce est currency-scoped** et
+lit exactement une ligne `(contact_id, currency)` : aucun FX, aucune somme
+multi-devises, aucun LTV global ; **un rollup absent vaut FALSE pour TOUS les
+opérateurs**, `neq` compris (un Order gratuit acquis a déjà une ligne à 0, donc
+« jamais acquis » et « acquis gratuitement » ne se confondent pas). Le **contenu
+d'une version est immuable dès l'INSERT** (seule transition `draft → published`) ;
+publier une nouvelle version est **refusé** tant qu'une génération est en cours.
+Une génération gèle `contact_id_high_water_mark = MAX(crm_contacts.id)` (borne de
+**population de contacts**, pas un snapshot MVCC des faits : la fenêtre de build
+peut voir les faits changer), parcourt par **keyset borné** en avançant le curseur
+sur le **dernier contact SCANNÉ** (jamais le dernier matché), puis est **publiée
+atomiquement** via `crm_segments.current_generation_id` — les lecteurs voient
+l'ancienne génération **entière** puis la nouvelle **entière**, jamais une
+demi-génération. Les pointeurs sont protégés par **FK composites**
+`(current_version_id, id) → versions (id, segment_id)` : un segment ne peut
+**structurellement** pas pointer vers la version d'un autre. Échec de batch
+**atomique** (aucun membership/curseur/compteur partiel, **SQLSTATE seul**), retry
+**explicite**. **Le matcher ne lit jamais `crm_marketing_consent_events`** :
+appartenance ≠ éligibilité d'envoi. ACL : aucun nouveau rôle, runtime
+**EXECUTE-only sur 11 autorités bornées**, jamais sur le validateur ni le matcher
+internes, jamais `SELECT`/`DML` sur les quatre tables ; PUBLIC sans accès. Couche
+Laravel mince (service, job **ID-only**, dispatcher, sweeper, commande opérateur
+**preview par défaut**, scheduler **désactivé par défaut**) ; **aucune UI, route
+ni ressource Filament**. Le `down()` restaure exactement la frontière `000024`.
+
+**P6-B0 (CRM Admin Views) : architecture AUDITÉE ET GELÉE (D-051) — NON COMMENCÉ,
+aucun code, aucune migration `000026`.** Panel admin + Gate
+`manageCustomerRelationships` fail-closed, aucune donnée CRM publique, aucune
+reconstruction financière côté UI, montants toujours avec devise explicite et
+**aucun total multi-devises**, recherche contact par **e-mail normalisé exact**
+seulement (jamais de reconstitution d'un e-mail anonymisé), constructeur de
+critères produisant **uniquement le DSL V1** (aucun éditeur SQL/JSON libre), et
+séparation stricte consentement / appartenance / éligibilité d'envoi.
 Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —

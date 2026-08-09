@@ -757,10 +757,131 @@ jamais `SELECT`/`DML` sur la table de runs ; jamais `EXECUTE` sur `enqueue`
 et la table — restaure exactement la frontière `000023`. Conserve P6-A1.2,
 P6-A1.1, P6-A1.0, P6-A0, Commerce et les rôles. Prouvé avant/up/down.
 
-**Frontière suivante** : **P6-A2 — Typed Versioned CRM Segments**, architecture
-gelée par **D-049** (définitions typées allowlistées, versions immuables,
-générations atomiques, critères monétaires currency-scoped, consentement séparé).
-**NON COMMENCÉ, aucun code, aucune migration `000025`.**
+**Frontière suivante** : **P6-A2 — Typed Versioned CRM Segments** (migration
+`000025`, contrat ci-dessous).
+
+---
+
+### CONTRAT P6-A2 — Typed Versioned CRM Segments (migration 000025, IMPLÉMENTÉ, PRÉ-MERGE)
+
+> **D-049 (architecture) → D-050 (implémentation). Migration unique `000025`
+> (`2026_07_14_000025_create_typed_versioned_crm_segments.php`), 41 migrations,
+> aucune `000026`. Implémenté et validé localement, EN ATTENTE DE REVUE/MERGE.**
+
+Quatre tables, toutes owner `digitrove_crm_executor` :
+
+```sql
+-- MIGRÉ — migration 000025
+crm_segments
+    id                     BIGSERIAL PRIMARY KEY
+    name                   VARCHAR(120) NOT NULL   -- trim, 1..120
+    status                 VARCHAR(16)  NOT NULL   -- active | archived
+    current_version_id     BIGINT NULL
+    current_generation_id  BIGINT NULL
+    created_at / updated_at TIMESTAMPTZ(6)
+    -- FK COMPOSITES : (current_version_id, id)    -> crm_segment_versions (id, segment_id)
+    --                 (current_generation_id, id) -> crm_segment_generations (id, segment_id)
+
+crm_segment_versions
+    id                        BIGSERIAL PRIMARY KEY
+    segment_id                BIGINT NOT NULL REFERENCES crm_segments(id) ON DELETE RESTRICT
+    version_number            INTEGER NOT NULL CHECK (>= 1)
+    definition_schema_version SMALLINT NOT NULL CHECK (= 1)
+    definition                JSONB NOT NULL   -- objet, <= 32768 octets, STRICTEMENT validé
+    status                    VARCHAR(16) NOT NULL  -- draft | published
+    published_at              TIMESTAMPTZ(6) NULL   -- cohérent avec status
+    UNIQUE (segment_id, version_number)
+    UNIQUE (id, segment_id)      -- support des FK composites
+
+crm_segment_generations
+    id                          BIGSERIAL PRIMARY KEY
+    segment_id                  BIGINT NOT NULL REFERENCES crm_segments(id) ON DELETE RESTRICT
+    segment_version_id          BIGINT NOT NULL
+    contact_id_high_water_mark  BIGINT NOT NULL CHECK (>= 0)
+    batch_size                  INTEGER NOT NULL CHECK (BETWEEN 1 AND 100)
+    cursor_contact_id           BIGINT NULL
+    status                      VARCHAR(16) NOT NULL  -- ready | running | published | failed
+    members_count               BIGINT NOT NULL DEFAULT 0
+    last_error_code             VARCHAR(5) NULL       -- SQLSTATE seul
+    started_at / completed_at / published_at / failed_at TIMESTAMPTZ(6) NULL
+    UNIQUE (id, segment_id)
+    -- FK COMPOSITE (segment_version_id, segment_id) -> crm_segment_versions (id, segment_id)
+    -- index unique partiel : AU PLUS UNE génération ready|running par segment
+
+crm_segment_generation_members
+    generation_id BIGINT NOT NULL REFERENCES crm_segment_generations(id) ON DELETE RESTRICT
+    contact_id    BIGINT NOT NULL REFERENCES crm_contacts(id) ON DELETE RESTRICT
+    PRIMARY KEY (generation_id, contact_id)
+    -- AUCUNE autre colonne : ni PII, ni métrique, ni montant, ni raison de matching
+```
+
+**DSL V1** — enveloppe exacte `{schema_version: 1, match: all|any, criteria: [1..50]}`,
+aucune autre clé, aucune récursion, aucun groupe imbriqué.
+Champs allowlistés : `commerce.{net_revenue_minor, gross_revenue_minor,
+refunded_amount_minor, acquired_orders_count, first_acquired_at, last_acquired_at}`
+et `contact.{created_at, status, origin}`. Opérateurs : numériques
+`eq|neq|gt|gte|lt|lte|between`, dates `before|after|between`, enums `in|not_in`.
+**Clés exactes par type de critère** — toute clé inconnue (`sql`, `column`, `table`,
+`path`, `expression`, `callback`, `raw`, `where`, `having`, `join`, `order`,
+`select`) rend la définition **invalide**, jamais ignorée. Valeurs numériques =
+**entiers JSON exacts** dans la plage BIGINT ; timestamps = **RFC3339 UTC absolus**
+(`...Z`), jamais relatifs ; enums limités aux valeurs **réelles** du dépôt
+(`active|anonymized`, `guest_order|verified_account`).
+
+**Currency scoping** : tout critère `commerce.*` porte `currency` (`^[A-Z]{3}$`) et
+lit **exactement une** ligne `crm_contact_commerce_rollups (contact_id, currency)`.
+Aucun FX, aucune somme multi-devises, aucun LTV global. **Ligne absente ⇒ FALSE
+pour TOUS les opérateurs** (`neq` compris) : un Order gratuit acquis possède déjà
+une ligne à 0, donc « jamais acquis » ne se confond pas avec « acquis gratuitement ».
+Un critère `contact.*` **refuse** une devise ; `contact.created_at` NULL ⇒ FALSE.
+
+**Immuabilité** : contenu d'une version figé **dès l'INSERT** (seule transition
+`draft → published`) ; génération `published` figée ; membership **append-only**
+pendant le build, refusé après publication. Triggers PostgreSQL.
+
+**Générations** : `contact_id_high_water_mark = MAX(crm_contacts.id)` gelé au
+démarrage — il borne la **population de contacts**, ce **n'est pas** un snapshot
+MVCC des faits (une génération est une **fenêtre de matérialisation**). Keyset
+`id > cursor AND id <= HWM`, batch 1..100, curseur avançant sur le **dernier
+contact SCANNÉ** (jamais le dernier matché, sinon un batch sans match bouclerait).
+**Publication atomique** : `status = published` + bascule de
+`crm_segments.current_generation_id` dans la même transaction ; les lecteurs
+passent par `list_crm_segment_current_members` (qui exige `published`) et voient
+donc l'ancienne génération **entière**, puis la nouvelle **entière**.
+Publier une nouvelle version est **refusé** tant qu'une génération est active.
+
+**Autorités** (**18 fonctions** = 11 runtime + 4 internes + 3 trigger, owner
+executor, `search_path` fixe) : **4 internes jamais exposées au runtime** —
+`validate_crm_segment_definition_v1(jsonb)`,
+`validate_crm_segment_definition_v1_int(jsonb)`,
+`validate_crm_segment_definition_v1_ts(jsonb)` (helpers de typage INT64/RFC3339)
+et `crm_segment_contact_matches_v1(bigint, jsonb)` ;
+11 autorités bornées exposées : `create_crm_segment`,
+`create_crm_segment_version`, `publish_crm_segment_version`, `get_crm_segment`,
+`list_crm_segments`, `start_crm_segment_generation`,
+`process_crm_segment_generation_batch`, `retry_crm_segment_generation`,
+`get_crm_segment_generation`, `list_due_crm_segment_generations`,
+`list_crm_segment_current_members` ; plus 3 fonctions trigger d'immuabilité.
+
+**Consentement** : le matcher lit **uniquement** `crm_contacts` et
+`crm_contact_commerce_rollups`. `crm_marketing_consent_events` n'est **jamais** lu —
+appartenance à un segment ≠ éligibilité d'envoi (politique distincte, appliquée au
+moment marketing). Un contact **anonymisé** peut appartenir à un segment ;
+`contact.status` permet de l'exclure **explicitement** si voulu.
+
+**ACL** : aucun nouveau rôle. Runtime `EXECUTE` sur les 11 autorités bornées
+uniquement ; **jamais** sur le validateur/matcher internes, **jamais**
+`SELECT`/`DML` sur les quatre tables. PUBLIC sans accès.
+
+**Rollback `000025`** : drop des 3 triggers, révocation des `EXECUTE` runtime, drop
+des **18** fonctions, drop **explicite** des FK composites circulaires (**jamais
+`CASCADE`**) puis des quatre tables — restaure exactement la frontière `000024`.
+
+**Frontière suivante** : **P6-B0 — CRM Admin Views**, architecture gelée par
+**D-051** (panel admin + Gate `manageCustomerRelationships` fail-closed, montants
+toujours avec devise explicite et aucun total multi-devises, recherche par e-mail
+normalisé exact, aucun éditeur SQL/JSON libre, séparation consentement/appartenance/
+éligibilité). **NON COMMENCÉ, aucun code, aucune migration `000026`.**
 
 ---
 
