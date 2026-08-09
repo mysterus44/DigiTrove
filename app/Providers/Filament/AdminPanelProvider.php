@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Http\Controllers\CrmExportDownloadController;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -17,6 +18,7 @@ use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Route;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
@@ -41,6 +43,16 @@ class AdminPanelProvider extends PanelProvider
                 AccountWidget::class,
                 FilamentInfoWidget::class,
             ])
+            // P6-B1: the export download lives INSIDE the panel, behind the panel's own
+            // authentication middleware. Declaring it in routes/web.php would put a CRM
+            // path on the public router and break the P6-A0 contract that no CRM route
+            // exists there.
+            ->routes(function (): void {
+                Route::get('crm-exports/{export}/download', CrmExportDownloadController::class)
+                    ->middleware(Authenticate::class)
+                    ->whereNumber('export')
+                    ->name('crm-exports.download');
+            })
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

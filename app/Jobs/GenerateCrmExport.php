@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Services\Crm\CrmExportGenerator;
+use App\Services\Crm\CrmExportService;
 use App\Support\CrmConfig;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -69,7 +70,7 @@ final class GenerateCrmExport implements ShouldBeUnique, ShouldQueue
     public function failed(Throwable $exception): void
     {
         try {
-            app(\App\Services\Crm\CrmExportService::class)
+            app(CrmExportService::class)
                 ->fail($this->exportId, null, 'integrity_failure');
         } catch (Throwable) {
             // The sweeper and the purge both reclaim a stuck row; swallowing here keeps

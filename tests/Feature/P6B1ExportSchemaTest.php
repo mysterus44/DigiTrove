@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Support\CrmConfig;
 use Illuminate\Database\QueryException;
 use Tests\Concerns\InteractsWithCrmDatabase;
+use Tests\Support\CrmAdminFixtures;
 use Tests\Support\SegmentFixtures as Fx;
 
 uses(InteractsWithCrmDatabase::class);
@@ -15,7 +17,7 @@ function p6b1Owner()
 
 function p6b1Admin(): int
 {
-    return (int) \Tests\Support\CrmAdminFixtures::admin()->id;
+    return (int) CrmAdminFixtures::admin()->id;
 }
 
 it('creates exactly migration 000027 and no 000028', function () {
@@ -188,7 +190,7 @@ it('enforces the completed payload contract at the database level', function () 
  * the real one.
  */
 it('resolves an export disk that is local and not reachable over HTTP', function () {
-    $disk = App\Support\CrmConfig::exportDisk();
+    $disk = CrmConfig::exportDisk();
     $configured = config("filesystems.disks.{$disk}");
 
     expect($disk)->toBe('private')
@@ -199,13 +201,13 @@ it('resolves an export disk that is local and not reachable over HTTP', function
 
     // The public disk can never be chosen, whatever the env says.
     config(['crm.exports.disk' => 'public']);
-    expect(fn () => App\Support\CrmConfig::exportDisk())->toThrow(RuntimeException::class);
+    expect(fn () => CrmConfig::exportDisk())->toThrow(RuntimeException::class);
 
     config(['crm.exports.disk' => 's3']);
-    expect(fn () => App\Support\CrmConfig::exportDisk())->toThrow(RuntimeException::class);
+    expect(fn () => CrmConfig::exportDisk())->toThrow(RuntimeException::class);
 
     config(['crm.exports.disk' => '../../etc']);
-    expect(fn () => App\Support\CrmConfig::exportDisk())->toThrow(RuntimeException::class);
+    expect(fn () => CrmConfig::exportDisk())->toThrow(RuntimeException::class);
 });
 
 it('constrains the checksum, error code and terminal reason shapes', function () {

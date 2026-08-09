@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Services\Crm\CrmExportGenerator;
 use App\Services\Crm\CrmExportService;
+use App\Services\Crm\CrmOperationException;
 use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\InteractsWithCrmDatabase;
 use Tests\Support\CrmAdminFixtures as Admin;
@@ -199,5 +200,5 @@ it('refuses every authority call when the exports flag is off', function () {
     config(['crm.exports.enabled' => false]);
 
     expect(fn () => app(CrmExportService::class)->create('crm_contacts', $adminId, null))
-        ->toThrow(App\Services\Crm\CrmOperationException::class);
+        ->toThrow(CrmOperationException::class);
 });

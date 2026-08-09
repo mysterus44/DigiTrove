@@ -20,7 +20,24 @@ trait AuthorizesCrmAdmin
 {
     public static function canAccess(): bool
     {
-        return self::crmFoundationEnabled() && Gate::allows('manageCustomerRelationships');
+        return self::crmFoundationEnabled()
+            && static::crmGateExtraCondition()
+            && Gate::allows('manageCustomerRelationships');
+    }
+
+    /**
+     * Extra, gate-specific precondition. Override this in a page rather than overriding
+     * `canAccess()` itself.
+     *
+     * WHY THIS HOOK EXISTS: a trait method is flattened INTO the using class, so a page
+     * that overrode `canAccess()` and called `parent::canAccess()` would silently skip
+     * this trait and reach `Filament\Pages\Page::canAccess()`, which returns true. That
+     * mistake opens the page to every authenticated user and looks correct while doing
+     * it. Overriding this hook cannot fail that way.
+     */
+    protected static function crmGateExtraCondition(): bool
+    {
+        return true;
     }
 
     public static function shouldRegisterNavigation(): bool
