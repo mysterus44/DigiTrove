@@ -6,9 +6,55 @@
 
 ## 📍 ÉTAT ACTUEL
 
-- **Dernier agent** : Claude Code
-- **Date** : 2026-08-08
-- **Branche git active** : `p0-foundations-laravel13` (stable). P6-A1.0 mergé (PR #32 sur `77652f2`) ; P6-A1.1 mergé (PR #33 sur `8fe6cfa`) ; **P6-A1.2 mergé (PR #34 sur `7dc78aff`)**.
+- **Dernier agent** : Fable
+- **Date** : 2026-08-09
+- **Branche git active** : **`p6-b0-crm-admin-views`** (stable de base : `b22b02c` sur `p0-foundations-laravel13`).
+
+### 🟢 P6-B0 — CRM Admin Views : IMPLÉMENTÉ, VALIDÉ PAR CAMPAGNES CIBLÉES, EN ATTENTE DE PR/CI (D-052)
+
+**Migration `000026` — 42 migrations, aucune `000027`.** D-051 annonçait « aucune
+migration » ; l'audit a prouvé le contraire : le runtime n'a **aucun `SELECT`** sur une
+table `crm_*` et, si toutes les autorités **Segments** existaient déjà (P6-A2), il
+n'existait **aucune** autorité pour parcourir les contacts, chercher par e-mail exact,
+lire une timeline de consentement, lire les faits commerce par devise, lister les
+appartenances courantes ou l'historique des versions. P6-B0.1 ajoute les **7 autorités
+de lecture manquantes** : toutes `STABLE` + `SECURITY DEFINER`, owner
+`digitrove_crm_executor`, `search_path` épinglé, **aucun nouveau rôle**, PUBLIC sans
+accès, runtime **EXECUTE-only**, `down()` restaurant exactement `000025`.
+
+**Livré** :
+- **Contacts** — liste keyset filtrée par allowlist, détail, timeline de consentement,
+  faits commerce **une ligne par devise**, appartenances **courantes** seulement.
+- **Segments** — liste, détail, historique des versions, état de génération, membres
+  courants, cycle de vie (créer segment / créer version / publier / rebuild / retry).
+- **Constructeur de critères structuré** (`App\Support\CrmSegmentDefinitionBuilder`) :
+  **aucun textarea, aucun éditeur JSON/SQL/code**. Entiers émis en **nombres JSON**,
+  dates **RFC3339 UTC absolues avec `Z`**, devise obligatoire sur `commerce.*` et
+  interdite sur `contact.*`. **PostgreSQL reste l'autorité finale** — prouvé en appelant
+  le service hors builder avec 7 définitions invalides : les 7 refusées, 0 version créée.
+- **E-mail** : correspondance **exacte normalisée dans l'autorité** (jamais en PHP).
+  Aucun wildcard/partiel/fuzzy. Un contact anonymisé a `email IS NULL` — l'ancienne
+  adresse est **physiquement absente**, jamais masquée ni retrouvable.
+- **Argent** : unités mineures exactes + devise explicite, **aucun total multi-devises**,
+  **aucune division par 100** (XOF exposant 0 vs USD exposant 2, aucune table
+  d'exposants auditée dans le dépôt).
+- **Aucune route publique, aucun envoi, aucun export** (les exports sont P6-B1).
+
+**⚠️ Validation volontairement CIBLÉE** : P6B0+P6B01 **113 tests / 655 assertions**,
+Pint **446 fichiers**. **Aucune suite complète locale B0 n'a été exécutée et aucune
+n'est revendiquée** — elle est différée au stack B1, qui contient B0.
+
+**Trois contrats historiques corrigés (portée, jamais affaiblissement)** : P5-A3C
+(inventaire explicite des 11 fichiers Analytics + preuve que le garde garde ses dents),
+P6-A0 (`/(?<!acquired_)orders_count/` — ⚠️ **échec préexistant** introduit par `0a62eb5`,
+campagne P6-A0 non rejouée à l'époque), P6-A2 (la page B0 autorisée est **nommée**, toute
+autre UI segment échoue toujours). `Tests\Support\SourceScanner` scanne désormais du
+**code** (commentaires retirés) : sans lui, un fichier qui documente ce qu'il refuse de
+faire déclenche sa propre alarme.
+
+**PROCHAIN GATE : P6-B1 — Private Audited CRM Exports (non commencé).**
+
+- Historique : P6-A1.0 mergé (PR #32 sur `77652f2`) ; P6-A1.1 mergé (PR #33 sur `8fe6cfa`) ; **P6-A1.2 mergé (PR #34 sur `7dc78aff`)** ; P6-A1.3 mergé (PR #35 sur `106ffb0a`) ; P6-A2 mergé (PR #36 sur `920eb1b9`).
 - **P6-A1.2 TERMINÉ, MERGÉ ET VALIDÉ** via PR #34, head `a75eef68b0621a438395a152bb5e481d0d256a0e`, merge `7dc78aff8a89aaff513efbb1239d5f943d7d21df`, **CI #41 SUCCESS**. Baseline post-merge : **967 tests / 6639 assertions**, P6A12 **46 / 196**, Pint **390 fichiers**, **39 migrations** (dernière `000023`).
   **P6-A1.3 (Explicit Historical Commerce Rollup Backfill) = GATE ACTIF. P6-A2 (Typed Versioned CRM Segments) : architecture gelée (D-049), NON COMMENCÉ.**
 - **P6-A1.1 TERMINÉ, MERGÉ ET VALIDÉ** via [PR #33](https://github.com/mysterus44/DigiTrove/pull/33), head `732d491ef1071e117f45501fa8e877fe7c1a76a8`, merge `8fe6cfa7261eb5b2068b9b46095df5d1eb9f1b21`, CI #40 success.

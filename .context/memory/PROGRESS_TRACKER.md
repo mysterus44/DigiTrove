@@ -16,7 +16,7 @@ P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (P
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
-P6 CRM & MARKETING  : ████████░░  P6-A0 → P6-A2 TOUS TERMINÉS ET MERGÉS (D-043 → D-050 ; P6-A2 = PR #36, merge 920eb1b9, CI #43) ; P6-B0 CRM Admin Views = GATE ACTIF (D-051) ; P6-B1 exports NON COMMENCÉ.
+P6 CRM & MARKETING  : █████████░  P6-A0 → P6-A2 TOUS TERMINÉS ET MERGÉS (D-043 → D-050 ; P6-A2 = PR #36, merge 920eb1b9, CI #43) ; P6-B0 CRM Admin Views IMPLÉMENTÉ (D-052, migration 000026, 42 migrations, campagnes ciblées, en attente PR/CI) ; P6-B1 exports NON COMMENCÉ.
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
@@ -548,7 +548,8 @@ commencés.
 | Affiliation | ⏸️ **AFFILIATION NON FONDÉE — HORS PREMIER GATE P6**; aucune table/service, D-014 impose plus tard un compte et des tables dédiées |
 | Exports | ⏸️ après identité, consentement, segments et membership fiables; futur job privé audité, borné, expirant et protégé contre les formules CSV |
 | Découpage | ✅ P6-A0 → ✅ A1.0 attribution → ✅ A1.1 autorité rollup → A1.2 worker/réconciliation → A1.3 backfill explicite → A2 segments → B0 vues → B1 exports → C paniers/relances → D affiliation |
-| Prochain gate | 🚧 P6-A2 TERMINÉ, MERGÉ ET VALIDÉ (PR #36, merge 920eb1b9, CI #43, D-049/D-050). **P6-B0 — CRM Admin Views = GATE ACTIF** (D-051 architecture gelée : panel admin fail-closed `manageCustomerRelationships`, lecture via autorités seulement, devise toujours explicite, recherche e-mail exacte, builder DSL V1 strict). **P6-B1 (exports privés CRM) NON COMMENCÉ.** |
+| Vues admin CRM P6-B0 | 🚧 **IMPLÉMENTÉ, VALIDÉ PAR CAMPAGNES CIBLÉES, EN ATTENTE DE PR/CI** (D-052, migration **000026**, **42 migrations**). **7 autorités de lecture** `STABLE`+`SECURITY DEFINER` (owner `digitrove_crm_executor`, runtime EXECUTE-only, aucun nouveau rôle) — D-051 avait annoncé « aucune migration », l'audit a prouvé qu'aucune autorité contact/consentement/commerce/membership/versions n'existait. Verticales Contacts et Segments, constructeur de critères **structuré** (aucun textarea/JSON/SQL), e-mail **exact normalisé dans l'autorité**, anonymisé ⇒ `email IS NULL` irrécupérable, **aucun total multi-devises**, **aucune division par 100**, aucune route publique, aucun envoi, aucun export. **PostgreSQL reste l'autorité finale du DSL** (prouvé hors builder : 7 définitions invalides refusées, 0 version créée). ⚠️ **Aucune suite complète locale B0 exécutée ni revendiquée** — différée au stack B1. P6B0+P6B01 **113 tests / 655 assertions**, Pint **446 fichiers**. |
+| Prochain gate | 🚧 P6-A2 TERMINÉ, MERGÉ ET VALIDÉ (PR #36, merge 920eb1b9, CI #43, D-049/D-050). **P6-B0 implémenté (D-052), en attente de PR/CI. P6-B1 — Private Audited CRM Exports = PROCHAIN GATE, NON COMMENCÉ** (migration `000027` attendue). |
 
 ## P7 — BLOG & SEO
 | Tâche | Statut |
