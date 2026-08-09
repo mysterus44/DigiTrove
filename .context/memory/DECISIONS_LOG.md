@@ -3866,7 +3866,7 @@ ALTERNATIVES REJETÉES :
 - **Assouplir le contrat P6-B0 pour poser un bouton d'export sur la page Segments** → affaiblit une preuve déjà livrée ; l'entrée unique est préférable.
 - **Exiger `visibility === 'private'` sur le disque** → mesure une clé de configuration, pas la propriété réelle (inatteignabilité HTTP), et casse tout test utilisant `Storage::fake()`.
 
-TESTS : P6B1 **84 tests** — Schema (11), Generation (8), CsvSafety (24), Download (8), Authorization (13), Expiration (8), Rollback (1), SecurityContract (11) — soit **B0+B1 agrégé 197 tests / 1112 assertions** (113 pour B0). Régression P4/P5 après déplacement des frontières : **152 tests / 1823 assertions**. Pint **463 fichiers**. **43 migrations**, `000027` présente, `000028` absente.
+TESTS (**suite complète locale du stack B0+B1 : 1377 tests / 8712 assertions, 0 échec**, contre une baseline avant B0 de 1178/7562) : P6B1 **84 tests** — Schema (11), Generation (8), CsvSafety (24), Download (8), Authorization (13), Expiration (8), Rollback (1), SecurityContract (11) — soit **B0+B1 agrégé 197 tests / 1112 assertions** (113 pour B0). Régression P4/P5 après déplacement des frontières : **152 tests / 1823 assertions**. Pint **463 fichiers**. **43 migrations**, `000027` présente, `000028` absente.
 
 IMPACT : **P6-B1 IMPLÉMENTÉ ET VALIDÉ PAR CAMPAGNES CIBLÉES, EN ATTENTE DE PR/CI.** Le prochain gate est **P6-C — Paniers / Relances**, dont l'architecture est gelée par **D-055** (non commencé). Dépendance dure héritée : la dette D-030 `MAIL_MAILER=log` doit être close avant tout envoi réel en P6-C.
 

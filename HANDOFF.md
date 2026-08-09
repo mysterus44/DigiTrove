@@ -95,8 +95,17 @@ impossible à introduire sans décision ; **cinq compteurs `DB::table('migration
 ->count()`** relevés 42 → 43. Les bornes de **rollback** (41 pour `000025`, 42 pour
 `000026`) restent **inchangées** — ce sont des frontières historiques, pas l'état courant.
 
-**Validation ciblée** : B0+B1 agrégé **197 tests / 1112 assertions**, Pint **463 fichiers**,
-**43 migrations**, rollback isolé vert.
+**Validation** : ✅ **SUITE COMPLÈTE LOCALE DU STACK B0+B1 VERTE — 1377 tests /
+8712 assertions, 0 échec** (baseline avant B0 : 1178 / 7562). B0+B1 ciblé **197 / 1112**,
+Pint **463 fichiers**, **43 migrations**, rollback isolé vert.
+
+⚠️ **La suite complète locale exige `php -d memory_limit=3G vendor/bin/pest`.** L'image
+`digitrove-php:dev` garde le `memory_limit=128M` par défaut de PHP : la suite meurt en
+`Fatal error: Allowed memory size ... exhausted` vers ~1075 tests (enregistrement des
+routes Filament) — **ni échec de test, ni défaut de code**. Le flag doit être passé à
+**Pest directement** : `php -d ... artisan test` ne le propage pas, car `artisan test`
+relance Pest dans un **sous-processus** qui relit `php.ini`. La CI n'est pas concernée
+(`shivammathur/setup-php` fixe `memory_limit=-1`).
 
 **PROCHAIN GATE : P6-C — Paniers / Relances**, architecture gelée par **D-055**, NON
 COMMENCÉ. ⚠️ Deux contraintes dures issues de l'audit : `carts` n'a **aucune colonne
