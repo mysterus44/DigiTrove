@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -22,7 +23,7 @@ use Illuminate\Support\Facades\DB;
  * the P6-A0 state CHECK already guarantees `status = 'anonymized' => email IS NULL`,
  * so the old address is physically absent, never merely hidden.
  */
-return new class extends \Illuminate\Database\Migrations\Migration
+return new class extends Migration
 {
     private const LIST_CONTACTS_SIGNATURE = 'public.list_crm_contacts(bigint, character varying, character varying, integer)';
 

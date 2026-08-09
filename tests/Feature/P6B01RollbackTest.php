@@ -38,7 +38,7 @@ it('rolls back to the exact 000025 boundary while preserving P6-A2 and earlier p
                         'list_crm_segment_versions'
                       ))
                 ORDER BY 1
-                SQL)->fetchAll(\PDO::FETCH_COLUMN));
+                SQL)->fetchAll(PDO::FETCH_COLUMN));
         };
 
         $expected = [
