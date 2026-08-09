@@ -67,6 +67,10 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Crm/CrmCommerceRollupRefreshDispatcher.php',
     'Crm/CrmCommerceRollupRefreshProcessor.php',
     'Crm/CrmContactResolver.php',
+    // P6-B1 (D-054) — EXECUTE-only private audited export authority client and the
+    // generator that writes the file OUTSIDE any database transaction.
+    'Crm/CrmExportGenerator.php',
+    'Crm/CrmExportService.php',
     'Crm/CrmOperationException.php',
     // P6-A1.0 (D-045) — durable EXECUTE-only Order-to-CRM attribution pipeline.
     'Crm/CrmOrderAttributionDispatcher.php',

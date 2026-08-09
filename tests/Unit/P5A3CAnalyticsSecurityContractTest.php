@@ -125,8 +125,8 @@ it('adds no migration operation API export or worker execution surface', functio
 
     $surface = implode("\n", array_map('file_get_contents', $surfaceFiles));
 
-    expect($migrations)->toHaveCount(42)
-        ->and(glob($root.'/database/migrations/2026_07_14_000027*.php') ?: [])->toBe([])
+    expect($migrations)->toHaveCount(43)
+        ->and(glob($root.'/database/migrations/2026_07_14_000028*.php') ?: [])->toBe([])
         ->and(p5a3cViolations($surface))->toBe([]);
 });
 

@@ -40,11 +40,11 @@ it('installs only the P6-A1.1 table with closed physical constraints', function 
 
     // Verify exactly 42 migrations and the last one is 000026 (P6-B0.1)
     $migrations = DB::table('migrations')->orderBy('id')->get();
-    expect($migrations)->toHaveCount(42)
+    expect($migrations)->toHaveCount(43)
         ->and($migrations->last()->migration)->toBe('2026_07_14_000026_create_crm_admin_read_authorities');
 
     // No migration 000027 exists
-    expect(glob(database_path('migrations').'/2026_07_14_000027*.php') ?: [])->toBe([]);
+    expect(glob(database_path('migrations').'/2026_07_14_000028*.php') ?: [])->toBe([]);
 });
 
 it('verifies exact restrictive foreign keys checks and primary key', function () {
