@@ -52,7 +52,46 @@ autre UI segment échoue toujours). `Tests\Support\SourceScanner` scanne désorm
 **code** (commentaires retirés) : sans lui, un fichier qui documente ce qu'il refuse de
 faire déclenche sa propre alarme.
 
-**PROCHAIN GATE : P6-B1 — Private Audited CRM Exports (non commencé).**
+### 🟢 P6-B1 — Private Audited CRM Exports : IMPLÉMENTÉ, VALIDÉ PAR CAMPAGNES CIBLÉES, EN ATTENTE DE PR/CI (D-053 architecture → D-054 implémentation)
+
+Branche **`p6-b1-crm-private-exports`**, empilée exactement sur le HEAD B0 `7cecc93`.
+**Migration `000027`** — **43 migrations**, aucune `000028`.
+
+- **Table `crm_exports` + 10 autorités** `SECURITY DEFINER` (owner `digitrove_crm_executor`,
+  runtime **EXECUTE-only**, **ni `SELECT` ni DML** sur la table, aucun nouveau rôle).
+  `down()` restaure exactement `000026` (prouvé : 43 → 42, 0 résidu, B0.1 intact).
+- **Snapshot de génération** : la génération publiée courante est **figée à la création**
+  de l'export. Une G2 publiée pendant l'écriture ne fait apparaître **aucune** ligne —
+  le fichier reste 100 % G1.
+- **Plafond strict** : lecture de `row_limit + 1` ; dépassement ⇒ `failed` /
+  `row_limit_exceeded`, **aucun fichier publié**, jamais de troncature silencieuse.
+- **Sûreté formule CSV** : apostrophe devant `= + - @ TAB CR LF` (le guillemetage seul
+  ne protège pas). Vecteurs DDE et `=HYPERLINK(...)` prouvés. `NULL` ⇒ champ vide.
+- **Aucun I/O sous transaction** : claim court → COMMIT → écriture hors transaction →
+  finalisation courte, avec garde `assertOutsideTransaction()`.
+- **Téléchargement** : propriétaire uniquement ; un **autre admin** reçoit un **404 plat
+  octet pour octet identique** à celui d'un export inexistant. Aucune URL publique,
+  signée ni bearer. Job **ID-only**. Flags et schedulers **désactivés par défaut**.
+
+⚠️ **DÉFAUT D'AUTORISATION RÉEL TROUVÉ ET FERMÉ** : `CrmExports::canAccess()` appelait
+`parent::canAccess()`. PHP **aplatit un trait DANS la classe**, donc `parent::` visait
+`Filament\Pages\Page::canAccess()` (qui renvoie `true`) et **contournait entièrement la
+Gate** — la page d'export était accessible à `staff` et `customer`. Le code paraissait
+correct. Le trait expose désormais un hook `crmGateExtraCondition()` : **la forme qui
+échoue ainsi n'est plus disponible**.
+
+⚠️ **Écart assumé** : l'export « membres courants » se déclenche depuis la page
+**Exports** (sélecteur de segment), pas depuis le détail du segment, parce que le contrat
+`P6B0SecurityContractTest` prouve que B0 n'expose **aucune** affordance d'export.
+
+**Validation ciblée** : B0+B1 agrégé **197 tests / 1112 assertions**, Pint **463 fichiers**,
+**43 migrations**, rollback isolé vert.
+
+**PROCHAIN GATE : P6-C — Paniers / Relances**, architecture gelée par **D-055**, NON
+COMMENCÉ. ⚠️ Deux contraintes dures issues de l'audit : `carts` n'a **aucune colonne
+e-mail** (un panier invité est structurellement inadressable) et `carts.abandoned_at`
+existe mais **aucun code ne l'écrit** (il n'y a aujourd'hui aucune transition d'abandon).
+Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant tout envoi.
 
 - Historique : P6-A1.0 mergé (PR #32 sur `77652f2`) ; P6-A1.1 mergé (PR #33 sur `8fe6cfa`) ; **P6-A1.2 mergé (PR #34 sur `7dc78aff`)** ; P6-A1.3 mergé (PR #35 sur `106ffb0a`) ; P6-A2 mergé (PR #36 sur `920eb1b9`).
 - **P6-A1.2 TERMINÉ, MERGÉ ET VALIDÉ** via PR #34, head `a75eef68b0621a438395a152bb5e481d0d256a0e`, merge `7dc78aff8a89aaff513efbb1239d5f943d7d21df`, **CI #41 SUCCESS**. Baseline post-merge : **967 tests / 6639 assertions**, P6A12 **46 / 196**, Pint **390 fichiers**, **39 migrations** (dernière `000023`).

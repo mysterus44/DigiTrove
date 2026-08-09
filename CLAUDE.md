@@ -581,7 +581,45 @@ P6-A0 (`/(?<!acquired_)orders_count/` — ⚠️ **échec préexistant** introdu
 **nommée**, toute autre UI segment échoue toujours). `Tests\Support\SourceScanner`
 scanne du **code** (commentaires retirés) : sinon un fichier qui documente ce qu'il
 refuse de faire déclenche sa propre alarme.
-**PROCHAIN GATE : P6-B1 — Private Audited CRM Exports (non commencé).**
+**P6-B1 (Private Audited CRM Exports) : IMPLÉMENTÉ, VALIDÉ PAR CAMPAGNES CIBLÉES, EN
+ATTENTE DE PR/CI** (D-053 architecture → D-054 implémentation, branche
+`p6-b1-crm-private-exports` empilée sur le HEAD B0 `7cecc93`). **Migration `000027`**,
+**43 migrations**, aucune `000028`. Table `crm_exports` + **10 autorités**
+`SECURITY DEFINER` (owner `digitrove_crm_executor`, runtime **EXECUTE-only**, ni `SELECT`
+ni DML sur la table, aucun nouveau rôle) ; `down()` restaure exactement `000026`.
+**Snapshot de génération** : la génération publiée courante est **figée à la création**
+de l'export — une G2 publiée pendant l'écriture ne fait apparaître aucune ligne, le
+fichier reste 100 % G1. **Plafond strict** : lecture de `row_limit + 1`, dépassement ⇒
+`failed`/`row_limit_exceeded` sans aucun fichier publié, **jamais de troncature
+silencieuse**. **Sûreté formule CSV** : apostrophe devant `= + - @ TAB CR LF` (le
+guillemetage seul ne protège pas — `"=1+1"` redevient une formule à l'import) ; `NULL`
+⇒ champ vide, jamais « NULL ». **Aucun I/O sous transaction** (claim court → COMMIT →
+écriture hors transaction → finalisation courte, garde `assertOutsideTransaction()`).
+**Téléchargement** réservé au demandeur : un **autre admin** reçoit un **404 plat
+identique octet pour octet** à celui d'un export inexistant (sinon le statut serait un
+oracle d'existence) ; aucune URL publique, signée ni bearer. Job **ID-only**, flags et
+schedulers **désactivés par défaut**.
+⚠️ **DÉFAUT D'AUTORISATION RÉEL FERMÉ** : `CrmExports::canAccess()` appelait
+`parent::canAccess()`. **PHP aplatit une méthode de trait DANS la classe**, donc
+`parent::` visait `Filament\Pages\Page::canAccess()` (`true`) et **contournait entièrement
+la Gate** — la page était accessible à `staff` et `customer`. Le trait expose désormais
+un hook `crmGateExtraCondition()` : la forme qui échoue ainsi n'est plus disponible.
+⚠️ **Écart assumé** : l'export « membres courants » part de la page **Exports**
+(sélecteur de segment), pas du détail du segment, pour ne pas affaiblir le contrat
+`P6B0SecurityContractTest` qui prouve que B0 n'expose aucune affordance d'export.
+Validation ciblée : B0+B1 **197 tests / 1112 assertions**, Pint **463 fichiers**.
+
+**PROCHAIN GATE : P6-C — Paniers / Relances**, architecture **gelée par D-055**, NON
+COMMENCÉ, aucune migration `000028`. ⚠️ Deux contraintes dures issues de l'audit réel :
+`carts` ne porte **aucune colonne e-mail** (un panier invité est structurellement
+**inadressable** — la V1 ne peut relancer qu'un panier lié à un compte actif et vérifié,
+**aucun e-mail deviné, aucun rapprochement flou**) et `carts.abandoned_at` existe mais
+**aucun code applicatif ne l'écrit** (il n'y a aujourd'hui **aucune** transition
+d'abandon ; P6-C doit la définir comme une écriture durable et idempotente, jamais une
+heuristique de lecture). Consentement `promotional` **relu à l'envoi**, arrêt après achat
+**vérifié à l'envoi**, reprise de panier via `carts.secret_hash` (secret brut jamais
+persisté). Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` ferait fuiter contenu
+et lien de reprise dans `storage/logs` — à clore **avant** tout envoi réel.
 Invariants hérités :
 l'Order et ses `order_items` sont la **source autoritative** ; aucune donnée
 tarifaire client n'est acceptée ; **aucun coupon n'est consommé au checkout** —

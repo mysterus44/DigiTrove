@@ -922,8 +922,52 @@ finale** ; aucune route publique, aucun envoi, aucun export.
 **Rollback `000026`** : pour chaque signature, `REVOKE EXECUTE … FROM digitrove_runtime`
 puis `DROP FUNCTION IF EXISTS` — restaure exactement la frontière `000025`.
 
-**Frontière suivante** : **P6-B1 — Private Audited CRM Exports** (migration `000027`
-attendue). **NON COMMENCÉ.**
+### CONTRAT P6-B1 — Private Audited CRM Exports (migration 000027, IMPLÉMENTÉ)
+
+> **43 migrations, `000027` présente, aucune `000028`. Validé par campagnes ciblées,
+> EN ATTENTE DE PR/CI.** (D-053 architecture → D-054 implémentation)
+
+**Table `crm_exports`** — owner `digitrove_crm_executor`, runtime **sans `SELECT` ni
+DML**, PUBLIC sans accès, séquence également révoquée.
+
+| Invariant | Mécanisme |
+|---|---|
+| Deux `kind` seulement | `CHECK kind IN ('crm_contacts','segment_current_members')` |
+| Portée cohérente | `segment_current_members` ⇒ `segment_id` ET `generation_id` NOT NULL ; `crm_contacts` ⇒ les deux NULL |
+| `completed` vérifiable | CHECK exigeant `storage_disk`, `storage_path`, `size_bytes`, `checksum_sha256`, `row_count`, `completed_at` **ensemble** |
+| Horodatage cohérent | `failed` ⇒ `failed_at` ; `expired` ⇒ `expired_at` ; `running|completed|failed` ⇒ `started_at` |
+| Bornes | `row_limit BETWEEN 1 AND 50000` ; checksum `^[0-9a-f]{64}$` ; `last_error_code` **SQLSTATE seul** ; `terminal_reason` allowlisté |
+
+**10 autorités** `SECURITY DEFINER`, owner executor, `search_path` épinglé, runtime
+**EXECUTE-only** : `create_crm_export`, `claim_crm_export`, `complete_crm_export`,
+`fail_crm_export`, `get_crm_export`, `list_crm_exports`, `list_due_crm_exports`,
+`expire_crm_exports`, `list_crm_export_contact_rows`, `list_crm_export_member_rows`.
+Les cinq lectures sont **`STABLE`**.
+
+**LE SNAPSHOT DE GÉNÉRATION EST L'INVARIANT CENTRAL.** `create_crm_export` **fige**
+`crm_segments.current_generation_id` à la création ; `list_crm_export_member_rows` lit
+cette génération **figée**, jamais `current_generation_id` à nouveau. Une G2 publiée
+entre la création et l'écriture ne fait apparaître **aucune** de ses lignes : c'est la
+seule corruption qu'un export paginé d'une cible mouvante peut produire.
+
+**Autres invariants** : segment sans génération publiée ⇒ **refus** (un fichier vide
+affirmerait « aucun membre », phrase différente et fausse) ; revendication
+`queued → running` **atomique** (`FOR UPDATE`) donc jamais deux fichiers ; lecture de
+`row_limit + 1` ⇒ `failed`/`row_limit_exceeded` **sans artefact**, jamais de troncature ;
+neutralisation formule CSV (`= + - @ TAB CR LF`) car le guillemetage seul ne protège pas ;
+anonymisé ⇒ champ e-mail **vide** ; **aucun I/O sous transaction** ; disque **local sans
+clé `url`** (l'inatteignabilité HTTP est la propriété qui compte) ; chemin serveur sans
+PII ; téléchargement **propriétaire seul** avec **404 plat indistinguable**.
+
+**Rollback `000027`** : pour chaque signature `REVOKE EXECUTE … FROM digitrove_runtime`
+puis `DROP FUNCTION IF EXISTS`, enfin `DROP TABLE crm_exports` — restaure exactement la
+frontière `000026` (prouvé : 43 → 42, zéro objet B1 résiduel, les 7 autorités B0.1
+intactes).
+
+**Frontière suivante** : **P6-C — Paniers / Relances**, architecture gelée par **D-055**.
+**NON COMMENCÉ, aucune migration `000028`.** ⚠️ Contraintes dures de l'audit : `carts` ne
+porte **aucune colonne e-mail** (panier invité **inadressable**) et `carts.abandoned_at`
+existe mais **aucun code ne l'écrit** (aucune transition d'abandon aujourd'hui).
 
 ---
 
