@@ -3764,7 +3764,7 @@ CHOIX (à implémenter en P6-B0, pas avant) :
 
 IMPACT : **P6-B0 NON COMMENCÉ, AUCUN CODE, AUCUNE MIGRATION `000026`.** Contrat d'architecture à appliquer après le merge de P6-A2.
 
-### D-052 : P6-B0 — CRM Admin Views — IMPLEMENTATION ✅ (VALIDÉ PAR CAMPAGNES CIBLÉES, EN ATTENTE DE PR/CI)
+### D-052 : P6-B0 — CRM Admin Views — IMPLEMENTATION ✅ (MERGÉ)
 CONTEXTE : Implémentation du gate gelé par D-051. **Une hypothèse de D-051 s'est révélée fausse à l'audit** : son point 9 annonçait « aucune migration ». Le runtime `digitrove_runtime` ne détient **aucun `SELECT`** sur une table `crm_*`, et si toutes les autorités **Segments** existaient déjà (P6-A2), il n'existait **aucune** autorité pour parcourir les contacts, chercher par e-mail exact, lire une timeline de consentement, lire les faits commerce par devise, lister les appartenances courantes d'un contact ou l'historique des versions d'un segment. L'UI ne pouvait donc être construite qu'en (a) cassant la frontière de lecture par des `SELECT` runtime directs — interdit — ou (b) ajoutant les autorités manquantes. **P6-B0.1 fait (b)** : migration **`000026`**, **42 migrations**, aucune `000027`.
 
 CHOIX :
@@ -3793,7 +3793,7 @@ ALTERNATIVES REJETÉES :
 
 TESTS (**campagnes ciblées**, la suite complète locale est **volontairement différée** au stack B1 qui contient B0) : P6B0 + P6B01 **113 tests / 655 assertions** — ContactList, ContactDetail, ExactEmailSearch, ConsentView, CommerceView, CurrentMembershipView, PublicExposure, SegmentList, SegmentDetail, SegmentLifecycle, SegmentBuilder, GenerationView, SecurityContract, plus les 3 fichiers B0.1 préexistants. Pint **446 fichiers**. **42 migrations**, `000026` présente, `000027` absente.
 
-IMPACT : **P6-B0 IMPLÉMENTÉ ET VALIDÉ PAR CAMPAGNES CIBLÉES, EN ATTENTE DE PR/CI.** Aucune suite complète locale B0 n'a été exécutée et aucune n'est revendiquée. **P6-B1 (Private Audited CRM Exports) est le prochain gate.**
+IMPACT : **P6-B0 TERMINÉ, MERGÉ ET VALIDÉ** via [PR #37](https://github.com/mysterus44/DigiTrove/pull/37), head `b05edb2`, merge `2df7e6f`, **CI SUCCESS**. Le merge a exigé un correctif final `b05edb2` : le CI standalone B0 a révélé que `P5A3AnalyticsSecurityContractTest` (jumeau A/B du fichier P5-A3C déjà corrigé) portait le **même glob trop large** et heurtait les commentaires de `CrmSegments.php` qui documentent leur propre absence d.export. Corrigé par inventaire explicite + compteur fail-closed + preuve de dents + preuve d.exclusion CRM. Suite complète locale B0 standalone : **1295 tests / 8250 assertions, 0 échec**. **P6-B1 est mergé à son tour (D-054).**
 
 ### D-053 : P6-B1 — Private Audited CRM Exports — ARCHITECTURE GELÉE (PLAN SEULEMENT) 📐
 CONTEXTE : Cette décision **fige l'architecture** du gate `B1 exports` après audit du dépôt réel, afin que l'implémentation n'ait pas à refaire l'audit. **P6-B1 EST NON COMMENCÉ : aucun code, aucune migration `000027`, aucune table, fonction, job, commande, route, contrôleur ni UI d'export.** Le dépôt est à **42 migrations** (`000026` = P6-B0.1) et P6-B0 interdit explicitement toute surface d'export (contrat `P6B0SecurityContractTest`).
@@ -3832,7 +3832,7 @@ ALTERNATIVES REJETÉES :
 
 IMPACT : **P6-B1 NON COMMENCÉ, AUCUN CODE, AUCUNE MIGRATION `000027`.** Contrat d'architecture à appliquer après le merge de P6-B0.
 
-### D-054 : P6-B1 — Private Audited CRM Exports — IMPLEMENTATION ✅ (VALIDÉ PAR CAMPAGNES CIBLÉES, EN ATTENTE DE PR/CI)
+### D-054 : P6-B1 — Private Audited CRM Exports — IMPLEMENTATION ✅ (MERGÉ)
 CONTEXTE : Implémentation du gate gelé par D-053, empilée sur P6-B0 (`p6-b1-crm-private-exports`, base `7cecc93`). **Migration unique `000027`** (`2026_07_14_000027_create_crm_exports_table.php`) — **43 migrations**, aucune `000028`.
 
 CHOIX :
@@ -3868,7 +3868,9 @@ ALTERNATIVES REJETÉES :
 
 TESTS (**suite complète locale du stack B0+B1 : 1377 tests / 8712 assertions, 0 échec**, contre une baseline avant B0 de 1178/7562) : P6B1 **84 tests** — Schema (11), Generation (8), CsvSafety (24), Download (8), Authorization (13), Expiration (8), Rollback (1), SecurityContract (11) — soit **B0+B1 agrégé 197 tests / 1112 assertions** (113 pour B0). Régression P4/P5 après déplacement des frontières : **152 tests / 1823 assertions**. Pint **463 fichiers**. **43 migrations**, `000027` présente, `000028` absente.
 
-IMPACT : **P6-B1 IMPLÉMENTÉ ET VALIDÉ PAR CAMPAGNES CIBLÉES, EN ATTENTE DE PR/CI.** Le prochain gate est **P6-C — Paniers / Relances**, dont l'architecture est gelée par **D-055** (non commencé). Dépendance dure héritée : la dette D-030 `MAIL_MAILER=log` doit être close avant tout envoi réel en P6-C.
+**RÉALIGNEMENT SUR LA STABLE APRÈS LE MERGE DE B0** : B1 avait pour base l'ancien HEAD B0 `7cecc93`, antérieur au correctif `b05edb2`. Réalignée par **merge normal** de la stable dans B1 (`bf9ea09`) — **jamais de rebase, jamais de force-push**, historique publié préservé. **Un seul conflit**, `tests/Unit/P5A3AnalyticsSecurityContractTest.php` : les deux branches avaient corrigé le même contrat Analytics. Résolu en prenant la version **stable en entier**, la plus forte (inventaire fail-closed + preuve de dents + preuve d'exclusion CRM), la version B1 antérieure étant plus faible. Delta de suite après réalignement : **+2 tests, −1 assertion** — exactement explicable, la version stable ajoute deux tests et consolide huit `not->toContain` en un `violations()->toBe([])`.
+
+IMPACT : **P6-B1 TERMINÉ, MERGÉ ET VALIDÉ** via [PR #38](https://github.com/mysterus44/DigiTrove/pull/38), head `bf9ea09`, merge `474f92c`, mergé le 2026-08-09T23:04:27Z, **CI SUCCESS** (`Pint and tests`). Suite complète locale sur B1 réaligné : **1379 tests / 8711 assertions, 0 échec** (2393 s). **43 migrations**, `000027` présente, `000028` absente. Le prochain gate est **P6-C — Paniers / Relances**, dont l'architecture est gelée par **D-055** (non commencé, aucun code, aucune `000028`). Dépendance dure héritée : la dette D-030 `MAIL_MAILER=log` doit être close avant tout envoi réel en P6-C.
 
 ### D-055 : P6-C — Paniers / Relances — ARCHITECTURE GELÉE (PLAN SEULEMENT) 📐
 CONTEXTE : Cette décision **fige l'architecture** du gate `C paniers/relances` du découpage P6 (`… → B0 vues → B1 exports → **C paniers/relances** → D affiliation`) après audit du dépôt réel. Le titre est repris **littéralement** de la roadmap : aucun intitulé plus précis n'est inventé. **P6-C EST NON COMMENCÉ : aucun code, aucune migration `000028`, aucune table, fonction, job, commande, route, UI ni intégration fournisseur.**

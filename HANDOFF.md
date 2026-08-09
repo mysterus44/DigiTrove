@@ -8,9 +8,32 @@
 
 - **Dernier agent** : Fable
 - **Date** : 2026-08-09
-- **Branche git active** : **`p6-b0-crm-admin-views`** (stable de base : `b22b02c` sur `p0-foundations-laravel13`).
+- **Branche git active** : **`p0-foundations-laravel13`** (stable), HEAD **`474f92c`**.
 
-### 🟢 P6-B0 — CRM Admin Views : IMPLÉMENTÉ, VALIDÉ PAR CAMPAGNES CIBLÉES, EN ATTENTE DE PR/CI (D-052)
+## ✅ P6-B0 ET P6-B1 SONT MERGÉS — P6-C EST LE PROCHAIN GATE
+
+| Gate | PR | head | merge | CI |
+|---|---|---|---|---|
+| **P6-B0** CRM Admin Views | [#37](https://github.com/mysterus44/DigiTrove/pull/37) | `b05edb2` | `2df7e6f` | SUCCESS |
+| **P6-B1** Private Audited CRM Exports | [#38](https://github.com/mysterus44/DigiTrove/pull/38) | `bf9ea09` | `474f92c` | SUCCESS |
+
+Stable : **43 migrations**, dernière `000027`, **`000028` absente**.
+Suite complète sur la stable finale : **1379 tests / 8711 assertions, 0 échec**.
+Pint **463 fichiers**.
+
+**Deux leçons de merge à ne pas réapprendre :**
+
+1. **Le CI standalone d'une branche révèle des contrats que la suite du stack masque.**
+   Le premier CI de B0 est tombé rouge sur `P5A3AnalyticsSecurityContractTest` — le
+   jumeau A/B du fichier P5-A3C déjà corrigé, portant le **même glob trop large**. Il
+   heurtait les commentaires de `CrmSegments.php` qui documentent leur propre absence
+   d'export. Corrigé par `b05edb2` (inventaire explicite, compteur fail-closed, preuve
+   de dents, preuve d'exclusion CRM) — **jamais par une exclusion « ignorer CRM »**.
+2. **Une branche empilée doit être réalignée par MERGE, pas par rebase.** B1 a été
+   réalignée sur la stable mergée via `bf9ea09` ; conflit unique sur ce même fichier
+   Analytics, résolu en prenant la version **stable en entier** (la plus forte).
+
+### 🟢 P6-B0 — CRM Admin Views : MERGÉ (D-052)
 
 **Migration `000026` — 42 migrations, aucune `000027`.** D-051 annonçait « aucune
 migration » ; l'audit a prouvé le contraire : le runtime n'a **aucun `SELECT`** sur une
@@ -52,7 +75,7 @@ autre UI segment échoue toujours). `Tests\Support\SourceScanner` scanne désorm
 **code** (commentaires retirés) : sans lui, un fichier qui documente ce qu'il refuse de
 faire déclenche sa propre alarme.
 
-### 🟢 P6-B1 — Private Audited CRM Exports : IMPLÉMENTÉ, VALIDÉ PAR CAMPAGNES CIBLÉES, EN ATTENTE DE PR/CI (D-053 architecture → D-054 implémentation)
+### 🟢 P6-B1 — Private Audited CRM Exports : MERGÉ (D-053 architecture → D-054 implémentation)
 
 Branche **`p6-b1-crm-private-exports`**, empilée exactement sur le HEAD B0 `7cecc93`.
 **Migration `000027`** — **43 migrations**, aucune `000028`.
@@ -181,8 +204,9 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
   **835/5988**, Pint **347**, rollback/concurrence/diff-check verts. Aucun flux
   utilisateur, route, UI, job, mail, campagne, segment, rollup, backfill ou
   rétention automatique n'est livré.
-- **P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION PIPELINE IMPLÉMENTÉ — EN ATTENTE
-  DE REVUE/MERGE** (D-045). La migration unique `000021` crée l'outbox durable
+- **P6-A1.0 DURABLE ORDER-TO-CRM ATTRIBUTION PIPELINE — MERGÉ** (PR #32, `77652f2`,
+  D-045). *(Ligne de statut périmée corrigée lors de la clôture B0/B1 : elle annonçait
+  encore « en attente de revue/merge ».)* La migration unique `000021` crée l'outbox durable
   `crm_order_attribution_outbox`, sans e-mail ni Visitor, et le fait immuable
   `crm_order_attributions`. La transition financière capture uniquement un
   `contact_id` actif déjà prouvé; elle ne résout ni ne crée jamais de contact.

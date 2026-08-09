@@ -879,8 +879,8 @@ des **18** fonctions, drop **explicite** des FK composites circulaires (**jamais
 
 ### CONTRAT P6-B0.1 — CRM Admin Read Authorities (migration 000026, IMPLÉMENTÉ)
 
-> **42 migrations, `000026` présente, aucune `000027`. Validé par campagnes
-> ciblées, EN ATTENTE DE PR/CI.** (D-052)
+> **MERGÉ** via PR #37, head `b05edb2`, merge `2df7e6f`, CI SUCCESS (D-052).
+> Au moment de ce gate : 42 migrations, `000026` présente, aucune `000027`.
 
 **Pourquoi une migration alors que D-051 annonçait « aucune migration »** : le rôle
 `digitrove_runtime` ne détient **aucun `SELECT`** sur une table `crm_*`. Toutes les
@@ -924,8 +924,9 @@ puis `DROP FUNCTION IF EXISTS` — restaure exactement la frontière `000025`.
 
 ### CONTRAT P6-B1 — Private Audited CRM Exports (migration 000027, IMPLÉMENTÉ)
 
-> **43 migrations, `000027` présente, aucune `000028`. Validé par campagnes ciblées,
-> EN ATTENTE DE PR/CI.** (D-053 architecture → D-054 implémentation)
+> **MERGÉ** via PR #38, head `bf9ea09`, merge `474f92c`, CI SUCCESS
+> (D-053 architecture → D-054 implémentation).
+> **43 migrations, `000027` présente, aucune `000028`** — état courant de la stable.
 
 **Table `crm_exports`** — owner `digitrove_crm_executor`, runtime **sans `SELECT` ni
 DML**, PUBLIC sans accès, séquence également révoquée.

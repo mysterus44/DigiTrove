@@ -546,8 +546,16 @@ Laravel mince (service, job **ID-only**, dispatcher, sweeper, commande opérateu
 **preview par défaut**, scheduler **désactivé par défaut**) ; **aucune UI, route
 ni ressource Filament**. Le `down()` restaure exactement la frontière `000024`.
 
-**P6-B0 (CRM Admin Views) : IMPLÉMENTÉ, VALIDÉ PAR CAMPAGNES CIBLÉES, EN ATTENTE
-DE PR/CI** (D-052, branche `p6-b0-crm-admin-views`). ⚠️ D-051 annonçait « aucune
+**P6-B0 (CRM Admin Views) : TERMINÉ, MERGÉ ET VALIDÉ** via
+[PR #37](https://github.com/mysterus44/DigiTrove/pull/37), head `b05edb2`, merge
+`2df7e6f`, **CI SUCCESS** (D-052). Suite complète locale B0 standalone : **1295 tests
+/ 8250 assertions, 0 échec**. ⚠️ Le merge a exigé un correctif final `b05edb2` : le CI
+**standalone** de B0 a révélé que `P5A3AnalyticsSecurityContractTest` — le jumeau A/B
+du fichier P5-A3C déjà corrigé — portait le **même glob trop large** et heurtait les
+commentaires de `CrmSegments.php` qui documentent leur propre absence d'export. Leçon :
+**une campagne `--filter` ciblée ne voit pas les contrats d'inventaire des autres
+phases ; seul le CI standalone de la branche les révèle.**
+⚠️ D-051 annonçait « aucune
 migration » : **faux**. Le runtime n'a **aucun `SELECT`** sur une table `crm_*` et,
 si toutes les autorités **Segments** existaient déjà (P6-A2), il n'existait
 **aucune** autorité pour parcourir les contacts, chercher par e-mail exact, lire une
@@ -581,9 +589,13 @@ P6-A0 (`/(?<!acquired_)orders_count/` — ⚠️ **échec préexistant** introdu
 **nommée**, toute autre UI segment échoue toujours). `Tests\Support\SourceScanner`
 scanne du **code** (commentaires retirés) : sinon un fichier qui documente ce qu'il
 refuse de faire déclenche sa propre alarme.
-**P6-B1 (Private Audited CRM Exports) : IMPLÉMENTÉ, VALIDÉ PAR CAMPAGNES CIBLÉES, EN
-ATTENTE DE PR/CI** (D-053 architecture → D-054 implémentation, branche
-`p6-b1-crm-private-exports` empilée sur le HEAD B0 `7cecc93`). **Migration `000027`**,
+**P6-B1 (Private Audited CRM Exports) : TERMINÉ, MERGÉ ET VALIDÉ** via
+[PR #38](https://github.com/mysterus44/DigiTrove/pull/38), head `bf9ea09`, merge
+`474f92c`, **CI SUCCESS** (D-053 architecture → D-054 implémentation). Suite complète
+sur la stable finale : **1379 tests / 8711 assertions, 0 échec**. B1 a été réalignée sur
+la stable mergée par **merge normal** (`bf9ea09`), jamais par rebase ni force-push ;
+**un seul conflit**, le contrat Analytics, résolu en prenant la version **stable en
+entier** (la plus forte). **Migration `000027`**,
 **43 migrations**, aucune `000028`. Table `crm_exports` + **10 autorités**
 `SECURITY DEFINER` (owner `digitrove_crm_executor`, runtime **EXECUTE-only**, ni `SELECT`
 ni DML sur la table, aucun nouveau rôle) ; `down()` restaure exactement `000026`.
