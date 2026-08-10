@@ -141,11 +141,11 @@ P6  CRM & Marketing : segments, dashboards, campagnes
     ├─ C       paniers / relances (dormant : aucun flux panier)     ✅
     └─ D       affiliation
        ├─ D0   fondation BDD (000029, 9 tables, dormante)           ✅
-       ├─ D1   politique active + identité affilié + codes          ⬅ ACTIF
+       ├─ D1   autorité PostgreSQL + gouvernance des politiques     ⬅ ACTIF (D-058 📐)
+       ├─ D1.1 cycle de vie affilié + codes
        ├─ D2   touches + attribution autoritative
        ├─ D3   moteur commissions + compensations de remboursement
-       ├─ D4   payout administratif
-       └─ D5   surfaces admin & reporting
+       └─ D4   payout administratif
 P7  Blog & SEO      : articles, sitemap, données structurées
 ```
 
@@ -158,3 +158,14 @@ exact** — il ne se supprime pas, et aucune assertion ne s'affaiblit.
 ⚠️ **Aucune donnée bancaire ni Mobile Money n'existe dans le dépôt.** Tout
 versement réel (P6-D4 et au-delà) exige un **gate dédié et revu** ; le schéma
 d'affiliation ne porte qu'une référence administrative non sensible.
+
+⚠️ **Une fonction `SECURITY DEFINER` doit appartenir à un exécuteur DÉDIÉ, jamais
+au rôle migrateur `digitrove` — qui est superuser.** C'est la frontière posée par
+D-029.6/P4-B0. Avant de créer une autorité sur un bloc de tables, **vérifier leur
+propriétaire dans `pg_catalog`** : les 9 tables `affiliate_*` appartiennent encore
+à `digitrove` (dette D-058, corrigée par `000030`).
+
+⚠️ **`pg_catalog`, jamais `information_schema`, pour auditer ACL, propriété ou
+inventaire.** `information_schema` est **filtré par privilèges** : sous un rôle sans
+droits il retourne une liste **vide**, et un contrat écrit ainsi **passe à vide sans
+rien prouver**. Défaut réel rencontré en D-057.

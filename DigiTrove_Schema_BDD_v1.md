@@ -2954,14 +2954,40 @@ une infrastructure partagée qu'il ne possède pas. Le chevauchement historique 
 versions `superseded` est explicitement **différé à l'autorité P6-D1** ; « quelle
 politique s'applique maintenant » est déjà tranché par l'index unique partiel.
 
+### ⚠️ Dette de propriété, corrigée par `000030` (D-058)
+
+Les neuf tables ci-dessus appartiennent encore à **`digitrove`**, le rôle migrateur
+**superuser**, alors que les surfaces d'autorité CRM appartiennent à
+`digitrove_crm_executor`. Toute fonction `SECURITY DEFINER` créée en l'état
+**s'exécuterait en superuser** — la vulnérabilité fermée par **D-029.6 / P4-B0**.
+`000030` transférera la propriété des neuf tables **et de leurs neuf séquences** à
+`digitrove_affiliate_executor` (NOLOGIN/NOINHERIT, créé par le script de provisioning,
+**jamais supprimé au `down()`** car un rôle est cluster-global). **`000029` n'est
+jamais réécrite.**
+
+### Sémantique temporelle des politiques (figée par D-058)
+
+**`status = 'active'` signifie « en vigueur maintenant »** — la notion ne diverge
+jamais de « politique applicable à l'instant T ». Publier un successeur ferme son
+prédécesseur dans **une seule transition**, avec **`now()`** (et non
+`clock_timestamp()`) pour que `predecessor.effective_until` et
+`successor.effective_from` soient **identiques** : avec un intervalle **semi-ouvert
+`[from, until)`**, cela ne produit **ni trou ni chevauchement**, par construction.
+
+**La publication différée n'est pas livrée** : elle exigerait une contrainte
+d'exclusion `tstzrange` donc l'extension **`btree_gist`**, absente des 45 migrations.
+Elle reste ajoutable ensuite **sans rouvrir cette frontière** (statut `scheduled` +
+ordonnanceur appelant la **même** autorité). ⚠️ `effective_from` d'un brouillon
+**n'est pas autoritatif** — la publication l'écrase.
+
 ### Frontières des gates suivants
 
-`P6-D1` politique active + identité affilié + codes · `P6-D2` touches et
-attribution autoritative · `P6-D3` moteur de commissions et compensations de
-remboursement (⚠️ `refunds` est au **niveau commande**, donc la répartition vers
-les lignes réutilise la convention **Hamilton** déjà autoritative du dépôt —
-`App\Services\Pricing\DiscountAllocator`, D-030 Q3 — sans inventer d'arrondi) ·
-`P6-D4` payout administratif · `P6-D5` surfaces admin et reporting.
+`P6-D1` autorité PostgreSQL + gouvernance des politiques *(D-058)* · `P6-D1.1` cycle
+de vie affilié + codes · `P6-D2` touches et attribution autoritative · `P6-D3` moteur
+de commissions et compensations de remboursement (⚠️ `refunds` est au **niveau
+commande**, donc la répartition vers les lignes réutilise la convention **Hamilton**
+déjà autoritative du dépôt — `App\Services\Pricing\DiscountAllocator`, D-030 Q3 — sans
+inventer d'arrondi, **aucune seconde implémentation**) · `P6-D4` payout administratif.
 
 ---
 

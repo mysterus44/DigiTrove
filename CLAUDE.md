@@ -699,12 +699,32 @@ structurellement** (quatre FK composites), plus deux **identités d'idempotence 
 `P6D0SecurityContractTest` devra être **rescopé par inventaire exact** des fichiers
 autorisés (comme P5-A3C et P6-B0), **jamais** par suppression d'assertion.
 
-**PROCHAIN GATE : P6-D1 — politique active + identité affilié + codes**, NON COMMENCÉ,
-aucune migration `000030`. Frontières suivantes figées par D-057 : `P6-D2` touches et
+**PROCHAIN GATE : P6-D1 — frontière d'autorité PostgreSQL + gouvernance des politiques**,
+architecture **GELÉE PAR D-058** (arbitrage KingKouda : gouvernance seule ; cycle de vie
+affilié reporté en **P6-D1.1**), **NON COMMENCÉ**, aucune migration `000030`.
+
+⚠️ **LA DETTE QUI JUSTIFIE CE GATE** : les neuf tables `affiliate_*` appartiennent à
+**`digitrove`, le rôle migrateur superuser** — alors que `crm_segments` / `crm_exports`
+appartiennent à leur exécuteur dédié, propriétaire de **59** des 64 fonctions
+`SECURITY DEFINER` du dépôt. Une autorité créée en l'état **s'exécuterait en superuser** :
+la vulnérabilité fermée par **D-029.6 / P4-B0**. Correction en `000030`, **jamais** par
+réécriture de `000029`.
+
+Points figés par D-058 : rôle `digitrove_affiliate_executor` NOLOGIN/NOINHERIT créé par le
+**script de provisioning** (les rôles sont cluster-globaux — précédent P4-B0) et **jamais
+supprimé au `down()`** · propriété transférée pour les 9 tables **et leurs 9 séquences** ·
+**cinq autorités bornées**, aucun CRUD générique · **publication atomique** avec **`now()`**
+et non `clock_timestamp()` (bornes identiques ⇒ intervalle semi-ouvert **sans trou ni
+chevauchement**) · **`status='active'` ≡ « en vigueur maintenant »**, la **publication
+différée n'est PAS livrée** (exigerait `btree_gist`, absent) mais reste ajoutable ensuite
+**sans rouvrir la frontière** · Filament **gouvernance seule**.
+
+Frontières suivantes : `P6-D1.1` cycle de vie affilié + codes · `P6-D2` touches et
 attribution · `P6-D3` moteur de commissions et compensations (⚠️ `refunds` est au **niveau
 commande** : la répartition vers les lignes réutilise la convention **Hamilton** déjà
-autoritative — `App\Services\Pricing\DiscountAllocator`, D-030 Q3 — sans inventer d'arrondi)
-· `P6-D4` payout administratif · `P6-D5` surfaces admin.
+autoritative — `App\Services\Pricing\DiscountAllocator`, D-030 Q3 — sans inventer d'arrondi,
+**aucune seconde implémentation**) · `P6-D4` payout administratif. **Aucun `P6-D5` créé
+artificiellement** : les surfaces admin sont absorbées par le gate qui les justifie.
 
 **ANCIEN ÉTAT (pour mémoire) : P6-C — Paniers / Relances**, architecture **gelée par D-055**, NON
 COMMENCÉ, aucune migration `000028`. ⚠️ Deux contraintes dures issues de l'audit réel :

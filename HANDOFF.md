@@ -786,25 +786,46 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
-## 🚧 P6-D1 — Politique active + identité affilié + codes (GATE ACTIF)
+## 🚧 P6-D1 — Frontière d'autorité + gouvernance des politiques (GATE ACTIF)
 
-**Statut** : **P6-D0 est TERMINÉ** (migration `000029`, **45 migrations**, D-057).
-Le schéma d'affiliation est **complet et dormant**. P6-D1 est le gate actif,
-**NON COMMENCÉ**, **aucune migration `000030`**.
+**Statut** : **P6-D0 est MERGÉ** (PR #40, merge `dcdc966`, D-057, **45 migrations**).
+**Architecture P6-D1 GELÉE par D-058** — arbitrage KingKouda : **Q1 = A** (gouvernance
+seule ; cycle de vie affilié reporté en **P6-D1.1**) et **Q2 = A** (rôle exécuteur dédié).
+P6-D1 est **NON COMMENCÉ**, **aucune migration `000030`**, aucun code écrit.
+
+### ⚠️ LA DETTE QUI JUSTIFIE CE GATE
+
+Les neuf tables `affiliate_*` appartiennent à **`digitrove`**, le rôle migrateur
+**superuser** — alors que `crm_segments` et `crm_exports` appartiennent à leur exécuteur
+dédié, qui possède **59** des 64 fonctions `SECURITY DEFINER` du dépôt. Créer une autorité
+`SECURITY DEFINER` sur l'affiliation en l'état la ferait **s'exécuter en superuser** :
+exactement la vulnérabilité fermée par **D-029.6 / P4-B0**. La correction appartient à
+`000030` — **`000029` n'est jamais réécrite**.
 
 ### Ce que P6-D1 doit livrer
 
-1. **Bootstrap explicite de la politique.** `000029` n'insère **aucune** ligne :
-   c'est délibéré. P6-D1 doit créer la première version `active` par un chemin
-   **explicite et audité** (commande opérateur, jamais un seeder silencieux),
-   en respectant l'index unique partiel « une seule `active` ».
-2. **Candidature et admission** `pending → active`, avec `suspended`, `rejected`,
-   `closed`. La transition est **administrative** ; le schéma porte déjà les états
-   et le CHECK des horodatages correspondants.
-3. **Émission et rotation des codes.** Un code est un **identifiant public**, pas
-   un secret : normalisé `^[A-Z0-9]{4,32}$`, unique globalement, **désactivable
-   sans suppression** (désactiver ne doit jamais effacer les touches qui l'ont
-   utilisé).
+1. **Rôle `digitrove_affiliate_executor`** NOLOGIN/NOINHERIT, créé par
+   `docker/postgres/provision-runtime-roles.sql` (précédent P4-B0 : les rôles sont
+   **cluster-globaux**, donc jamais créés par une migration) et **jamais supprimé au
+   `down()`**. NOLOGIN ⇒ **aucun mot de passe manipulé**.
+2. **Transfert de propriété** des 9 tables **et de leurs 9 séquences**. Les trois
+   fonctions trigger d'intégrité restent à `digitrove` (elles ne sont pas
+   `SECURITY DEFINER`), mais l'implémentation doit **re-prouver par test** qu'elles se
+   déclenchent toujours.
+3. **Cinq autorités bornées** : créer un brouillon · modifier un brouillon · **publier** ·
+   lire la politique en vigueur · lister l'historique. **Aucun CRUD générique.**
+4. **Publication atomique** : fermer le prédécesseur et publier le successeur = **une
+   seule transition**. ⚠️ Utiliser **`now()`**, pas `clock_timestamp()` — les deux bornes
+   doivent être **identiques** pour qu'un intervalle semi-ouvert `[from, until)` ne
+   produise **ni trou ni chevauchement**. Le précédent `publish_crm_segment_version`
+   apporte le `FOR UPDATE` et les refus par SQLSTATE, **pas** son horodatage.
+5. **`status='active'` ≡ « en vigueur maintenant »**. La **publication différée n'est PAS
+   livrée** (elle exigerait `btree_gist`, jamais installée dans les 45 migrations) ; elle
+   restera ajoutable plus tard **sans rouvrir cette frontière**. ⚠️ `effective_from` d'un
+   brouillon **n'est pas autoritatif** — la publication l'écrase ; l'écran admin ne doit
+   pas le présenter comme un contrôle de planification.
+6. **Couche Laravel mince** (concern miroir de `UsesCrmAuthority`, service, config
+   fail-closed, Gate admin) et **écran Filament de gouvernance seulement**.
 
 ### Contraintes dures héritées
 
@@ -823,14 +844,32 @@ Le schéma d'affiliation est **complet et dormant**. P6-D1 est le gate actif,
   **jamais** être présenté comme un programme d'affiliation opérationnel.
 - **Aucune donnée bancaire ni Mobile Money** : le versement réel exige son propre
   gate revu, distinct de P6-D4.
+- ⚠️ **Les tests « aucun rôle `%affiliate%` »** (`P6D0AffiliateSchemaTest`,
+  `P6D0AffiliateRollbackTest`) devront devenir un **inventaire exact** autorisant
+  **uniquement** `digitrove_affiliate_executor` — aucun second rôle ne doit pouvoir
+  apparaître silencieusement.
+- ⚠️ **`pg_catalog`, jamais `information_schema`**, pour tout audit d'ACL, de propriété
+  ou d'inventaire : `information_schema` est **filtré par privilèges** et retourne une
+  liste **vide** sous `digitrove_runtime`, faisant **passer un contrat à vide**. Défaut
+  réel rencontré en D-057.
+- **Compteurs de frontière 45 → 46** sous **les deux formes**, plus l'assertion
+  « dernière migration ».
 
 ### Frontières des gates suivants
 
-`P6-D2` touches et attribution autoritative · `P6-D3` moteur de commissions et
-compensations de remboursement (⚠️ `refunds` est au **niveau commande** : la
-répartition vers les lignes réutilise la convention **Hamilton** déjà autoritative
-du dépôt — `App\Services\Pricing\DiscountAllocator`, D-030 Q3 — **sans inventer
-d'arrondi**) · `P6-D4` payout administratif · `P6-D5` surfaces admin et reporting.
+`P6-D1.1` cycle de vie affilié + codes (⚠️ la **re-candidature après `rejected`** est
+différée à son préflight : `affiliates.user_id` est **UNIQUE**, donc le schéma impose une
+transition d'état, pas une seconde ligne ; **ne pas modifier `affiliates`** ni créer de
+table de candidature avant ce gate) · `P6-D2` touches et attribution autoritative
+(⚠️ **aucun storefront** : ne jamais annoncer D2 end-to-end) · `P6-D3` moteur de
+commissions et compensations de remboursement (⚠️ `refunds` est au **niveau commande** :
+la répartition vers les lignes réutilise la convention **Hamilton** déjà autoritative du
+dépôt — `App\Services\Pricing\DiscountAllocator`, D-030 Q3 — **sans inventer d'arrondi**,
+**aucune seconde implémentation**) · `P6-D4` payout administratif.
+
+**Aucun `P6-D5` n'est créé artificiellement** : les surfaces d'administration et le
+reporting sont absorbés par le gate qui les justifie. Le découpage après D4 sera réévalué
+**à partir du dépôt réel**.
 
 ---
 
@@ -865,6 +904,31 @@ Quatre tables (`crm_segments`, `crm_segment_versions`, `crm_segment_generations`
 ### Rappel D-049 (architecture P6-A2)
 
 Architecture **gelée dans D-049** : définitions typées allowlistées (aucun SQL/colonne/opérateur/JSONPath libre), versions immuables, générations matérialisées publiées **atomiquement**, critères commerce **currency-scoped** (aucun LTV global, aucun FX, aucun float), consentement marketing **séparé** de l'appartenance au segment. Migration `000025` (41 migrations). **P6-B0 (CRM Admin Views) NON COMMENCÉ.**
+
+### 2026-08-10 — Fable (D-058 : architecture P6-D1 gelée — AUCUN CODE)
+- Fait : **préflight d'architecture** contre le dépôt réel (`pg_catalog`, migrations,
+  tests, patterns P4-B0 / P6-A2 / P6-B0-B1), puis **gel de D-058**. Documentation
+  seule : `DECISIONS_LOG.md`, `PROJECT_MEMORY.md`, `PROGRESS_TRACKER.md`, `HANDOFF.md`,
+  `CLAUDE.md`, `AGENTS.md`. **Aucune migration, aucun fichier applicatif, aucune ACL,
+  aucune fonction PostgreSQL, aucune `000030`.**
+- **Dette critique découverte** (non nommée par D-057) : les 9 tables `affiliate_*`
+  appartiennent à **`digitrove`, rôle migrateur superuser**. Mesuré : les fonctions
+  `SECURITY DEFINER` du dépôt se répartissent en `digitrove_crm_executor` **59**,
+  analytics 2, download 1, **`digitrove` 2** (héritage pré-P4-B0). Une autorité créée en
+  l'état s'exécuterait **en superuser** — la vulnérabilité fermée par D-029.6.
+- **Décision temporelle tranchée** : `status='active'` **≡ « en vigueur maintenant »**.
+  La publication différée n'est **pas** livrée en D1 (elle exigerait `btree_gist`, absent
+  des 45 migrations) mais reste ajoutable ensuite **sans rouvrir la frontière**.
+- **Point de conception précis** : l'autorité de publication devra utiliser **`now()`** et
+  **non `clock_timestamp()`** — contrairement à `publish_crm_segment_version` — pour que
+  `effective_until` du prédécesseur et `effective_from` du successeur soient **identiques**.
+- **Deux contradictions documentation ↔ code corrigées** : `PROJECT_MEMORY.md` annonçait
+  « STATUS : NON DÉMARRÉ (aucun code Laravel) » avec 45 migrations au dépôt ; et il
+  pointait `.context/architecture/SCHEMA_BDD.md` (copie figée de 526 lignes) au lieu de
+  `DigiTrove_Schema_BDD_v1.md` (référence maintenue, 3 300+ lignes).
+- Décisions prises (→ DECISIONS_LOG.md) : **D-058**.
+- Laisse à : **P6-D1 — implémentation de l'autorité et de la gouvernance des politiques**,
+  migration `000030`, architecture gelée.
 
 ### 2026-08-10 — Fable (P6-D0 Affiliate Schema Foundation implémenté)
 - Fait : migration **`000029`** (9 tables, **1 seule fonction** — le trigger append-only,
