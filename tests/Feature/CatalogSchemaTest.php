@@ -96,12 +96,11 @@ it('has explicit indexes for reverse catalog lookups', function () {
 });
 
 it('does not create P6 marketing or affiliation tables', function () {
+    // Never-planned shapes: these were rejected by design and must never appear.
     $forbiddenTables = [
         'affiliate_profiles',
         'affiliate_links',
         'referrals',
-        'affiliate_commissions',
-        'affiliate_payouts',
         'campaigns',
         'customer_segments',
     ];
@@ -109,6 +108,37 @@ it('does not create P6 marketing or affiliation tables', function () {
     foreach ($forbiddenTables as $table) {
         expect(Schema::hasTable($table))->toBeFalse("Unexpected out-of-scope table exists: {$table}");
     }
+
+    // `affiliate_commissions` and `affiliate_payouts` were on the list above until P6-D0
+    // (D-057) legitimately created them. Rather than drop the two entries and go blind,
+    // the guard is rescoped to an EXACT inventory: the nine tables P6-D0 owns, and not a
+    // tenth. A future gate that grows the affiliate surface has to come here and say so.
+    // `pg_catalog`, NOT `information_schema`: the latter is filtered by privilege, and
+    // this suite runs as the restricted runtime role, which P6-D0 grants nothing at all.
+    // Through `information_schema` the affiliate tables are invisible here — the guard
+    // would pass on an empty list and prove nothing.
+    $affiliateTables = array_map(
+        static fn (object $row): string => (string) $row->relname,
+        DB::select(<<<'SQL'
+            SELECT c.relname
+            FROM pg_class AS c
+            JOIN pg_namespace AS n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname LIKE 'affiliate%'
+            ORDER BY 1
+            SQL),
+    );
+
+    expect($affiliateTables)->toBe([
+        'affiliate_attributions',
+        'affiliate_codes',
+        'affiliate_commission_entries',
+        'affiliate_commissions',
+        'affiliate_payout_items',
+        'affiliate_payouts',
+        'affiliate_program_policies',
+        'affiliate_touches',
+        'affiliates',
+    ]);
 });
 
 it('enforces unique slugs for categories and products', function () {

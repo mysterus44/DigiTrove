@@ -85,7 +85,7 @@ function snapshotP4A1(OrderItem $item, Product $component): OrderItemBundleCompo
 
 it('applies migration 000009 with the exact physical schema, three functions and three triggers', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000009_create_order_item_bundle_components_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(44)
+        ->and(DB::table('migrations')->count())->toBe(45)
         ->and(Schema::hasTable('order_item_bundle_components'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')
