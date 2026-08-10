@@ -621,7 +621,35 @@ un hook `crmGateExtraCondition()` : la forme qui échoue ainsi n'est plus dispon
 `P6B0SecurityContractTest` qui prouve que B0 n'expose aucune affordance d'export.
 Validation ciblée : B0+B1 **197 tests / 1112 assertions**, Pint **463 fichiers**.
 
-**PROCHAIN GATE : P6-C — Paniers / Relances**, architecture **gelée par D-055**, NON
+**P6-C (Paniers / Relances) : IMPLÉMENTÉ, PR EN ATTENTE** (D-055 architecture → D-056
+implémentation, branche `p6-c-cart-reminders`, migration **`000028`**, **44 migrations**,
+aucune `000029`). ⚠️ **INFRASTRUCTURE BACKEND DORMANTE** : le dépôt n'a **aucun flux
+panier applicatif** (zéro route, zéro contrôleur, `CartItem` sans `$touches`,
+`secret_hash` produit uniquement par la factory) — **aucune reprise panier end-to-end
+n'est revendiquée**. Flags et schedulers **OFF par défaut** ; **aucune cadence marketing
+livrée** : un réglage absent **refuse** au lieu d'inventer. `carts.last_activity_at` +
+**trigger sur `cart_items`** (car `updated_at` est un signal faux : `CartItem` ne touche
+pas le parent, et la transition d'abandon se compterait elle-même). Ledger
+`cart_reminder_attempts` : identité immuable `(cart, step)`, transitions **monotones**,
+raisons **allowlistées**, **zéro PII**. **Revalidation à l'envoi** du consentement
+`promotional`, de la conversion et de l'achat couvrant (`paid|partially_refunded|
+refunded`, couverture **stricte**). **Reprise fragment → POST** : patron P4-C réutilisé,
+bootstrap GET **sans base**, CSP à nonce par réponse, `history.replaceState` **avant**
+usage, puis continuation en **session serveur opaque** ; capability CSPRNG 256 bits,
+SHA-256 seul au repos, **TTL imposé par l'autorité PostgreSQL**, rejouable dans son TTL.
+ACL Commerce minimales posées par `000028` et révoquées **exactement** au `down()` ;
+**aucune migration historique modifiée**.
+⚠️ **`app/Services/Crm/` interdit `DB::table(`** : les services de relance lisent
+Commerce, donc ils vivent dans **`app/Services/Cart/`**. Contrat corrigé par
+**déplacement**, jamais par affaiblissement.
+⚠️ **D-030 : `P6-C LOCAL = CLOSED`, `GLOBAL = OPEN`** — `DeliveryConfig::assertMailerSafe()`
+(P4-C) reste plus faible sur cinq points (nom au lieu du transport résolu, `array` toléré,
+transport inconnu accepté, préparation non vérifiée, composition parcourue à un seul
+niveau par nom). **P4-C n'est pas modifié dans ce gate** ; son durcissement mérite le sien.
+Validation : P6-C **82 / 576**, campagne + régressions **1008 / 6485**, rollback
+**44→43→44**, Pint **486**.
+
+**ANCIEN ÉTAT (pour mémoire) : P6-C — Paniers / Relances**, architecture **gelée par D-055**, NON
 COMMENCÉ, aucune migration `000028`. ⚠️ Deux contraintes dures issues de l'audit réel :
 `carts` ne porte **aucune colonne e-mail** (un panier invité est structurellement
 **inadressable** — la V1 ne peut relancer qu'un panier lié à un compte actif et vérifié,

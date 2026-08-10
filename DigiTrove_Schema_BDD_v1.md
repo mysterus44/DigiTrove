@@ -965,7 +965,56 @@ puis `DROP FUNCTION IF EXISTS`, enfin `DROP TABLE crm_exports` — restaure exac
 frontière `000026` (prouvé : 43 → 42, zéro objet B1 résiduel, les 7 autorités B0.1
 intactes).
 
-**Frontière suivante** : **P6-C — Paniers / Relances**, architecture gelée par **D-055**.
+### CONTRAT P6-C — Cart Abandonment & Reminders (migration 000028, IMPLÉMENTÉ)
+
+> **44 migrations, `000028` présente, aucune `000029`. PR en attente.**
+> (D-055 architecture → D-056 implémentation)
+
+**Signal d'activité — `carts.last_activity_at`** (`NOT NULL DEFAULT now()`), maintenu par
+un **trigger sur `cart_items`** (INSERT/UPDATE/DELETE) et par l'autorité d'abandon.
+⚠️ `updated_at` est un signal **invalide** : `CartItem` ne déclare aucun `$touches`, donc
+une variation d'article ne le bouge pas, et la transition d'abandon le bougerait
+elle-même. Index partiel `carts_active_last_activity_index` sur les paniers `active`.
+
+**Table `cart_reminder_attempts`** — owner `digitrove_crm_executor`, runtime **sans
+`SELECT` ni DML**, PUBLIC sans accès.
+
+| Invariant | Mécanisme |
+|---|---|
+| Identité de tentative immuable | `UNIQUE (cart_id, step)` — **c'est la clé d'idempotence** |
+| Transitions monotones | `CHECK status IN ('pending','claimed','sent','suppressed','failed')` + CHECK horodatages par statut |
+| Raisons sans texte libre | `CHECK terminal_reason IN (…11 valeurs…)` |
+| Codes d'erreur | `CHECK last_error_code ~ '^[0-9A-Z]{5}$'` — SQLSTATE seul |
+| Capability au repos | `CHECK secret_hash ~ '^[0-9a-f]{64}$'`, UNIQUE, effacée à la suppression |
+| Zéro PII | aucune colonne e-mail, nom, contenu, lien ou message fournisseur |
+
+**11 autorités** `SECURITY DEFINER` (owner executor, `search_path` épinglé, runtime
+**EXECUTE-only**) : `mark_abandoned_carts`, `list_cart_reminder_candidates`,
+`enqueue_cart_reminder`, `list_due_cart_reminders`, `claim_cart_reminder`,
+`attach_cart_reminder_secret`, `complete_cart_reminder`, `suppress_cart_reminder`,
+`fail_cart_reminder`, `resolve_cart_reminder_by_secret`, `purge_cart_reminders` — plus la
+fonction de trigger interne `touch_cart_last_activity` (**sans EXECUTE runtime**).
+
+**ACL Commerce** : `000028` accorde à l'exécuteur le **minimum** — `SELECT, UPDATE` sur
+`carts` (transition + trigger), `SELECT` sur `users`, `cart_items`, `orders`,
+`order_items`. Sans ces grants toute autorité échoue en `42501` : le rôle est provisionné
+pour le CRM et ne possède rien dans Commerce. Le `down()` les **révoque exactement**.
+
+**Autres invariants** : abandon jamais appliqué à `converted`/`expired` ; `FOR UPDATE SKIP
+LOCKED` + keyset borné, **aucun OFFSET** ; identité filtrée **dans l'autorité** (compte
+réel, actif, non supprimé, e-mail vérifié) donc un panier invité n'atteint jamais
+l'application ; TTL de capability **imposé par l'autorité**, pas en PHP ; purge limitée
+aux états **terminaux** après rétention — jamais un `pending`/`claimed`, dont la
+suppression réinitialiserait la clé d'idempotence.
+
+**Rollback `000028`** : révocation EXECUTE + `DROP FUNCTION` par signature, `DROP TRIGGER`,
+`DROP TABLE`, `dropColumn`, puis `REVOKE` des privilèges Commerce — restaure exactement la
+frontière `000027` (prouvé : **44 → 43 → 44**, zéro résidu, gates antérieurs intacts).
+
+**Frontière suivante** : **P6-D — Affiliation**, **NON COMMENCÉ**, aucune migration
+`000029`. Son architecture n'est pas gelée et ne doit pas être inventée avant audit.
+
+**Ancienne frontière (pour mémoire)** : **P6-C — Paniers / Relances**, architecture gelée par **D-055**.
 **NON COMMENCÉ, aucune migration `000028`.** ⚠️ Contraintes dures de l'audit : `carts` ne
 porte **aucune colonne e-mail** (panier invité **inadressable**) et `carts.abandoned_at`
 existe mais **aucun code ne l'écrit** (aucune transition d'abandon aujourd'hui).
