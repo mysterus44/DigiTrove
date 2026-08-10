@@ -3948,7 +3948,32 @@ ALTERNATIVES REJETÉES :
 - **Figer 24 h / 48 h / 3 relances** → aucune décision marketing n'a été prise ; ces valeurs seraient inventées.
 - **Une table d'événements séparée (option A)** → double le stockage et la surface ACL sans renforcer l'auditabilité déjà garantie par l'immuabilité des champs terminaux.
 
-IMPACT : contrat d'implémentation de P6-C. Précondition nommée : **aucun flux panier n'existe encore**, donc le gate livre une infrastructure vérifiable mais non exerçable de bout en bout en production tant qu'un storefront ne crée pas de paniers.
+**AUDIT D-030 REPOSITORY-WIDE — VERDICT : LOCAL FERMÉ, GLOBAL ENCORE OUVERT.**
+Le dépôt ne contient que **deux** chemins d'envoi réels : `SecureDeliveryJob` →
+`OrderDownloadsReady` (P4-C, porteur de tokens de téléchargement bruts dans le fragment
+d'URL) et le futur envoi P6-C. P4-C **possède déjà** un garde,
+`DeliveryConfig::assertMailerSafe()`, mais il est **strictement plus faible** que
+`MailTransportGuard` sur cinq points vérifiés ligne à ligne :
+1. il teste le **NOM** du mailer (`$mailer === 'log'`), pas le `transport` réellement
+   résolu — un mailer nommé `smtp` dont `transport` vaut `log` passe ;
+2. il **autorise `array`** en `local`/`testing`, alors que ce transport absorbe le message ;
+3. il **n'refuse pas un transport inconnu** — un driver non revu passe ;
+4. il ne vérifie **aucune préparation réelle** : `smtp` avec `MAIL_HOST` vide passe, et
+   l'adresse `From` n'est jamais contrôlée ;
+5. sa marche dans `failover`/`roundrobin` est **à un seul niveau et par nom**
+   (`array_intersect($members, ['log','array'])`) : une branche nommée `backup` dont le
+   transport est `log`, ou un `failover` imbriqué, passe.
+
+**Conséquence** : `D-030 GLOBAL = OPEN`. Un déploiement peut encore faire retomber le
+mail de livraison P4-C sur un transport qui journalise, et ce mail porte une capability
+brute. **`D-030 LOCAL (P6-C) = CLOSED`** par `MailTransportGuard`, qui lit le transport
+résolu, refuse `log`/`array`/`null`/inconnu/incomplet, contrôle l'expéditeur et **récurse**
+dans les compositions avec garde de cycle. Aligner P4-C sur ce garde modifierait une
+frontière de sécurité **déjà mergée** et sort du périmètre de P6-C : cela doit faire
+l'objet de son propre gate revu. **Aucune documentation de ce dépôt ne doit déclarer
+D-030 clos tant que ce gate n'a pas eu lieu.**
+
+IMPACT : contrat d'implémentation de P6-C. Précondition nommée : **aucun flux panier n'existe encore** — ni route, ni contrôleur, ni création, ni mutation applicative. P6-C livre donc une **infrastructure backend dormante**, flags **OFF par défaut**, vérifiable par fixtures mais **jamais présentable comme une fonctionnalité de relance panier utilisable de bout en bout** tant qu'un storefront ne crée pas réellement de paniers. Tout futur flux panier devra respecter le contrat `last_activity_at` (maintenu par la base), ne jamais écrire `abandoned_at` lui-même, et ne jamais créer de tentative directement.
 ### D-048 : P6-A1.3 — Explicit Historical Commerce Rollup Backfill ✅ (MERGÉ)
 CONTEXTE : P6-A1.2 rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouveau** refund `succeeded` survient, mais ne reconstruit pas l'historique antérieur. P6-A1.3 est l'**outil opérateur explicite** qui retrouve les couples historiques et les injecte dans le pipeline P6-A1.2. **Mergé sur la stable** via PR #35 (head `ba32582`, merge `106ffb0a`, CI #42 success). **P6-A2 (Typed Versioned CRM Segments) devient le gate actif ; P6-B0 non commencé.**
 
