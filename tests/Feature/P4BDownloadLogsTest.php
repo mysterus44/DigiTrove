@@ -1106,7 +1106,9 @@ it('keeps HEAD commercially inert and allows only the explicitly reviewed downlo
     // P6-B1 (D-054) adds GenerateCrmExport: an ID-only job that writes a CSV to a
     // private disk. It is named here so the fail-closed directory guard keeps catching
     // anything else smuggled into app/Jobs.
-    $dirAllowlist('Jobs', ['GenerateCrmExport.php', 'ProcessCrmCommerceRollupRefresh.php', 'ProcessCrmOrderAttribution.php', 'ProcessCrmSegmentGeneration.php', 'SecureDeliveryJob.php']);
+    // P6-C (D-056) adds SendCartReminder: ID-only, so the capability it mints never
+    // reaches a queue payload. Listed in sorted order — the guard compares exactly.
+    $dirAllowlist('Jobs', ['GenerateCrmExport.php', 'ProcessCrmCommerceRollupRefresh.php', 'ProcessCrmOrderAttribution.php', 'ProcessCrmSegmentGeneration.php', 'SecureDeliveryJob.php', 'SendCartReminder.php']);
     $dirAllowlist('Listeners', ['QueueCrmOrderAttribution.php', 'QueueSecureDelivery.php']);
     // P6-C (D-056) adds the abandoned cart reminder: synchronous, never ShouldQueue,
     // and it refuses to serialise so the capability cannot reach a queue payload.
