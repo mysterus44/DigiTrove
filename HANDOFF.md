@@ -7,8 +7,89 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Fable
-- **Date** : 2026-08-09
-- **Branche git active** : **`p0-foundations-laravel13`** (stable), HEAD **`474f92c`**.
+- **Date** : 2026-08-10
+- **Branche git active** : **`p6-d0-affiliation-foundation`**, base stable `7fede04`.
+
+### ✅ P6-D0 — Affiliation : FONDATION BDD (D-057, migration `000029`)
+
+**45 migrations, aucune `000030`.** Ce gate livre **le schéma et rien d'autre**.
+
+⚠️ **FONDATION DORMANTE — À NE JAMAIS PRÉSENTER COMME UN PROGRAMME D'AFFILIATION.**
+Il n'existe **aucun** flux de candidature, aucune capture de clic, aucun moteur de
+commission, aucun payout, aucune route, aucun contrôleur, aucun service, aucun job,
+aucun scheduler, aucun écran Filament, aucun cookie, aucun provider, aucune
+notification. Le dépôt n'ayant **aucun storefront**, il n'y a **aucun clic réel à
+attribuer**. Un contrat fail-closed scanne **tout** `app/`, `routes/`, `config/` et
+`resources/` : **pas un seul fichier** ne mentionne « affiliate ».
+
+**Neuf tables** : `affiliate_program_policies`, `affiliates`, `affiliate_codes`,
+`affiliate_touches`, `affiliate_attributions`, `affiliate_commissions`,
+`affiliate_commission_entries`, `affiliate_payouts`, `affiliate_payout_items`.
+
+**Décisions arbitrées et gravées dans le schéma** : politiques **versionnées, jamais
+rétroactives** (index unique partiel ⇒ **une seule `active`**) · **15 % = 1500 bps**,
+`INTEGER`, borné `0..5000` (100 % refusé comme absurde) · base = **`line_total_after_
+discount`** seule valeur autorisée · commission au **niveau `order_item`** ·
+snapshot immuable taux/base/devise/délai sur chaque commission · **ledger append-only**
+à montants **signés** · payout **manuel, mono-affilié, mono-devise, XOF, seuil 10 000**,
+**aucun provider externe** · `affiliates.user_id` **UNIQUE** (D-014 : jamais un
+`users.role`) · **une seule attribution financière par commande**.
+
+**Trois défauts réels fermés pendant l'implémentation** (aucun n'a jamais tourné) :
+1. `base_kind_snapshot` en `varchar(24)` alors que `'line_total_after_discount'` fait
+   **25 caractères** — le CHECK était **structurellement insatisfiable**. Seul un test
+   de **valeur acceptée** pouvait le révéler.
+2. `down()` heurtait la FK retour `affiliate_commission_entries.payout_id →
+   affiliate_payouts` (l'ordre inverse ne suffit pas) **et** laissait survivre la
+   fonction `enforce_affiliate_ledger_append_only` — résidu classique de rollback.
+3. Le contrat de sécurité confondait **la table `visitors` comme identité** et **ses
+   colonnes `first_touch_*` comme signal marketing**. Corrigé **par précision, jamais
+   par affaiblissement** : la liste des cibles de FK hors bloc est désormais **exacte
+   et exhaustive** (`order_items`, `orders`, `refunds`, `users`, `visitors`), donc une
+   future FK vers `events` ou `analytics_sessions` cassera le test.
+
+**Durcissement pré-merge (audit KingKouda §3 → §7) — quatre renforcements structurels :**
+
+1. **`visitor_id` : le CHECK de sujet était un VETO PERMANENT sur toute purge.** Un
+   `CHECK` est **réévalué par l'UPDATE que produit `ON DELETE SET NULL`**, donc effacer
+   le visiteur ancre d'une touche anonyme échouait — **pour toujours**. Remplacé par un
+   **trigger `BEFORE INSERT`** : l'ancrage est exigé à la création, et une touche qui
+   perd son ancre ensuite n'apparie plus **rien** (issue fail-closed), l'attribution
+   gardant ses **propres** snapshots. `SET NULL` suit le **précédent du dépôt** :
+   `orders.visitor_id` et `carts.visitor_id` sont tous deux `nullOnDelete`.
+2. **Une politique effective est physiquement immuable** (trigger `BEFORE UPDATE`) :
+   changer 30 j / 1500 bps / 14 j / 10 000 XOF exige une **nouvelle version**. C'est ce
+   qui rend vraie la promesse « modifiable plus tard, jamais rétroactif ».
+3. **Cohérences croisées structurelles** : FK **composites**
+   `(order_item_id, order_id)`, `(attribution_id, order_id)`,
+   `(attribution_id, affiliate_id)`. Des FK séparées ne prouvaient que l'**existence**
+   de chaque id, jamais leur appartenance mutuelle.
+4. **Payout mono-affilié ET mono-devise, structurellement** : quatre FK composites sur
+   `affiliate_payout_items`. Plus deux **identités d'idempotence naturelles** — un seul
+   `accrual` par commission, un seul `refund_reversal` par `(commission, refund)`.
+
+⚠️ **Un seul objet posé hors du bloc** : l'index unique `order_items (id, order_id)`,
+cible des FK composites, **créé par `000029` et retiré par son `down()`**. **Aucun
+fichier de migration historique n'est modifié** — patron déjà utilisé par P6-C.
+
+**Aucune extension PostgreSQL** (`btree_gist` absent, aucune contrainte d'exclusion) :
+le rollback ne peut pas endommager une infrastructure partagée qu'il ne possède pas.
+
+**ACL fail-closed** : `REVOKE ALL` sur les 9 tables **et** leurs séquences, pour
+`PUBLIC` **et** `digitrove_runtime` — le runtime n'a **ni lecture ni écriture**.
+**Aucun nouveau rôle.** **Aucune fonction `SECURITY DEFINER` opérationnelle** : les
+**trois** fonctions sont des **gardes d'intégrité** derrière un trigger, aucune n'est
+`SECURITY DEFINER`, aucune n'est exécutable par `PUBLIC`.
+**Aucune politique insérée** par la migration.
+
+⚠️ **Compteurs de frontière déplacés 44 → 45 dans 15 fichiers de test** (`P4A1`,
+`P4A2`, `P4A21`, `P4B0`, `P4BDownloadLogs`, `P5A3C`, `P6A10`, `P6A11` ×2, `P6A12`,
+`P6A13`, `P6A2`, `P6B1`, `P6C` ×2), sous **les deux formes** (`glob(...)->toHaveCount`
+et `DB::table('migrations')->count()`), plus l'assertion « dernière migration ».
+C'est exactement le piège documenté : **une campagne `--filter` ciblée ne voit pas
+les contrats d'inventaire des autres phases.**
+
+### ✅ P6-C — Paniers / Relances : MERGÉ (PR #39, head `b6b63f9`, merge `a5de60a`, CI SUCCESS)
 
 ### ✅ P6-C — Paniers / Relances : MERGÉ (PR #39, head `b6b63f9`, merge `a5de60a`, CI SUCCESS)
 
@@ -681,7 +762,55 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
-## 🚧 P6-A2 — Typed Versioned CRM Segments (GATE ACTIF)
+## 🚧 P6-D1 — Politique active + identité affilié + codes (GATE ACTIF)
+
+**Statut** : **P6-D0 est TERMINÉ** (migration `000029`, **45 migrations**, D-057).
+Le schéma d'affiliation est **complet et dormant**. P6-D1 est le gate actif,
+**NON COMMENCÉ**, **aucune migration `000030`**.
+
+### Ce que P6-D1 doit livrer
+
+1. **Bootstrap explicite de la politique.** `000029` n'insère **aucune** ligne :
+   c'est délibéré. P6-D1 doit créer la première version `active` par un chemin
+   **explicite et audité** (commande opérateur, jamais un seeder silencieux),
+   en respectant l'index unique partiel « une seule `active` ».
+2. **Candidature et admission** `pending → active`, avec `suspended`, `rejected`,
+   `closed`. La transition est **administrative** ; le schéma porte déjà les états
+   et le CHECK des horodatages correspondants.
+3. **Émission et rotation des codes.** Un code est un **identifiant public**, pas
+   un secret : normalisé `^[A-Z0-9]{4,32}$`, unique globalement, **désactivable
+   sans suppression** (désactiver ne doit jamais effacer les touches qui l'ont
+   utilisé).
+
+### Contraintes dures héritées
+
+- ⚠️ **`P4B_ALLOWED_SERVICE_FILES` est une frontière fail-closed.** P6-D0 n'a
+  ajouté **aucun** fichier sous `app/Services` ; P6-D1 devra **élargir
+  explicitement** l'allowlist, sinon le garde-fou P4-B échoue — c'est voulu.
+- ⚠️ **Le contrat `P6D0SecurityContractTest` scanne tout `app/`, `routes/`,
+  `config/` et `resources/`** et exige **zéro** mention d'« affiliate ». P6-D1
+  devra **rescoper ce contrat**, jamais le supprimer ni l'affaiblir : le remplacer
+  par un **inventaire exact** des fichiers autorisés, comme l'ont fait P5-A3C et
+  P6-B0. Une suppression d'assertion serait un affaiblissement.
+- **Aucune autorité `SECURITY DEFINER` n'existe encore** pour l'affiliation : leur
+  contrat appartient à P6-D1/D2/D3 et le runtime n'a **aucun droit** sur les neuf
+  tables. Chaque gate ouvre exactement le privilège dont son autorité a besoin.
+- **Aucun clic réel à attribuer** tant qu'aucun storefront n'existe. P6-D1 ne doit
+  **jamais** être présenté comme un programme d'affiliation opérationnel.
+- **Aucune donnée bancaire ni Mobile Money** : le versement réel exige son propre
+  gate revu, distinct de P6-D4.
+
+### Frontières des gates suivants
+
+`P6-D2` touches et attribution autoritative · `P6-D3` moteur de commissions et
+compensations de remboursement (⚠️ `refunds` est au **niveau commande** : la
+répartition vers les lignes réutilise la convention **Hamilton** déjà autoritative
+du dépôt — `App\Services\Pricing\DiscountAllocator`, D-030 Q3 — **sans inventer
+d'arrondi**) · `P6-D4` payout administratif · `P6-D5` surfaces admin et reporting.
+
+---
+
+## 📜 HISTORIQUE — P6-A2 (gate clos depuis longtemps)
 
 **Statut** : P6-A1.3 est TERMINÉ, MERGÉ ET VALIDÉ (PR #35, merge `106ffb0a`, CI #42, D-048, **40 migrations**). P6-A2 est le gate actif.
 
@@ -712,6 +841,35 @@ Quatre tables (`crm_segments`, `crm_segment_versions`, `crm_segment_generations`
 ### Rappel D-049 (architecture P6-A2)
 
 Architecture **gelée dans D-049** : définitions typées allowlistées (aucun SQL/colonne/opérateur/JSONPath libre), versions immuables, générations matérialisées publiées **atomiquement**, critères commerce **currency-scoped** (aucun LTV global, aucun FX, aucun float), consentement marketing **séparé** de l'appartenance au segment. Migration `000025` (41 migrations). **P6-B0 (CRM Admin Views) NON COMMENCÉ.**
+
+### 2026-08-10 — Fable (P6-D0 Affiliate Schema Foundation implémenté)
+- Fait : migration **`000029`** (9 tables, **1 seule fonction** — le trigger append-only,
+  délibérément **non** `SECURITY DEFINER` —, 1 trigger, index unique partiel « une seule
+  politique active », ACL `REVOKE ALL` runtime **et** PUBLIC sur tables + séquences) +
+  4 fichiers de tests P6-D0 (Schema, Invariants, Rollback, SecurityContract) +
+  `tests/Support/AffiliateFixtures.php`. **Aucun fichier sous `app/`, `routes/`,
+  `config/` ou `resources/`** — le contrat le prouve en scannant l'arbre entier.
+- **Trois défauts réels fermés** : (1) `base_kind_snapshot` en `varchar(24)` rendait son
+  propre CHECK **insatisfiable** (`'line_total_after_discount'` = 25 car.) — seul un test
+  de **valeur acceptée** pouvait le voir ; (2) `down()` heurtait la FK retour
+  `affiliate_commission_entries.payout_id` et laissait survivre la fonction trigger ;
+  (3) le contrat confondait la **table `visitors` comme identité** et ses colonnes
+  `first_touch_*` comme **signal marketing** — corrigé **par précision** (liste exacte
+  des cibles de FK hors bloc), jamais par affaiblissement.
+- **Fixtures et contraintes différées** : `orders` porte deux CHECK **DEFERRED** (au moins
+  une ligne ; commande `paid` ⇒ exactement un `payment` `succeeded`), donc l'Order, son
+  `order_item` et son `payment` doivent committer **dans la même transaction, sur la même
+  connexion**. Un remboursement **total** exige `orders.status = 'refunded'` : la fixture
+  fait donc un remboursement **partiel** et passe l'Order en `partially_refunded`.
+- **Compteurs de frontière déplacés 44 → 45 dans 15 fichiers**, sous **les deux formes**
+  (`glob(...)->toHaveCount` **et** `DB::table('migrations')->count()`), plus l'assertion
+  « dernière migration » de `P6A11CommerceRollupSchemaTest`.
+- Décisions prises (→ DECISIONS_LOG.md) : **D-057** (architecture P6-D figée + fondation
+  BDD P6-D0 implémentée).
+- Laisse à : **P6-D1 — politique active + identité affilié + codes**, NON COMMENCÉ,
+  aucune migration `000030`. ⚠️ P6-D1 devra **élargir explicitement**
+  `P4B_ALLOWED_SERVICE_FILES` **et rescoper** `P6D0SecurityContractTest` (par inventaire
+  exact, jamais par suppression d'assertion).
 
 ### 2026-08-08 — Claude Code (P6-A2 Typed Versioned CRM Segments implémenté)
 - Fait : migration `000025` (4 tables, **18 fonctions** (11 autorités runtime + 4 internes dont validateur, ses **deux helpers de typage** et matcher, + 3 fonctions trigger), 3 triggers d'immuabilité, FK composites same-segment, index unique partiel « une génération active », ACL runtime EXECUTE-only) + couche Laravel mince (service, job ID-only, dispatcher, sweeper, commande opérateur, scheduler off) + 11 fichiers de tests P6-A2.

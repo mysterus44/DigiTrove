@@ -38,13 +38,13 @@ it('installs only the P6-A1.1 table with closed physical constraints', function 
         'visitor_id'
     );
 
-    // Exactly 44 migrations, the last being 000028 (P6-C cart abandonment & reminders).
+    // Exactly 45 migrations, the last being 000029 (P6-D0 affiliate schema foundation).
     $migrations = DB::table('migrations')->orderBy('id')->get();
-    expect($migrations)->toHaveCount(44)
-        ->and($migrations->last()->migration)->toBe('2026_07_14_000028_create_cart_abandonment_and_reminders');
+    expect($migrations)->toHaveCount(45)
+        ->and($migrations->last()->migration)->toBe('2026_07_14_000029_create_affiliate_schema_foundation');
 
-    // No migration 000029 exists: P6-D has not started.
-    expect(glob(database_path('migrations').'/2026_07_14_000029*.php') ?: [])->toBe([]);
+    // No migration 000030 exists: P6-D0 ships the schema only, and stops there.
+    expect(glob(database_path('migrations').'/2026_07_14_000030*.php') ?: [])->toBe([]);
 });
 
 it('verifies exact restrictive foreign keys checks and primary key', function () {
