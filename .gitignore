@@ -2,6 +2,9 @@
 /node_modules
 /public/build
 /public/hot
+# laravel-vite-plugin dev output: it embeds the local dev-server origin
+# (http://[::1]:5173/...), so it is machine-specific and wrong everywhere else.
+/public/fonts-manifest.dev.json
 /public/storage
 /storage/*.key
 /vendor
