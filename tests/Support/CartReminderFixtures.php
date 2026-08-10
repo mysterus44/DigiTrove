@@ -7,6 +7,7 @@ namespace Tests\Support;
 use App\Enums\UserRole;
 use App\Enums\UserStatus;
 use App\Models\User;
+use Illuminate\Support\Str;
 
 /**
  * P6-C fixtures.
@@ -57,6 +58,32 @@ final class CartReminderFixtures
         );
 
         return (int) SegmentFixtures::owner()->selectOne('SELECT id FROM cart_items ORDER BY id DESC LIMIT 1')->id;
+    }
+
+    /**
+     * An ACTIVE contact carrying an exact address. `SegmentFixtures::contact()` mints a
+     * random one, but P6-C resolves the contact from the user's own e-mail, so the two
+     * must match exactly — the resolution is exact-match only, by design.
+     */
+    public static function contactFor(string $email): int
+    {
+        SegmentFixtures::owner()->insert(
+            "INSERT INTO crm_contacts (public_id, email, user_id, origin, status, anonymized_at, created_at, updated_at)
+             VALUES (?, ?, NULL, 'verified_account', 'active', NULL, NOW(), NOW())",
+            [Str::uuid(), mb_strtolower(trim($email))],
+        );
+
+        return (int) SegmentFixtures::owner()->getPdo()->lastInsertId();
+    }
+
+    /** Append a withdrawal to the consent ledger, exactly as P6-A0 shapes it. */
+    public static function withdrawConsent(int $contactId): void
+    {
+        SegmentFixtures::owner()->insert(
+            "INSERT INTO crm_marketing_consent_events (public_id, contact_id, channel, purpose, action, source, policy_version, user_id, order_id, idempotency_hash, recorded_at)
+             VALUES (?, ?, 'email', 'promotional', 'withdrawn', 'account_settings', '2026-01-01', NULL, NULL, ?, NOW())",
+            [Str::uuid(), $contactId, hash('sha256', 'withdraw'.$contactId.Str::random(8))],
+        );
     }
 
     public static function row(int $cartId): object

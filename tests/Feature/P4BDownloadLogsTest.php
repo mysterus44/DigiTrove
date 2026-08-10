@@ -59,6 +59,8 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Checkout/OrderService.php',
     // P6-C (D-056) — EXECUTE-only cart abandonment and reminder ledger clients.
     'Crm/CartAbandonmentService.php',
+    'Crm/CartReminderDispatcher.php',
+    'Crm/CartReminderEligibility.php',
     'Crm/CartReminderService.php',
     // P6-A0 (D-043) — EXECUTE-only CRM identity and consent authorities.
     'Crm/Concerns/UsesCrmAuthority.php',
@@ -1106,7 +1108,9 @@ it('keeps HEAD commercially inert and allows only the explicitly reviewed downlo
     // anything else smuggled into app/Jobs.
     $dirAllowlist('Jobs', ['GenerateCrmExport.php', 'ProcessCrmCommerceRollupRefresh.php', 'ProcessCrmOrderAttribution.php', 'ProcessCrmSegmentGeneration.php', 'SecureDeliveryJob.php']);
     $dirAllowlist('Listeners', ['QueueCrmOrderAttribution.php', 'QueueSecureDelivery.php']);
-    $dirAllowlist('Mail', ['OrderDownloadsReady.php']);
+    // P6-C (D-056) adds the abandoned cart reminder: synchronous, never ShouldQueue,
+    // and it refuses to serialise so the capability cannot reach a queue payload.
+    $dirAllowlist('Mail', ['AbandonedCartReminder.php', 'OrderDownloadsReady.php']);
 
     // P3-D1 (D-030) legitimately introduces app/Services/Pricing, a read-only
     // COMMERCE kernel. Guarding by keyword or by the first directory name was
