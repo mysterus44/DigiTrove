@@ -10,7 +10,7 @@
 - **Date** : 2026-08-09
 - **Branche git active** : **`p0-foundations-laravel13`** (stable), HEAD **`474f92c`**.
 
-### 🟡 P6-C — Paniers / Relances : IMPLÉMENTÉ, PR EN ATTENTE (D-055 → D-056)
+### ✅ P6-C — Paniers / Relances : MERGÉ (PR #39, head `b6b63f9`, merge `a5de60a`, CI SUCCESS)
 
 Branche **`p6-c-cart-reminders`**, base `7178751`. **Migration `000028`** — **44 migrations**,
 aucune `000029`.

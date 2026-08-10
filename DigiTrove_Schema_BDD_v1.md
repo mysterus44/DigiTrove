@@ -967,7 +967,8 @@ intactes).
 
 ### CONTRAT P6-C — Cart Abandonment & Reminders (migration 000028, IMPLÉMENTÉ)
 
-> **44 migrations, `000028` présente, aucune `000029`. PR en attente.**
+> **MERGÉ** via PR #39, head `b6b63f9`, merge `a5de60a`, CI SUCCESS.
+> **44 migrations, `000028` présente, aucune `000029`** — état courant de la stable.
 > (D-055 architecture → D-056 implémentation)
 
 **Signal d'activité — `carts.last_activity_at`** (`NOT NULL DEFAULT now()`), maintenu par

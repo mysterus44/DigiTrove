@@ -621,7 +621,7 @@ un hook `crmGateExtraCondition()` : la forme qui échoue ainsi n'est plus dispon
 `P6B0SecurityContractTest` qui prouve que B0 n'expose aucune affordance d'export.
 Validation ciblée : B0+B1 **197 tests / 1112 assertions**, Pint **463 fichiers**.
 
-**P6-C (Paniers / Relances) : IMPLÉMENTÉ, PR EN ATTENTE** (D-055 architecture → D-056
+**P6-C (Paniers / Relances) : TERMINÉ, MERGÉ ET VALIDÉ** via [PR #39](https://github.com/mysterus44/DigiTrove/pull/39), head `b6b63f9`, merge `a5de60a`, **CI SUCCESS**. Suite complète sur la stable finale : **1461 tests / 9290 assertions, 0 échec**. (D-055 architecture → D-056
 implémentation, branche `p6-c-cart-reminders`, migration **`000028`**, **44 migrations**,
 aucune `000029`). ⚠️ **INFRASTRUCTURE BACKEND DORMANTE** : le dépôt n'a **aucun flux
 panier applicatif** (zéro route, zéro contrôleur, `CartItem` sans `$touches`,
