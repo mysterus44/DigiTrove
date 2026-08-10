@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
-namespace App\Services\Crm;
+namespace App\Services\Cart;
 
 use App\Services\Crm\Concerns\UsesCrmAuthority;
+use App\Services\Crm\CrmOperationException;
 use App\Support\CartReminderConfig;
 use Throwable;
 

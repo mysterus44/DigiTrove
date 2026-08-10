@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Services\Crm\CartAbandonmentService;
+use App\Services\Cart\CartAbandonmentService;
 use App\Services\Crm\CrmOperationException;
 use Tests\Concerns\InteractsWithCrmDatabase;
 use Tests\Support\CartReminderFixtures as Cart;

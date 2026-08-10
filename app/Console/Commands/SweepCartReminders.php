@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Jobs\SendCartReminder;
-use App\Services\Crm\CartReminderService;
+use App\Services\Cart\CartReminderService;
 use App\Support\CartReminderConfig;
 use Illuminate\Console\Command;
 use Throwable;

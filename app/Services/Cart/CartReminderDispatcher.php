@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Services\Crm;
+namespace App\Services\Cart;
 
 use App\Mail\AbandonedCartReminder;
 use App\Support\CartReminderConfig;

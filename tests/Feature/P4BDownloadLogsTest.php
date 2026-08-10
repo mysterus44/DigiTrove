@@ -53,15 +53,17 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Analytics/Read/Data/AnalyticsSales.php',
     'Analytics/Read/Data/AnalyticsSalesCurrencySummary.php',
     'Analytics/Read/Data/AnalyticsSalesDay.php',
+    // P6-C (D-056) — cart abandonment, reminder ledger and delivery. These are
+    // COMMERCE-domain services: they read carts, orders and users, so they deliberately
+    // live outside Services/Crm, whose own contract forbids direct table access.
+    'Cart/CartAbandonmentService.php',
+    'Cart/CartReminderDispatcher.php',
+    'Cart/CartReminderEligibility.php',
+    'Cart/CartReminderService.php',
     // P3-D2 (D-031) — checkout transaction. Commerce only, no delivery.
     'Checkout/CheckoutException.php',
     'Checkout/CheckoutRefusalReason.php',
     'Checkout/OrderService.php',
-    // P6-C (D-056) — EXECUTE-only cart abandonment and reminder ledger clients.
-    'Crm/CartAbandonmentService.php',
-    'Crm/CartReminderDispatcher.php',
-    'Crm/CartReminderEligibility.php',
-    'Crm/CartReminderService.php',
     // P6-A0 (D-043) — EXECUTE-only CRM identity and consent authorities.
     'Crm/Concerns/UsesCrmAuthority.php',
     // P6-B0 (D-052) — admin read layer over the B0.1 authorities.
@@ -464,7 +466,7 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(43)
+        ->and(DB::table('migrations')->count())->toBe(44)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Schedule;
 use Tests\Support\SourceScanner as Scanner;
 
 /**
@@ -23,10 +24,10 @@ function p6cOwnedFiles(): array
             $root.'/app/Http/Controllers/CartResumeController.php',
             $root.'/app/Jobs/SendCartReminder.php',
             $root.'/app/Mail/AbandonedCartReminder.php',
-            $root.'/app/Services/Crm/CartAbandonmentService.php',
-            $root.'/app/Services/Crm/CartReminderDispatcher.php',
-            $root.'/app/Services/Crm/CartReminderEligibility.php',
-            $root.'/app/Services/Crm/CartReminderService.php',
+            $root.'/app/Services/Cart/CartAbandonmentService.php',
+            $root.'/app/Services/Cart/CartReminderDispatcher.php',
+            $root.'/app/Services/Cart/CartReminderEligibility.php',
+            $root.'/app/Services/Cart/CartReminderService.php',
             $root.'/app/Support/CartReminderConfig.php',
             $root.'/app/Support/MailTransportGuard.php',
         ],
@@ -78,7 +79,7 @@ it('never reaches a crm_ or commerce table directly from the runtime layer', fun
 });
 
 it('drives the ledger only through the bounded EXECUTE-only authorities', function () {
-    $service = Scanner::phpCode(app_path('Services/Crm/CartReminderService.php'));
+    $service = Scanner::phpCode(app_path('Services/Cart/CartReminderService.php'));
 
     foreach ([
         'public.list_cart_reminder_candidates(', 'public.enqueue_cart_reminder(',
@@ -90,7 +91,7 @@ it('drives the ledger only through the bounded EXECUTE-only authorities', functi
         expect($service)->toContain($authority);
     }
 
-    expect(Scanner::phpCode(app_path('Services/Crm/CartAbandonmentService.php')))
+    expect(Scanner::phpCode(app_path('Services/Cart/CartAbandonmentService.php')))
         ->toContain('public.mark_abandoned_carts(');
 });
 
@@ -141,7 +142,7 @@ it('never logs, dumps or persists the raw capability', function () {
     }
 
     // Only the digest is ever written; the raw value never reaches a column.
-    $ledger = Scanner::phpCode(app_path('Services/Crm/CartReminderService.php'));
+    $ledger = Scanner::phpCode(app_path('Services/Cart/CartReminderService.php'));
     expect($ledger)->toContain('secretHash')
         ->and($ledger)->not->toContain('$rawSecret');
 });
@@ -182,7 +183,7 @@ it('sends through no invented provider and integrates with nothing external', fu
 });
 
 it('keeps provider I/O outside database transactions', function () {
-    $dispatcher = Scanner::phpCode(app_path('Services/Crm/CartReminderDispatcher.php'));
+    $dispatcher = Scanner::phpCode(app_path('Services/Cart/CartReminderDispatcher.php'));
 
     // Structural, not a convention the caller has to remember.
     expect($dispatcher)->toContain('assertOutsideTransaction')
@@ -217,7 +218,7 @@ it('keeps every operational flag and every schedule off by default', function ()
     }
 
     foreach (['crm:detect-abandoned-carts', 'crm:enqueue-cart-reminders', 'crm:sweep-cart-reminders', 'crm:purge-cart-reminders'] as $command) {
-        expect(collect(Illuminate\Support\Facades\Schedule::events())->contains(
+        expect(collect(Schedule::events())->contains(
             fn ($event): bool => str_contains((string) $event->command, $command),
         ))->toBeFalse("{$command} must not be scheduled by default");
     }

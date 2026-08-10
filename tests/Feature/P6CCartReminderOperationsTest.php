@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 use App\Jobs\SendCartReminder;
 use App\Models\Product;
-use App\Services\Crm\CartAbandonmentService;
-use App\Services\Crm\CartReminderService;
+use App\Services\Cart\CartAbandonmentService;
+use App\Services\Cart\CartReminderService;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schedule;
 use Tests\Concerns\InteractsWithCrmDatabase;
 use Tests\Support\CartReminderFixtures as Cart;
 use Tests\Support\SegmentFixtures as Fx;
@@ -265,7 +266,7 @@ it('never purges a pending or claimed attempt however old', function () {
 it('schedules nothing with the repository defaults', function () {
     $routes = file_get_contents(base_path('routes/console.php'));
 
-    expect($routes)->toContain("CartReminderConfig::detectionEnabled()")
+    expect($routes)->toContain('CartReminderConfig::detectionEnabled()')
         ->toContain("Schedule::command('crm:detect-abandoned-carts')")
         ->toContain("Schedule::command('crm:enqueue-cart-reminders')")
         ->toContain("Schedule::command('crm:sweep-cart-reminders')")
@@ -274,7 +275,7 @@ it('schedules nothing with the repository defaults', function () {
 
     // Boot happens with the shipped defaults (all false), so nothing is registered.
     foreach (['crm:detect-abandoned-carts', 'crm:enqueue-cart-reminders', 'crm:sweep-cart-reminders', 'crm:purge-cart-reminders'] as $command) {
-        expect(collect(Illuminate\Support\Facades\Schedule::events())->contains(
+        expect(collect(Schedule::events())->contains(
             fn ($event): bool => str_contains((string) $event->command, $command),
         ))->toBeFalse("{$command} must not be scheduled by default");
     }

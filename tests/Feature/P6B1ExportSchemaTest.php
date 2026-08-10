@@ -23,9 +23,9 @@ function p6b1Admin(): int
 it('creates exactly migration 000027 and no 000028', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(43)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(44)
         ->and(glob($root.'/database/migrations/2026_07_14_000027*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000028*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000029*.php') ?: [])->toBe([]);
 });
 
 it('creates crm_exports owned by the CRM executor with no runtime table access', function () {

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Services\Crm;
+namespace App\Services\Cart;
 
 use App\Enums\CartStatus;
 use App\Enums\OrderStatus;
@@ -10,6 +10,8 @@ use App\Enums\UserStatus;
 use App\Models\Cart;
 use App\Models\Order;
 use App\Models\User;
+use App\Services\Crm\CrmAdminReadService;
+use App\Services\Crm\MarketingConsentStatusQuery;
 use App\Support\CartReminderConfig;
 use App\Support\MailTransportGuard;
 use Illuminate\Support\Facades\DB;

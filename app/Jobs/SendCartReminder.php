@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
-use App\Services\Crm\CartReminderDispatcher;
-use App\Services\Crm\CartReminderService;
+use App\Services\Cart\CartReminderDispatcher;
+use App\Services\Cart\CartReminderService;
 use App\Support\CartReminderConfig;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;

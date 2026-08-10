@@ -5,10 +5,11 @@ declare(strict_types=1);
 use App\Http\Controllers\CartResumeController;
 use App\Mail\AbandonedCartReminder;
 use App\Models\Product;
-use App\Services\Crm\CartAbandonmentService;
-use App\Services\Crm\CartReminderDispatcher;
-use App\Services\Crm\CartReminderService;
+use App\Services\Cart\CartAbandonmentService;
+use App\Services\Cart\CartReminderDispatcher;
+use App\Services\Cart\CartReminderService;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\Concerns\InteractsWithCrmDatabase;
 use Tests\Support\CartReminderFixtures as Cart;
@@ -126,10 +127,10 @@ it('states the fragment bridge contract in the shipped script', function () {
 
     // The order is the security property: erase the fragment BEFORE using it.
     $erase = strpos($view, 'history.replaceState');
-    $use = strpos($view, "URLSearchParams(fragment)");
+    $use = strpos($view, 'URLSearchParams(fragment)');
     expect($erase)->toBeLessThan($use);
 
-    expect($view)->toContain("location.hash")
+    expect($view)->toContain('location.hash')
         ->toContain("method: 'POST'")
         ->toContain('X-CSRF-TOKEN')
         ->toContain('/^[0-9a-f]{64}$/');
@@ -285,7 +286,7 @@ it('rate limits redemption attempts', function () {
 });
 
 it('adds no generic cart route or controller', function () {
-    $uris = collect(Illuminate\Support\Facades\Route::getRoutes()->getRoutes())
+    $uris = collect(Route::getRoutes()->getRoutes())
         ->map(fn ($r): string => strtolower($r->uri()))
         ->filter(fn (string $u): bool => str_contains($u, 'cart'))
         ->values()

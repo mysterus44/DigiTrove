@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use App\Mail\AbandonedCartReminder;
 use App\Models\Product;
-use App\Services\Crm\CartAbandonmentService;
-use App\Services\Crm\CartReminderDispatcher;
-use App\Services\Crm\CartReminderService;
+use App\Services\Cart\CartAbandonmentService;
+use App\Services\Cart\CartReminderDispatcher;
+use App\Services\Cart\CartReminderService;
 use Illuminate\Support\Facades\Mail;
 use Tests\Concerns\InteractsWithCrmDatabase;
 use Tests\Support\CartReminderFixtures as Cart;
