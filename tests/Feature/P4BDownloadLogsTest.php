@@ -53,6 +53,13 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Analytics/Read/Data/AnalyticsSales.php',
     'Analytics/Read/Data/AnalyticsSalesCurrencySummary.php',
     'Analytics/Read/Data/AnalyticsSalesDay.php',
+    // P6-C (D-056) — cart abandonment, reminder ledger and delivery. These are
+    // COMMERCE-domain services: they read carts, orders and users, so they deliberately
+    // live outside Services/Crm, whose own contract forbids direct table access.
+    'Cart/CartAbandonmentService.php',
+    'Cart/CartReminderDispatcher.php',
+    'Cart/CartReminderEligibility.php',
+    'Cart/CartReminderService.php',
     // P3-D2 (D-031) — checkout transaction. Commerce only, no delivery.
     'Checkout/CheckoutException.php',
     'Checkout/CheckoutRefusalReason.php',
@@ -459,7 +466,7 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(43)
+        ->and(DB::table('migrations')->count())->toBe(44)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')
@@ -1101,9 +1108,13 @@ it('keeps HEAD commercially inert and allows only the explicitly reviewed downlo
     // P6-B1 (D-054) adds GenerateCrmExport: an ID-only job that writes a CSV to a
     // private disk. It is named here so the fail-closed directory guard keeps catching
     // anything else smuggled into app/Jobs.
-    $dirAllowlist('Jobs', ['GenerateCrmExport.php', 'ProcessCrmCommerceRollupRefresh.php', 'ProcessCrmOrderAttribution.php', 'ProcessCrmSegmentGeneration.php', 'SecureDeliveryJob.php']);
+    // P6-C (D-056) adds SendCartReminder: ID-only, so the capability it mints never
+    // reaches a queue payload. Listed in sorted order — the guard compares exactly.
+    $dirAllowlist('Jobs', ['GenerateCrmExport.php', 'ProcessCrmCommerceRollupRefresh.php', 'ProcessCrmOrderAttribution.php', 'ProcessCrmSegmentGeneration.php', 'SecureDeliveryJob.php', 'SendCartReminder.php']);
     $dirAllowlist('Listeners', ['QueueCrmOrderAttribution.php', 'QueueSecureDelivery.php']);
-    $dirAllowlist('Mail', ['OrderDownloadsReady.php']);
+    // P6-C (D-056) adds the abandoned cart reminder: synchronous, never ShouldQueue,
+    // and it refuses to serialise so the capability cannot reach a queue payload.
+    $dirAllowlist('Mail', ['AbandonedCartReminder.php', 'OrderDownloadsReady.php']);
 
     // P3-D1 (D-030) legitimately introduces app/Services/Pricing, a read-only
     // COMMERCE kernel. Guarding by keyword or by the first directory name was

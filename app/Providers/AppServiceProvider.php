@@ -84,6 +84,19 @@ class AppServiceProvider extends ServiceProvider
                 ->response(fn () => response()->json(['message' => 'Download unavailable.'], 429));
         });
 
+        // P6-C redemption. Bounded per IP: a capability is 256 bits, so brute force is
+        // not the threat — the limit exists so the endpoint cannot be used to probe
+        // which carts exist, and so a leaked link cannot be replayed at volume.
+        RateLimiter::for('cart-resume', function (Request $request): Limit {
+            return Limit::perMinute(20)
+                ->by((string) $request->ip())
+                ->response(fn () => response()->view('carts.resume-unavailable', [], 429, [
+                    'Cache-Control' => 'private, no-store',
+                    'Referrer-Policy' => 'no-referrer',
+                    'X-Content-Type-Options' => 'nosniff',
+                ]));
+        });
+
         RateLimiter::for('download-file', function (Request $request): Limit {
             $key = $this->downloadRateLimitKey($request);
 

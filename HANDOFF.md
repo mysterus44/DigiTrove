@@ -10,7 +10,51 @@
 - **Date** : 2026-08-09
 - **Branche git active** : **`p0-foundations-laravel13`** (stable), HEAD **`474f92c`**.
 
-## ✅ P6-B0 ET P6-B1 SONT MERGÉS — P6-C EST LE PROCHAIN GATE
+### 🟡 P6-C — Paniers / Relances : IMPLÉMENTÉ, PR EN ATTENTE (D-055 → D-056)
+
+Branche **`p6-c-cart-reminders`**, base `7178751`. **Migration `000028`** — **44 migrations**,
+aucune `000029`.
+
+⚠️ **INFRASTRUCTURE BACKEND DORMANTE.** Le dépôt n'a **aucun flux panier applicatif** :
+zéro route, zéro contrôleur, aucune création ni mutation, `CartItem` sans `$touches`,
+`carts.secret_hash` produit uniquement par la factory. **Aucune reprise panier
+end-to-end n'est revendiquée** tant qu'un storefront ne crée pas réellement de paniers.
+Tous les flags opérationnels et tous les schedulers sont **OFF par défaut**, et **aucune
+cadence marketing n'est livrée** : un réglage absent **refuse** au lieu d'inventer.
+
+- **Signal d'activité dans la base** : `carts.last_activity_at` + trigger sur `cart_items`.
+  `updated_at` était invalide — `CartItem` ne touche pas le parent, et la transition
+  d'abandon aurait compté comme activité. Le trigger vit à la couche qu'aucun worker,
+  commande ou SQL brut ne contourne.
+- **Ledger** `cart_reminder_attempts` : identité immuable `(cart, step)`, transitions
+  **monotones** `pending → claimed → sent|suppressed|failed`, raisons **allowlistées**,
+  **zéro PII**.
+- **Revalidation à l'envoi** : consentement `promotional` courant, panier non converti,
+  commande acquise couvrant le panier, compte actif/vérifié, contact non anonymisé,
+  transport mail sûr. Une condition fausse ⇒ **0 mail**.
+- **Achat couvrant** : prédicat `paid|partially_refunded|refunded` repris du dépôt ;
+  couverture **stricte** (A+B dont seul A acquis ⇒ relance conservée).
+- **Reprise par fragment** : patron P4-C réutilisé — bootstrap GET **sans base**, CSP à
+  nonce par réponse, `history.replaceState` **avant** usage, POST CSRF unique, puis
+  continuation en **session serveur opaque**. Capability CSPRNG 256 bits, SHA-256 seul au
+  repos, **TTL imposé par l'autorité PostgreSQL**, rejouable dans son TTL (non one-time).
+- **ACL** : `000028` accorde à `digitrove_crm_executor` le minimum Commerce
+  (`SELECT, UPDATE` sur `carts` ; `SELECT` sur `users`, `cart_items`, `orders`,
+  `order_items`) et son `down()` les révoque exactement. ⚠️ **Aucune migration historique
+  modifiée** — `git diff` sur `database/migrations/` ne retourne que `000028`, en ajout.
+
+⚠️ **`app/Services/Crm/` interdit `DB::table(`.** Les services de relance lisent Commerce,
+pas le CRM : ils vivent donc dans **`app/Services/Cart/`**. Le contrat P6-A0 avait raison,
+le placement initial était faux — corrigé par déplacement, jamais par affaiblissement.
+
+⚠️ **D-030 : `P6-C LOCAL = CLOSED`, `GLOBAL = OPEN`.** `MailTransportGuard` ferme le
+chemin P6-C ; `DeliveryConfig::assertMailerSafe()` (P4-C) reste plus faible sur cinq
+points. **P4-C n'est pas modifié** dans ce gate.
+
+**Validation** : P6-C **82 / 576** ; campagne P6-C + régressions **1008 / 6485**, 0 échec ;
+rollback **44→43→44** ; Pint **486** ; diff-check propre.
+
+## ✅ P6-B0 ET P6-B1 SONT MERGÉS
 
 | Gate | PR | head | merge | CI |
 |---|---|---|---|---|

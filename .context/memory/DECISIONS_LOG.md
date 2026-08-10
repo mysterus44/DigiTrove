@@ -3909,6 +3909,80 @@ ALTERNATIVES REJETÉES :
 
 IMPACT : **P6-C NON COMMENCÉ, AUCUN CODE, AUCUNE MIGRATION `000028`.** Contrat d'architecture à appliquer après le merge de P6-B1. Dépendance dure : la dette D-030 `MAIL_MAILER=log` doit être close **avant** tout envoi réel.
 
+
+### D-056 : P6-C — Cart Abandonment & Reminder Implementation Contract 📐→✅
+CONTEXTE : Contrat d'implémentation figé APRÈS audit réel du dépôt, en application de D-055. Il précise ce que D-055 laissait ouvert et **résout explicitement la contradiction sémantique** que D-055 portait (« ledger append-only » ET « tentative avec raison terminale »).
+
+**AUDIT RÉEL — TROIS FAITS DÉCISIFS (vérifiés, pas supposés)** :
+1. **Il n'existe AUCUN flux panier dans l'application.** `grep` sur `routes/*.php` : zéro occurrence de `cart`. Aucun contrôleur panier. Le **seul** code applicatif qui touche `carts` est `App\Services\Checkout\OrderService`, qui verrouille un panier existant et le passe `active → converted`. Aucun code ne crée de panier, n'ajoute d'article, ni ne génère de `secret_hash` — seule `CartFactory` le fait.
+2. **`carts.updated_at` n'est PAS un signal d'activité valide.** `CartItem` ne déclare **aucun** `$touches`, donc même si un storefront existait, ajouter ou retirer un article ne toucherait pas le parent. Bâtir l'abandon sur `updated_at` serait une heuristique fausse — exactement ce que D-055 interdit.
+3. **Le consentement est atteignable sans nouvelle autorité** : `find_crm_contact_by_exact_email` (P6-B0.1) → `public_id` → `has_current_marketing_consent` (P6-A0). Les deux sont déjà `SECURITY DEFINER` et EXECUTE-only pour le runtime.
+
+⚠️ **PRÉCONDITION EXPLICITEMENT ASSUMÉE** : P6-C livre l'**infrastructure** d'abandon et de relance, pas un flux marchand. Tant qu'aucun storefront ne crée de panier, ce gate ne peut pas être exercé de bout en bout en production. C'est le même choix assumé qu'en P4-C (pipeline de livraison livré avant tout fournisseur de paiement réel) et qu'en P6-B1 (exports livrés flags à `false`). **Ce n'est pas un défaut caché : c'est une dépendance nommée.**
+
+CHOIX :
+1. **Signal d'activité — la plus petite addition possible.** `carts.last_activity_at TIMESTAMPTZ NOT NULL` est ajoutée par `000028`, adossée à un **trigger PostgreSQL sur `cart_items`** (INSERT/UPDATE/DELETE) et maintenue par l'autorité d'abandon. Le signal vit donc **dans la base**, à la couche qu'aucune future implémentation applicative ne peut contourner — et non dans un `$touches` Eloquent qu'un worker, une commande ou une requête brute ignorerait. `updated_at` n'est **jamais** surchargé : la transition d'abandon ne doit pas se compter elle-même comme activité.
+2. **Résolution de la contradiction D-055 — option B.** Le ledger `cart_reminder_attempts` porte une **identité de tentative immuable** (`(cart_id, step)` unique) et des **transitions d'état monotones et bornées** : `pending → claimed → sent | suppressed | failed`. Une transition ne réécrit **jamais** un fait métier antérieur, ne revient **jamais** en arrière, et il n'y a **aucun DELETE hors purge de rétention**. Ce n'est donc pas un append-only strict de lignes, mais un **append-only sémantique** : chaque champ terminal est écrit une seule fois et n'est jamais réécrit. Option A (ligne + table d'événements) a été écartée : elle double le stockage et la surface ACL sans rien prouver de plus, l'auditabilité étant déjà assurée par l'immuabilité des champs terminaux.
+3. **Cadence NON figée.** Aucune valeur marketing n'est décidée ici. Le délai d'inactivité, le cooldown, le plafond de tentatives et le nombre d'étapes sont **configurables et bornés**, validés **avant toute écriture**, et **fail-closed** si absents ou invalides lorsque le flag correspondant est actif. Le produit n'affirme pas qu'une cadence donnée est la bonne cadence.
+4. **Identité V1 — comptes vérifiés uniquement.** Un panier n'est relançable que si `user_id` pointe vers un compte **actif, non supprimé, e-mail vérifié**. Un panier invité est **structurellement inadressable** (`carts` ne porte aucune colonne e-mail) et est **hors périmètre V1** : inventer une adresse serait une fuite. Aucun rapprochement `visitor_id` → e-mail, aucun matching flou CRM, aucune lecture Analytics (non autoritatif, D-037).
+5. **Contact anonymisé ⇒ jamais adressable** (`crm_contacts.status='anonymized'` ⇒ `email IS NULL` par le CHECK P6-A0).
+6. **Revalidation AU MOMENT EXACT DE L'ENVOI**, jamais seulement à la mise en file : tentative encore envoyable, panier toujours `abandoned`, utilisateur actif/non supprimé/vérifié, contact non anonymisé, **grant `email`/`promotional` courant**, panier non `converted`, aucune commande acquise couvrant le contenu, cooldown et plafond encore valides, flag d'envoi actif, **transport mail sûr**. Toute condition devenue fausse ⇒ **aucun envoi**, et une raison terminale allowlistée sans PII.
+7. **Transport mail FAIL-CLOSED — dette D-030 traitée structurellement.** `.env.example` dit `smtp`, mais `config/mail.php` retombe sur `'default' => env('MAIL_MAILER', 'log')` **et** `MAIL_HOST` est vide dans l'exemple. Un garde dédié refuse donc, avant toute génération de lien exploitable : `log`, `array`, un mailer absent ou inconnu, une configuration de transport incomplète, et **récursivement** toute composition `failover`/`roundrobin` dont une branche retomberait sur un transport qui journalise ou absorbe. Un mailer nommé `smtp` n'est **pas** présumé prêt : ses valeurs réellement requises sont vérifiées. Le message de refus ne contient **aucun secret**.
+8. **Aucun fournisseur inventé.** Ni endpoint, ni signature, ni webhook propriétaire. P6-C utilise l'abstraction Mail de Laravel avec un SMTP réel configuré par l'opérateur, documenté par `docs/integrations/MAIL_PROVIDER_SETUP.md`. Les tests utilisent exclusivement `Mail::fake()` ; **aucun appel réseau en CI**.
+9. **Ledger sans PII.** Aucune adresse, aucun prénom, aucun contenu, aucun secret brut, aucun token, aucun lien, aucun message fournisseur, aucune stack trace, aucun payload mail. Autorisés : identifiants internes, étape, statut, horodatages, code d'erreur **SQLSTATE** stable, raison terminale **allowlistée**.
+10. **Job ID-only** : payload = l'identifiant interne de la tentative, rien d'autre. Sérialisation vérifiée par test.
+11. **Secret de reprise — discipline P4-C (Q1 = A renforcée).** Le secret brut est CSPRNG, vit **en mémoire seulement**, n'est **jamais** persisté, mis en file, logué, inclus dans une exception ni reconstructible ; seul son SHA-256 est stocké. ⚠️ **`carts.secret_hash` est unique et sert déjà d'identifiant de session panier** : une rotation invaliderait une session ouverte. P6-C **ne réutilise donc pas** cette colonne et n'ouvre pas silencieusement une seconde capacité d'accès ; le lien de reprise porte un secret **propre à la tentative**, dont la rotation n'affecte aucune session existante. Panne après COMMIT ⇒ **révoquer puis réémettre**, jamais « réessayer avec l'ancien secret ».
+12. **Aucun I/O fournisseur sous transaction** (D-036) : claim court → COMMIT → revalidation autoritative → préparation du secret en mémoire → écriture courte du hash → COMMIT → I/O fournisseur → finalisation courte. Garde `assertOutsideTransaction()` avant tout I/O.
+13. **Trois flags indépendants à `false` par défaut**, aucun n'en activant implicitement un autre : détection d'abandon, mise en file, envoi. Scheduler **désactivé par défaut**.
+14. **ACL** : owner `digitrove_crm_executor`, runtime **EXECUTE-only**, PUBLIC sans accès, **aucun nouveau rôle**. Inventaire canonique unique ; rollback fail-closed lu dans `pg_catalog`.
+15. **Sémantique at-least-once assumée** ; aucun exactly-once promis. Un crash après l'envoi fournisseur mais avant finalisation peut dupliquer côté fournisseur — mais **jamais** créer une seconde tentative métier, **jamais** contourner le plafond, **jamais** laisser un secret persistant.
+16. **Migration unique `000028`** ⇒ **44 migrations**, aucune `000029`. `down()` restaure exactement la frontière `000027`.
+
+ALTERNATIVES REJETÉES :
+- **Bâtir l'abandon sur `carts.updated_at`** → `CartItem` n'a aucun `$touches` ; le signal serait faux dès qu'un storefront ajouterait un article.
+- **Un `$touches` Eloquent au lieu d'un trigger** → contournable par toute écriture SQL, worker ou commande ; le signal doit vivre dans la base.
+- **Réutiliser `carts.secret_hash` pour le lien de relance** → colonne unique servant déjà de session panier ; une rotation casserait une session ouverte et créerait une seconde capacité d'accès non auditée.
+- **Deviner l'e-mail d'un panier invité** (visitor, Analytics, IP, commande antérieure) → fabrique une identité non consentie et peut écrire à la mauvaise personne.
+- **Vérifier consentement et conversion seulement à la mise en file** → la fenêtre file→envoi est réelle et se mesure en heures.
+- **Considérer une relance comme transactionnelle pour contourner le consentement** → c'est une sollicitation commerciale ; le grant `promotional` est requis.
+- **Figer 24 h / 48 h / 3 relances** → aucune décision marketing n'a été prise ; ces valeurs seraient inventées.
+- **Une table d'événements séparée (option A)** → double le stockage et la surface ACL sans renforcer l'auditabilité déjà garantie par l'immuabilité des champs terminaux.
+
+**AUDIT D-030 REPOSITORY-WIDE — VERDICT : LOCAL FERMÉ, GLOBAL ENCORE OUVERT.**
+Le dépôt ne contient que **deux** chemins d'envoi réels : `SecureDeliveryJob` →
+`OrderDownloadsReady` (P4-C, porteur de tokens de téléchargement bruts dans le fragment
+d'URL) et le futur envoi P6-C. P4-C **possède déjà** un garde,
+`DeliveryConfig::assertMailerSafe()`, mais il est **strictement plus faible** que
+`MailTransportGuard` sur cinq points vérifiés ligne à ligne :
+1. il teste le **NOM** du mailer (`$mailer === 'log'`), pas le `transport` réellement
+   résolu — un mailer nommé `smtp` dont `transport` vaut `log` passe ;
+2. il **autorise `array`** en `local`/`testing`, alors que ce transport absorbe le message ;
+3. il **n'refuse pas un transport inconnu** — un driver non revu passe ;
+4. il ne vérifie **aucune préparation réelle** : `smtp` avec `MAIL_HOST` vide passe, et
+   l'adresse `From` n'est jamais contrôlée ;
+5. sa marche dans `failover`/`roundrobin` est **à un seul niveau et par nom**
+   (`array_intersect($members, ['log','array'])`) : une branche nommée `backup` dont le
+   transport est `log`, ou un `failover` imbriqué, passe.
+
+**Conséquence** : `D-030 GLOBAL = OPEN`. Un déploiement peut encore faire retomber le
+mail de livraison P4-C sur un transport qui journalise, et ce mail porte une capability
+brute. **`D-030 LOCAL (P6-C) = CLOSED`** par `MailTransportGuard`, qui lit le transport
+résolu, refuse `log`/`array`/`null`/inconnu/incomplet, contrôle l'expéditeur et **récurse**
+dans les compositions avec garde de cycle. Aligner P4-C sur ce garde modifierait une
+frontière de sécurité **déjà mergée** et sort du périmètre de P6-C : cela doit faire
+l'objet de son propre gate revu. **Aucune documentation de ce dépôt ne doit déclarer
+D-030 clos tant que ce gate n'a pas eu lieu.**
+
+**PRÉCISIONS ARRÊTÉES PENDANT L'IMPLÉMENTATION** :
+- **ACL Commerce de l'exécuteur.** Les autorités sont `SECURITY DEFINER` et s'exécutent donc comme `digitrove_crm_executor`, rôle provisionné pour le CRM et qui **ne possède rien dans Commerce** : sans grant, toute autorité échoue en `42501`. `000028` accorde le **minimum** — `SELECT, UPDATE` sur `carts` (transition d'abandon + trigger d'activité), `SELECT` sur `users`, `cart_items`, `orders`, `order_items` — et son `down()` les révoque **exactement**. ⚠️ **Aucune migration historique n'est modifiée** : `git diff` sur `database/migrations/` ne retourne que `000028`, en ajout.
+- **Achat couvrant.** Prédicat « acquis » repris **tel quel** du dépôt (P6-A1.1) : `paid`, `partially_refunded`, `refunded`. Aucun statut `fulfilled` n'est inventé. Couverture **stricte** : un panier A+B dont seul A est acquis n'est **pas** couvert et reste relançable ; `pending`, `payment_review`, `cancelled` et `expired` ne suppriment jamais. La comparaison porte sur `order_items.purchased_product_id`, le snapshot immuable — **jamais sur l'e-mail**.
+- **Reprise par fragment — réutilisation du patron P4-C mergé.** Le lien porte `#c=<capability>`. Un fragment n'entre **ni dans la ligne de requête HTTP ni dans `Referer`** : ni ce serveur ni un reverse-proxy ne le voient. Le bootstrap GET est **sans base de données** (donc identique pour un panier inexistant), sert une CSP à **nonce par réponse** sans `unsafe-inline`, et son script efface le fragment par `history.replaceState` **avant** de s'en servir, puis le transmet **une seule fois** dans un corps POST protégé par CSRF. Aucun `localStorage`, `sessionStorage`, cookie, `console` ni query string.
+- **Continuation après rédemption.** Le résultat n'est pas un simple « succès » : la rédemption établit une **référence de session serveur, opaque et courte**, vers le `public_id` du panier, puis redirige vers une URL propre. **Aucun nouveau modèle persistant**, aucune frontière hors `000028`. La capability brute ne retourne **jamais** dans une URL.
+- **Cycle de vie de la capability.** CSPRNG 256 bits, en mémoire uniquement, **SHA-256 seul au repos**, portée à **une tentative / un panier**, **TTL imposé par l'autorité PostgreSQL** (pas en PHP, donc le runtime ne peut pas l'élargir), révocable en effaçant le digest (ce que font `suppress` et `fail`). Elle est **rejouable dans son TTL et non one-time** : un client qui reclique le même e-mail ne doit pas être bloqué ; rejouer produit la **même** continuation et **aucune** seconde tentative. Un échec après COMMIT et avant livraison détruit définitivement le secret — le retry en frappe un nouveau et écrase le digest.
+- **Garantie du code vs limite d'infrastructure.** Le code garantit : aucun `Log::`, aucune exception, aucune télémétrie, aucune queue, aucun stockage en clair. Le fragment ne quittant pas le navigateur, l'access log ne peut **pas** contenir le secret ; ce qui peut y figurer, ce sont le **chemin et le `public_id`**. La limite réelle restante est la journalisation éventuelle des **corps POST** par l'infrastructure, qui doit être proscrite en préproduction.
+- **`unsafe-inline` n'est jamais introduit globalement** : la CSP est posée **par réponse** sur la seule surface de reprise.
+
+IMPACT : contrat d'implémentation de P6-C. Précondition nommée : **aucun flux panier n'existe encore** — ni route, ni contrôleur, ni création, ni mutation applicative. P6-C livre donc une **infrastructure backend dormante**, flags **OFF par défaut**, vérifiable par fixtures mais **jamais présentable comme une fonctionnalité de relance panier utilisable de bout en bout** tant qu'un storefront ne crée pas réellement de paniers. Tout futur flux panier devra respecter le contrat `last_activity_at` (maintenu par la base), ne jamais écrire `abandoned_at` lui-même, et ne jamais créer de tentative directement.
 ### D-048 : P6-A1.3 — Explicit Historical Commerce Rollup Backfill ✅ (MERGÉ)
 CONTEXTE : P6-A1.2 rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouveau** refund `succeeded` survient, mais ne reconstruit pas l'historique antérieur. P6-A1.3 est l'**outil opérateur explicite** qui retrouve les couples historiques et les injecte dans le pipeline P6-A1.2. **Mergé sur la stable** via PR #35 (head `ba32582`, merge `106ffb0a`, CI #42 success). **P6-A2 (Typed Versioned CRM Segments) devient le gate actif ; P6-B0 non commencé.**
 

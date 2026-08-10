@@ -1,6 +1,7 @@
 <?php
 
 use App\Support\AnalyticsOperationsConfig;
+use App\Support\CartReminderConfig;
 use App\Support\CrmConfig;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -62,6 +63,45 @@ if (CrmConfig::exportProcessingEnabled()) {
 
     if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
         $crmExportSweep->onOneServer();
+    }
+}
+
+// P6-C — each schedule is gated on its OWN flag, so enabling detection never implicitly
+// starts sending, and enabling sending never implicitly starts purging. With the
+// repository defaults (all false) nothing at all is scheduled.
+if (CartReminderConfig::detectionEnabled()) {
+    $cartDetection = Schedule::command('crm:detect-abandoned-carts')->everyFifteenMinutes();
+    $cartDetection->withoutOverlapping();
+
+    if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
+        $cartDetection->onOneServer();
+    }
+}
+
+if (CartReminderConfig::enqueueEnabled()) {
+    $cartEnqueue = Schedule::command('crm:enqueue-cart-reminders')->hourly();
+    $cartEnqueue->withoutOverlapping();
+
+    if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
+        $cartEnqueue->onOneServer();
+    }
+}
+
+if (CartReminderConfig::sendEnabled()) {
+    $cartSweep = Schedule::command('crm:sweep-cart-reminders')->everyFifteenMinutes();
+    $cartSweep->withoutOverlapping();
+
+    if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
+        $cartSweep->onOneServer();
+    }
+}
+
+if (CartReminderConfig::purgeEnabled()) {
+    $cartPurge = Schedule::command('crm:purge-cart-reminders')->daily();
+    $cartPurge->withoutOverlapping();
+
+    if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
+        $cartPurge->onOneServer();
     }
 }
 
