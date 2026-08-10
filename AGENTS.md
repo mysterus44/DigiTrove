@@ -136,5 +136,25 @@ P3  Commerce        : carts → orders → order_items → payments
 P4  Livraison       : download_grants + download_logs  (⚠️ cœur sécurité)
 P5  Analytique      : events partitionnée + rollups + campaigns
 P6  CRM & Marketing : segments, dashboards, campagnes
+    ├─ A0..A2  identité, attribution, rollups, backfill, segments   ✅
+    ├─ B0..B1  vues admin CRM + exports privés audités              ✅
+    ├─ C       paniers / relances (dormant : aucun flux panier)     ✅
+    └─ D       affiliation
+       ├─ D0   fondation BDD (000029, 9 tables, dormante)           ✅
+       ├─ D1   politique active + identité affilié + codes          ⬅ ACTIF
+       ├─ D2   touches + attribution autoritative
+       ├─ D3   moteur commissions + compensations de remboursement
+       ├─ D4   payout administratif
+       └─ D5   surfaces admin & reporting
 P7  Blog & SEO      : articles, sitemap, données structurées
 ```
+
+⚠️ **Frontières fail-closed à élargir EXPLICITEMENT, jamais à contourner** :
+`P4B_ALLOWED_SERVICE_FILES` (tout nouveau fichier sous `app/Services`) et les
+contrats d'inventaire de phase (`P5A3C`, `P6B0`, `P6D0`) qui listent les fichiers,
+routes ou migrations autorisés. Un contrat qui gêne se **rescope par inventaire
+exact** — il ne se supprime pas, et aucune assertion ne s'affaiblit.
+
+⚠️ **Aucune donnée bancaire ni Mobile Money n'existe dans le dépôt.** Tout
+versement réel (P6-D4 et au-delà) exige un **gate dédié et revu** ; le schéma
+d'affiliation ne porte qu'une référence administrative non sensible.

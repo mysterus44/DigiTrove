@@ -649,6 +649,59 @@ niveau par nom). **P4-C n'est pas modifié dans ce gate** ; son durcissement mé
 Validation : P6-C **82 / 576**, campagne + régressions **1008 / 6485**, rollback
 **44→43→44**, Pint **486**.
 
+**P6-D0 (Affiliation — Fondation BDD) : TERMINÉ ET VALIDÉ** — **D-057**, migration unique
+**`000029`**, **45 migrations**, aucune `000030`. **Neuf tables** :
+`affiliate_program_policies`, `affiliates`, `affiliate_codes`, `affiliate_touches`,
+`affiliate_attributions`, `affiliate_commissions`, `affiliate_commission_entries`,
+`affiliate_payouts`, `affiliate_payout_items`.
+
+⚠️ **FONDATION DORMANTE — JAMAIS À PRÉSENTER COMME UN PROGRAMME D'AFFILIATION.** Aucun flux
+de candidature, aucune capture de clic, aucun moteur de commission, aucun payout, aucune
+route, aucun contrôleur, aucun service, aucun job, aucun scheduler, aucun écran Filament,
+aucun cookie, aucun provider. Le dépôt n'ayant **aucun storefront**, il n'y a **aucun clic
+réel à attribuer**. Un contrat fail-closed scanne **tout** `app/`, `routes/`, `config/` et
+`resources/` : **pas un seul fichier** ne mentionne « affiliate ».
+
+Décisions gravées dans le schéma : **politiques versionnées, jamais rétroactives** (index
+unique partiel ⇒ **une seule `active`**) · **1500 bps**, `INTEGER`, borné `0..5000` (100 %
+refusé comme absurde) · base = **`line_total_after_discount`** seule valeur autorisée
+(`order_items.line_total_minor` est **déjà** net de remise) · commission au **niveau
+`order_item`** · snapshot immuable taux/base/devise/délai · **ledger append-only** à
+montants **signés**, direction contrainte par type · payout **manuel, mono-affilié,
+mono-devise**, **aucun provider**, **aucune donnée bancaire/Mobile Money** ·
+`affiliates.user_id` **UNIQUE** (D-014 : jamais un `users.role`) · **une seule attribution
+financière par commande**. `visitor_id` est un **ancrage d'identité**, pas une preuve :
+`visitors.first_touch_*` et `events` restent **non autoritatifs** (D-037), et les cibles de
+FK hors du bloc sont exactement `order_items`, `orders`, `refunds`, `users`, `visitors`.
+**ACL fail-closed** : le runtime n'a **ni lecture ni écriture**, PUBLIC sans accès, **aucun
+nouveau rôle**, **aucune fonction `SECURITY DEFINER` opérationnelle** (les **trois**
+fonctions sont des gardes d'intégrité derrière un trigger). **Aucune politique insérée.**
+
+**Quatre garanties structurelles ajoutées au durcissement pré-merge** : (1) l'ancrage d'une
+touche est un **trigger `BEFORE INSERT`**, jamais un CHECK — un CHECK est réévalué par
+l'UPDATE d'un `ON DELETE SET NULL` et **vetoerait toute purge de visiteur définitivement** ;
+(2) une **politique effective est physiquement immuable** (trigger `BEFORE UPDATE`), donc
+changer un réglage exige une nouvelle version et n'altère jamais une commission passée ;
+(3) **FK composites** `(order_item_id, order_id)`, `(attribution_id, order_id)`,
+`(attribution_id, affiliate_id)` — des FK séparées ne prouvent que l'**existence** de chaque
+id, jamais leur appartenance mutuelle ; (4) **payout mono-affilié ET mono-devise
+structurellement** (quatre FK composites), plus deux **identités d'idempotence naturelles**
+(un seul `accrual` par commission, un seul `refund_reversal` par `(commission, refund)`).
+⚠️ Un seul objet posé hors du bloc : l'index `order_items (id, order_id)`, **créé par
+`000029` et retiré par son `down()`** — aucune migration historique n'est modifiée.
+
+⚠️ **Deux dettes explicites pour `P6-D1`** : `P4B_ALLOWED_SERVICE_FILES` devra être
+**élargie explicitement** au premier fichier sous `app/Services` ; et
+`P6D0SecurityContractTest` devra être **rescopé par inventaire exact** des fichiers
+autorisés (comme P5-A3C et P6-B0), **jamais** par suppression d'assertion.
+
+**PROCHAIN GATE : P6-D1 — politique active + identité affilié + codes**, NON COMMENCÉ,
+aucune migration `000030`. Frontières suivantes figées par D-057 : `P6-D2` touches et
+attribution · `P6-D3` moteur de commissions et compensations (⚠️ `refunds` est au **niveau
+commande** : la répartition vers les lignes réutilise la convention **Hamilton** déjà
+autoritative — `App\Services\Pricing\DiscountAllocator`, D-030 Q3 — sans inventer d'arrondi)
+· `P6-D4` payout administratif · `P6-D5` surfaces admin.
+
 **ANCIEN ÉTAT (pour mémoire) : P6-C — Paniers / Relances**, architecture **gelée par D-055**, NON
 COMMENCÉ, aucune migration `000028`. ⚠️ Deux contraintes dures issues de l'audit réel :
 `carts` ne porte **aucune colonne e-mail** (un panier invité est structurellement

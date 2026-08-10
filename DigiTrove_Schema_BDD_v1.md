@@ -2856,6 +2856,115 @@ implémenté par D-043 et P7 reste non commencé.
 
 ---
 
+## 🅴 BLOC AFFILIATION — P6-D0 (D-057)
+
+**Migration unique `000029` — 45 migrations, aucune `000030`.** Ce bloc est une
+**fondation dormante** : il n'existe aucun flux de candidature, d'attribution,
+de calcul de commission ni de payout. Aucune route, aucun service, aucun job,
+aucun écran, aucun provider. **Aucune politique n'est insérée** par la migration :
+amorcer une politique `active` ferait croire qu'un programme tourne déjà.
+
+### Les neuf tables
+
+```
+affiliate_program_policies      -- tous les réglages, VERSIONNÉS, jamais rétroactifs
+   ▲
+affiliates          (user_id UNIQUE)          -- D-014 : jamais un users.role
+   ▲
+affiliate_codes     (code public, désactivable, jamais supprimé)
+   ▲
+affiliate_touches   (visitor_id | user_id, occurred_at, expires_at)
+   ▲
+affiliate_attributions   (order_id UNIQUE — UNE seule autorité par commande)
+   ▲
+affiliate_commissions    (order_item_id UNIQUE — granularité ligne)
+   ▲
+affiliate_commission_entries  -- LEDGER APPEND-ONLY, montants SIGNÉS
+   ▲
+affiliate_payouts   ─1:N─> affiliate_payout_items
+```
+
+### Les invariants qui portent l'argent
+
+| Invariant | Mécanisme PostgreSQL |
+|---|---|
+| **Une seule politique active à la fois** | index unique partiel `((status)) WHERE status = 'active'` |
+| **Aucune réécriture rétroactive** | nouvelle version au lieu d'un `UPDATE` ; `effective_from < effective_until` |
+| **Taux borné et sensé** | `default_commission_bps BETWEEN 0 AND 5000` — 100 % est refusé comme absurde |
+| **Le taux vit sur la politique, jamais sur l'affilié** | `affiliates` ne porte **aucune** colonne de taux ; la commission porte `rate_bps_snapshot` |
+| **Un compte, un affilié** | `affiliates.user_id` UNIQUE |
+| **Une commande, une attribution financière** | `affiliate_attributions.order_id` UNIQUE |
+| **Une ligne, une commission** | `affiliate_commissions.order_item_id` UNIQUE |
+| **Base de calcul unique et arbitrée** | `base_kind_snapshot IN ('line_total_after_discount')` — `order_items.line_total_minor` est **déjà** net de remise (CHECK `= line_subtotal - line_discount`), donc aucune allocation n'est réinventée |
+| **Une commission ne dépasse jamais sa base** | `CHECK (amount_minor <= base_amount_minor_snapshot)` — avec le taux plafonné à 5000 bps c'est strictement plus faible que la borne réelle, donc cela ne rejette que l'absurde et **ne décide aucune politique d'arrondi** (P6-D3). Un bug de calcul futur est **arrêté par la base**, pas versé. |
+| **Une politique effective est immuable** | trigger `BEFORE UPDATE` : dès `status <> 'draft'`, toucher `version`, le modèle, la fenêtre, les bps, le délai, le seuil, la devise, `effective_from` ou `public_id` lève `23514`. Seuls les mouvements de cycle de vie (statut, `effective_until`) restent permis. **C'est ce qui rend vraie la promesse « modifiable plus tard, jamais rétroactif ».** |
+| **La ligne appartient vraiment à la commande** | FK **composite** `(order_item_id, order_id) → order_items (id, order_id)` |
+| **L'attribution couvre la même commande et le même affilié** | FK composites `(attribution_id, order_id)` et `(attribution_id, affiliate_id)` |
+| **Une écriture ne crédite pas un autre affilié ni une autre devise** | FK composites `(commission_id, affiliate_id)` et `(commission_id, currency)` ; `commission_id` NULL (ajustement administratif isolé) reste non contraint par MATCH SIMPLE |
+| **Payout mono-affilié ET mono-devise, structurellement** | quatre FK composites sur `affiliate_payout_items` vers le payout **et** vers la commission, sur les deux axes. Payer la commission de B dans le payout de A, ou mélanger XOF et USD, est **refusé par PostgreSQL** — aucun taux de change ne peut être glissé pour atteindre un seuil. |
+| **Idempotence sans clé opaque** | index uniques partiels : **un seul `accrual` par commission**, **un seul `refund_reversal` par `(commission, refund)`**. Un worker P6-D3 rejoué est arrêté par le stockage. |
+| **Correction par compensation, jamais par effacement** | trigger `BEFORE UPDATE OR DELETE` sur le ledger ⇒ `23514` |
+| **Direction du montant contrainte par le type** | `accrual\|release > 0` ; `refund_reversal\|payout_allocation < 0` ; `admin_adjustment` exige un `reason_code` ; `refund_reversal` exige un `refund_id`, et lui seul |
+| **Payout mono-affilié, mono-devise, manuel** | `affiliate_payouts` porte un `affiliate_id` et une `currency` uniques ; **aucune conversion n'existe** (cohérent avec P6-A1.1) |
+| **Un affilié ne se parraine pas lui-même** | contrainte applicative P6-D2 — le schéma porte déjà l'attribution unique qui rend la fraude détectable |
+| **Une touche est ancrée À SA CRÉATION** | trigger `BEFORE INSERT` (**pas** un CHECK). Un CHECK serait réévalué par l'`UPDATE` que produit `ON DELETE SET NULL` et **vetoerait toute purge de visiteur, définitivement**. Une touche qui perd son ancre plus tard n'apparie plus **rien** — l'issue fail-closed — et l'attribution qui en découle garde ses **propres** snapshots. |
+
+### Argent et types
+
+**Tous les montants sont `BIGINT` en unités mineures**, tous les taux sont
+`INTEGER` en **basis points**, tous les délais/fenêtres sont `INTEGER` en jours.
+**Aucun `REAL`, `DOUBLE PRECISION`, `NUMERIC` ni `MONEY`** n'existe dans ce bloc,
+et la migration ne calcule rien : elle ne contient ni `round()`, ni division.
+La devise est **explicite et majuscule** partout (`CHECK char_length = 3 AND
+currency = upper(currency)`).
+
+### Ce que le bloc ne porte PAS
+
+**Aucune donnée bancaire ni Mobile Money** : `affiliate_payouts` n'a qu'une
+`administrative_reference` non sensible. Un identifiant Wave/Orange Money en
+clair **exige son propre gate revu**. Aucune colonne e-mail, téléphone, nom,
+IBAN ou MSISDN n'existe dans les neuf tables.
+
+**Aucun signal marketing comme autorité financière.** D-037 a figé que `events`
+est non autoritatif ; `visitors.first_touch_*` sont des colonnes marketing.
+`affiliate_touches` est la table **dédiée et financièrement autoritative**.
+`visitor_id` y est un **ancrage d'identité** (`visitors`, migration `000004`,
+ère P1), jamais une preuve : les seules cibles de FK hors du bloc sont
+`orders`, `order_items`, `refunds`, `users` et `visitors`.
+
+### ACL
+
+**Fail-closed total** : `REVOKE ALL` sur les neuf tables et leurs séquences,
+pour `PUBLIC` **et** `digitrove_runtime` — le runtime n'a **ni lecture ni
+écriture**. **Aucun nouveau rôle.** **Aucune fonction `SECURITY DEFINER`
+opérationnelle** : les **trois** fonctions du gate sont des **gardes d'intégrité**
+derrière un trigger — append-only du ledger, immuabilité de politique, ancrage de
+touche — et **aucune** n'est `SECURITY DEFINER` (elles n'accordent rien, elles
+refusent), ni exécutable par `PUBLIC`. Les contrats des autorités appartiennent à
+P6-D1/D2/D3 ; les figer ici serait décider trop tôt.
+
+**Un seul objet posé hors du bloc** : l'index unique redondant
+`order_items (id, order_id)`, cible des FK composites. Il est **créé par `000029`
+et retiré par son `down()`** — **aucun fichier de migration historique n'est
+modifié**, exactement le patron utilisé par P6-C pour ses ACL Commerce.
+
+**Aucune extension PostgreSQL** n'est installée : `btree_gist` n'est pas requis et
+aucune contrainte d'exclusion n'est créée, donc le rollback ne peut pas endommager
+une infrastructure partagée qu'il ne possède pas. Le chevauchement historique entre
+versions `superseded` est explicitement **différé à l'autorité P6-D1** ; « quelle
+politique s'applique maintenant » est déjà tranché par l'index unique partiel.
+
+### Frontières des gates suivants
+
+`P6-D1` politique active + identité affilié + codes · `P6-D2` touches et
+attribution autoritative · `P6-D3` moteur de commissions et compensations de
+remboursement (⚠️ `refunds` est au **niveau commande**, donc la répartition vers
+les lignes réutilise la convention **Hamilton** déjà autoritative du dépôt —
+`App\Services\Pricing\DiscountAllocator`, D-030 Q3 — sans inventer d'arrondi) ·
+`P6-D4` payout administratif · `P6-D5` surfaces admin et reporting.
+
+---
+
 ## 🔗 LES RELATIONS EN UN COUP D'ŒIL
 
 ```
