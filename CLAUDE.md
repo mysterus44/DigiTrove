@@ -649,7 +649,11 @@ niveau par nom). **P4-C n'est pas modifié dans ce gate** ; son durcissement mé
 Validation : P6-C **82 / 576**, campagne + régressions **1008 / 6485**, rollback
 **44→43→44**, Pint **486**.
 
-**P6-D0 (Affiliation — Fondation BDD) : TERMINÉ ET VALIDÉ** — **D-057**, migration unique
+**P6-D0 (Affiliation — Fondation BDD) : TERMINÉ, MERGÉ ET VALIDÉ** via
+[PR #40](https://github.com/mysterus44/DigiTrove/pull/40), head `1e8aa79`, merge
+`dcdc966` (parents `7fede04` + `1e8aa79`), **CI SUCCESS**. Suite complète sur la stable
+finale : **1524 tests / 11835 assertions, 0 échec** (37,0 min) ; P6-D0 **63 / 2546** ;
+Pint **495**. — **D-057**, migration unique
 **`000029`**, **45 migrations**, aucune `000030`. **Neuf tables** :
 `affiliate_program_policies`, `affiliates`, `affiliate_codes`, `affiliate_touches`,
 `affiliate_attributions`, `affiliate_commissions`, `affiliate_commission_entries`,

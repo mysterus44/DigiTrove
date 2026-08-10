@@ -4024,7 +4024,7 @@ ALTERNATIVES REJETÉES :
 
 IMPACT : **P6-D0 = fondation BDD uniquement**, migration `000029`, **45 migrations**, aucune `000030`. Aucun flux de candidature, d'attribution, de commission, de payout ni de storefront n'est livré.
 
-IMPLÉMENTATION (P6-D0, 2026-08-10) :
+IMPLÉMENTATION (P6-D0, 2026-08-10) — **MERGÉE** via [PR #40](https://github.com/mysterus44/DigiTrove/pull/40), head `1e8aa79`, merge `dcdc966` (parents `7fede04` + `1e8aa79`), **CI SUCCESS**. Validation finale : P6-D0 **63 tests / 2546 assertions** (134 s), suite complète **1524 / 11835**, 0 échec (37,0 min), Pint **495**, rollback **45 → 44 → 45**, `git diff --check` propre, **45 migrations**, aucune `000030`. Preuve migrations : `git diff 7fede04...1e8aa79 --name-status -- database/migrations/` ⇒ **une seule ligne, `A .../000029`** ; **aucune migration historique modifiée**.
 
 **Livré** : migration unique `2026_07_14_000029_create_affiliate_schema_foundation.php` (9 tables, **3 fonctions et 3 triggers — tous des gardes d'INTÉGRITÉ, aucune autorité opérationnelle**, index unique partiel « une seule politique active », `REVOKE ALL` sur les 9 tables **et** leurs séquences pour `PUBLIC` **et** `digitrove_runtime`), 7 fichiers de tests (`P6D0AffiliateSchemaTest`, `P6D0AffiliateInvariantsTest`, `P6D0AffiliateLifecycleTest`, `P6D0AffiliatePolicyVersioningTest`, `P6D0AffiliateCoherenceTest`, `P6D0AffiliateRollbackTest`, `P6D0SecurityContractTest`) et `tests/Support/AffiliateFixtures.php`. **Aucun fichier sous `app/`, `routes/`, `config/` ou `resources/`** — un contrat fail-closed scanne l'arbre entier et exige zéro mention d'« affiliate ».
 

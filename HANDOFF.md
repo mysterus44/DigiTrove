@@ -8,9 +8,33 @@
 
 - **Dernier agent** : Fable
 - **Date** : 2026-08-10
-- **Branche git active** : **`p6-d0-affiliation-foundation`**, base stable `7fede04`.
+- **Branche git active** : **`p0-foundations-laravel13`** (stable), HEAD **`dcdc966`**.
 
-### ✅ P6-D0 — Affiliation : FONDATION BDD (D-057, migration `000029`)
+### ✅ P6-D0 — Affiliation : MERGÉ (PR #40, head `1e8aa79`, merge `dcdc966`, CI SUCCESS)
+
+**Fondation BDD (D-057, migration `000029`) — 45 migrations, aucune `000030`.**
+
+| État réel du dépôt après merge | |
+|---|---|
+| Schéma d'affiliation | ✅ **9 tables, dormant** |
+| Flux de candidature affilié | ❌ **ABSENT** |
+| Moteur d'attribution | ❌ **ABSENT** |
+| Moteur de commissions | ❌ **ABSENT** |
+| Automatisation des payouts | ❌ **ABSENT** |
+| Storefront / clic réel à attribuer | ❌ **ABSENT** |
+| Migration `000030` | ❌ **ABSENTE** |
+
+**Paramètres initiaux** : fenêtre **30 jours**, taux **1500 bps (15 %)**, délai **14 jours**,
+seuil de retrait **10 000 XOF**. **Modifiables plus tard depuis l'administration en publiant
+une NOUVELLE version** — jamais en réécrivant l'ancienne, ce que le trigger d'immuabilité
+garantit physiquement.
+
+**Validation** : P6-D0 **63 / 2546** (134 s) · suite complète **1524 / 11835**, 0 échec
+(**37,0 min**) · Pint **495** · rollback **45 → 44 → 45** · `git diff --check` propre.
+Preuve migrations : `git diff 7fede04...1e8aa79 --name-status -- database/migrations/`
+⇒ **une seule ligne, `A .../000029`** ; **aucune migration historique modifiée**.
+
+### Détail P6-D0 (conservé)
 
 **45 migrations, aucune `000030`.** Ce gate livre **le schéma et rien d'autre**.
 
