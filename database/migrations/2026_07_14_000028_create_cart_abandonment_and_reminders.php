@@ -45,7 +45,7 @@ return new class extends Migration
 
     private const FAIL = 'public.fail_cart_reminder(bigint, character varying)';
 
-    private const RESOLVE_SECRET = 'public.resolve_cart_reminder_by_secret(character varying)';
+    private const RESOLVE_SECRET = 'public.resolve_cart_reminder_by_secret(character varying, integer)';
 
     private const PURGE = 'public.purge_cart_reminders(integer, integer)';
 
@@ -619,7 +619,10 @@ return new class extends Migration
 
             -- Resume lookup by digest. Returns nothing for an unknown, non-sent or
             -- non-abandoned target, so the endpoint cannot distinguish those cases.
-            CREATE OR REPLACE FUNCTION public.resolve_cart_reminder_by_secret(p_secret_hash CHARACTER VARYING)
+            CREATE OR REPLACE FUNCTION public.resolve_cart_reminder_by_secret(
+                p_secret_hash CHARACTER VARYING,
+                p_ttl_minutes INTEGER
+            )
             RETURNS TABLE(attempt_id BIGINT, cart_id BIGINT, cart_public_id UUID)
             LANGUAGE plpgsql
             STABLE
@@ -627,6 +630,12 @@ return new class extends Migration
             SET search_path = pg_catalog, public, pg_temp
             AS $$
             BEGIN
+                IF p_ttl_minutes IS NULL OR p_ttl_minutes < 1 OR p_ttl_minutes > 43200 THEN
+                    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'capability TTL is invalid';
+                END IF;
+
+                -- A malformed digest returns EMPTY rather than raising, so the endpoint
+                -- cannot tell "wrong shape" from "no such capability".
                 IF p_secret_hash IS NULL OR p_secret_hash !~ '^[0-9a-f]{64}$' THEN
                     RETURN;
                 END IF;
@@ -637,6 +646,10 @@ return new class extends Migration
                 JOIN public.carts AS c ON c.id = a.cart_id
                 WHERE a.secret_hash = p_secret_hash
                   AND a.status = 'sent'
+                  -- The TTL is enforced HERE, not in PHP: the runtime cannot widen it.
+                  AND a.sent_at > clock_timestamp() - make_interval(mins => p_ttl_minutes)
+                  -- Revocation is the digest being cleared; a converted or expired cart
+                  -- is no longer resumable either.
                   AND c.status = 'abandoned'
                 LIMIT 1;
             END;

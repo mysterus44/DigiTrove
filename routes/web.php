@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AnalyticsConsentController;
 use App\Http\Controllers\AnalyticsEventController;
+use App\Http\Controllers\CartResumeController;
 use App\Http\Controllers\DownloadFileController;
 use App\Http\Controllers\DownloadLandingController;
 use App\Http\Middleware\EnsureAnalyticsSameOrigin;
@@ -27,6 +28,20 @@ Route::post('/analytics/events', AnalyticsEventController::class)
         'throttle:analytics-ingestion',
     ])
     ->name('analytics.events.store');
+
+// P6-C cart resume. The bootstrap GET receives NO secret — the capability stays in the
+// URI fragment, which the browser never puts in the request line nor in `Referer`. It
+// reaches the server exactly once, in the POST body below.
+Route::get('/cart/resume/{cartPublicId}', [CartResumeController::class, 'show'])
+    ->where('cartPublicId', '[A-Za-z0-9-]+')
+    ->name('cart.resume.show');
+
+Route::post('/cart/resume', [CartResumeController::class, 'redeem'])
+    ->middleware('throttle:cart-resume')
+    ->name('cart.resume.redeem');
+
+Route::get('/cart/resumed', [CartResumeController::class, 'resumed'])
+    ->name('cart.resume.done');
 
 Route::get('/downloads/{grantPublicId}', DownloadLandingController::class)
     ->where('grantPublicId', '[A-Za-z0-9-]+')

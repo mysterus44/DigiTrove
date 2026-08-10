@@ -76,6 +76,21 @@ final class CartReminderConfig
         MailTransportGuard::assertSafe();
     }
 
+    /**
+     * The resume surface is gated on SENDING, not on a switch of its own: a capability
+     * can only exist if a reminder was sent, so a separate flag would be a boundary with
+     * nothing behind it. The mail transport check is deliberately NOT repeated here —
+     * redemption delivers no mail.
+     */
+    public static function assertEnabledForResume(): void
+    {
+        CrmConfig::assertEnabled();
+
+        if (! self::sendEnabled()) {
+            throw new RuntimeException('Cart reminder sending is disabled.');
+        }
+    }
+
     public static function assertPurgeEnabled(): void
     {
         CrmConfig::assertEnabled();

@@ -181,10 +181,12 @@ final class CartReminderService
      */
     public function resolveBySecret(#[SensitiveParameter] string $secretHash): ?array
     {
-        return $this->guarded(function () use ($secretHash): ?array {
+        $ttl = CartReminderConfig::capabilityTtlMinutes();
+
+        return $this->guarded(function () use ($secretHash, $ttl): ?array {
             $row = $this->crmConnection()->selectOne(
-                'SELECT * FROM public.resolve_cart_reminder_by_secret(?::varchar)',
-                [$secretHash],
+                'SELECT * FROM public.resolve_cart_reminder_by_secret(?::varchar, ?::integer)',
+                [$secretHash, $ttl],
             );
 
             if ($row === null) {
