@@ -75,10 +75,30 @@ return new class extends Migration
     public function up(): void
     {
         $this->assertExecutorProvisioned();
+        $this->grantCommerceReads();
         $this->addActivitySignal();
         $this->createLedger();
         $this->createFunctions();
         $this->lockDownPrivileges();
+    }
+
+    /**
+     * The authorities are SECURITY DEFINER and therefore execute as
+     * digitrove_crm_executor — a role provisioned for CRM tables, which owns nothing in
+     * Commerce. Without these grants every authority fails with 42501.
+     *
+     * The set is the MINIMUM each authority genuinely needs, and `down()` revokes
+     * exactly it, so the `000027` privilege boundary is restored to the byte. Note that
+     * `carts` needs UPDATE (the abandonment transition and the activity trigger), while
+     * everything else is read-only: P6-C never writes Commerce.
+     */
+    private function grantCommerceReads(): void
+    {
+        DB::statement('GRANT SELECT, UPDATE ON TABLE public.carts TO digitrove_crm_executor');
+
+        foreach (['users', 'cart_items', 'orders', 'order_items'] as $table) {
+            DB::statement('GRANT SELECT ON TABLE public.'.$table.' TO digitrove_crm_executor');
+        }
     }
 
     public function down(): void
@@ -96,6 +116,14 @@ return new class extends Migration
         Schema::table('carts', function (Blueprint $table): void {
             $table->dropColumn('last_activity_at');
         });
+
+        // Restore the exact 000027 privilege boundary: the executor must leave Commerce
+        // as unreachable as it found it.
+        DB::statement('REVOKE SELECT, UPDATE ON TABLE public.carts FROM digitrove_crm_executor');
+
+        foreach (['users', 'cart_items', 'orders', 'order_items'] as $table) {
+            DB::statement('REVOKE SELECT ON TABLE public.'.$table.' FROM digitrove_crm_executor');
+        }
     }
 
     private function addActivitySignal(): void

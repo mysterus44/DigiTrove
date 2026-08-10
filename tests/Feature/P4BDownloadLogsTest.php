@@ -57,6 +57,9 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Checkout/CheckoutException.php',
     'Checkout/CheckoutRefusalReason.php',
     'Checkout/OrderService.php',
+    // P6-C (D-056) — EXECUTE-only cart abandonment and reminder ledger clients.
+    'Crm/CartAbandonmentService.php',
+    'Crm/CartReminderService.php',
     // P6-A0 (D-043) — EXECUTE-only CRM identity and consent authorities.
     'Crm/Concerns/UsesCrmAuthority.php',
     // P6-B0 (D-052) — admin read layer over the B0.1 authorities.
