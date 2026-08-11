@@ -82,6 +82,26 @@ $$;
 ALTER ROLE digitrove_crm_executor
     NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
 
+-- --- digitrove_affiliate_executor -------------------------------------------------
+-- P6-D1 (D-058). NOLOGIN owner of the affiliation tables and of the policy
+-- governance authorities.
+--
+-- It exists because P6-D0 left the nine affiliate_* tables owned by `digitrove`,
+-- the SUPERUSER migrator: a SECURITY DEFINER function created in that state would
+-- execute as superuser, which is exactly the hole D-029.6 / P4-B0 closed. It is a
+-- DEDICATED identity, never digitrove_crm_executor, so the CRM never gains power
+-- over the affiliation money tables and vice versa.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'digitrove_affiliate_executor') THEN
+        CREATE ROLE digitrove_affiliate_executor
+            NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+    END IF;
+END
+$$;
+ALTER ROLE digitrove_affiliate_executor
+    NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+
 -- --- digitrove_analytics_worker --------------------------------------------------
 -- Dedicated LOGIN for scheduled P5-A2 operations. It can execute the audited
 -- authorities only; migrations revoke all direct source/projection access.
@@ -170,6 +190,7 @@ GRANT digitrove_download_executor TO digitrove WITH INHERIT FALSE, SET TRUE, ADM
 GRANT digitrove_analytics_executor TO digitrove WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT digitrove_analytics_rollup_executor TO digitrove WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT digitrove_crm_executor TO digitrove WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
+GRANT digitrove_affiliate_executor TO digitrove WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 
 -- --- Fail-closed guardrails ------------------------------------------------------
 DO $$
@@ -188,6 +209,14 @@ BEGIN
 
     IF (SELECT rolcanlogin FROM pg_roles WHERE rolname = 'digitrove_analytics_rollup_executor') THEN
         RAISE EXCEPTION 'P5-A2 provisioning: digitrove_analytics_rollup_executor must be NOLOGIN';
+    END IF;
+
+    IF (SELECT rolcanlogin FROM pg_roles WHERE rolname = 'digitrove_affiliate_executor') THEN
+        RAISE EXCEPTION 'P6-D1 provisioning: digitrove_affiliate_executor must be NOLOGIN';
+    END IF;
+
+    IF (SELECT rolsuper FROM pg_roles WHERE rolname = 'digitrove_affiliate_executor') THEN
+        RAISE EXCEPTION 'P6-D1 provisioning: digitrove_affiliate_executor must not be superuser';
     END IF;
 
     IF (SELECT rolcanlogin FROM pg_roles WHERE rolname = 'digitrove_crm_executor') THEN
@@ -214,7 +243,8 @@ BEGIN
               'digitrove_download_executor',
               'digitrove_analytics_executor',
               'digitrove_analytics_rollup_executor',
-              'digitrove_crm_executor'
+              'digitrove_crm_executor',
+              'digitrove_affiliate_executor'
           )
     ) THEN
         RAISE EXCEPTION 'P5-A2 provisioning: runtime identities must not be members of migrator or executor roles';

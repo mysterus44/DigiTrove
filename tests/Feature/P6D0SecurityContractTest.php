@@ -54,13 +54,15 @@ function p6d0ApplicationFiles(): array
 
 // ── The gate boundary ────────────────────────────────────────────────────────────
 
-it('adds exactly one migration and never opens the next one', function () {
+// À VALIDER (P6-D1, D-058): the P6-D1 boundary (000030) has landed. The frontier moved from
+// 45 to 46; teeth kept — 000029 and 000030 each present once, no 000031 opened early.
+it('sits behind the P6-D1 boundary: 46 migrations, 000029 and 000030 present, no 000031', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(45)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(46)
         ->and(glob($root.'/database/migrations/2026_07_14_000029*.php'))->toHaveCount(1)
-        // P6-D1 has not started: no authority, no bootstrap, no second schema move.
-        ->and(glob($root.'/database/migrations/2026_07_14_000030*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000030*.php'))->toHaveCount(1)
+        ->and(glob($root.'/database/migrations/2026_07_14_000031*.php') ?: [])->toBe([]);
 });
 
 /**
@@ -70,12 +72,17 @@ it('adds exactly one migration and never opens the next one', function () {
  * Scanning the WHOLE application tree rather than a hand-written allowlist means a future
  * `AffiliateService` cannot be added quietly — it has to break this test first.
  */
-it('ships no application surface at all: not one file mentions an affiliate', function () {
+// À VALIDER (P6-D1, D-058): P6-D1 legitimately adds a governance surface, so this contract is
+// rescoped from an ABSENCE to an EXACT inventory. Any file mentioning "affiliate" that is not
+// on this list still fails — a future AffiliateService, a candidature flow, a payout screen,
+// anything from a later gate arriving early — so the teeth are kept, only the scope moved.
+it('ships exactly the P6-D1 governance surface and no other affiliate file', function () {
     $files = p6d0ApplicationFiles();
 
     // Fail closed: a vacuous pass over an empty file list would prove nothing.
     expect(count($files))->toBeGreaterThan(200);
 
+    $root = str_replace('\\', '/', dirname(__DIR__, 2));
     $offenders = [];
 
     foreach ($files as $file) {
@@ -84,30 +91,84 @@ it('ships no application surface at all: not one file mentions an affiliate', fu
             : Scanner::phpCode($file);
 
         if (stripos($code, 'affiliate') !== false) {
-            $offenders[] = $file;
+            $offenders[] = ltrim(str_replace('\\', '/', substr(str_replace('\\', '/', $file), strlen($root))), '/');
         }
     }
 
-    expect($offenders)->toBe([]);
+    sort($offenders);
+
+    expect($offenders)->toBe([
+        'app/Filament/Pages/AffiliateProgramme.php',
+        'app/Filament/Pages/Concerns/AuthorizesAffiliateAdmin.php',
+        'app/Policies/AffiliatePolicyGovernancePolicy.php',
+        'app/Providers/AppServiceProvider.php',
+        'app/Services/Affiliate/AffiliateOperationException.php',
+        'app/Services/Affiliate/AffiliatePolicy.php',
+        'app/Services/Affiliate/AffiliatePolicyService.php',
+        'app/Services/Affiliate/AffiliateRefusalReason.php',
+        'app/Services/Affiliate/Concerns/UsesAffiliateAuthority.php',
+        'app/Support/AffiliateConfig.php',
+        'config/affiliate.php',
+    ]);
 });
 
-it('adds no route, no scheduled task and no queued job', function () {
-    $root = dirname(__DIR__, 2);
+// À VALIDER (P6-D1, D-058): rescoped to exact per-layer inventories. The fragile `**` globs
+// (PHP glob() does not recurse on `**`) are replaced with a deterministic recursive scan, so
+// a nested affiliate file cannot slip past. Governance adds NO route, command, job, listener,
+// mail or model — those layers must stay empty — and only the exact governance files elsewhere.
+it('adds no affiliate route, command, job, listener, mail or model, and only the governance surface elsewhere', function () {
+    $root = str_replace('\\', '/', dirname(__DIR__, 2));
 
     // Nothing on the public or admin routing surface.
     foreach (glob($root.'/routes/*.php') ?: [] as $file) {
         expect(stripos(Scanner::phpCode($file), 'affiliate'))->toBeFalse();
     }
 
-    // No class file was created under the layers a live programme would need.
-    foreach (['Console/Commands', 'Jobs', 'Listeners', 'Mail', 'Policies', 'Services', 'Filament'] as $layer) {
-        $matches = glob($root.'/app/'.$layer.'/**/*ffiliate*.php') ?: [];
+    /** @return list<string> Affiliate-named files under $dir, relative to root, sorted. */
+    $affiliateFilesUnder = static function (string $dir) use ($root): array {
+        if (! is_dir($dir)) {
+            return [];
+        }
 
-        expect(array_merge($matches, glob($root.'/app/'.$layer.'/*ffiliate*.php') ?: []))->toBe([]);
+        $out = [];
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        );
+
+        foreach ($iterator as $file) {
+            if ($file->isFile() && stripos($file->getFilename(), 'ffiliate') !== false) {
+                $out[] = ltrim(str_replace('\\', '/', substr(str_replace('\\', '/', $file->getPathname()), strlen($root))), '/');
+            }
+        }
+
+        sort($out);
+
+        return $out;
+    };
+
+    // Layers a live programme would need but this governance-only gate must not touch.
+    foreach (['app/Console/Commands', 'app/Jobs', 'app/Listeners', 'app/Mail', 'app/Models'] as $layer) {
+        expect($affiliateFilesUnder($root.'/'.$layer))->toBe([], "unexpected affiliate file under {$layer}");
     }
 
-    expect(glob($root.'/app/Models/*ffiliate*.php') ?: [])->toBe([])
-        ->and(glob($root.'/config/*ffiliate*.php') ?: [])->toBe([]);
+    // The exact governance surface, by inventory.
+    expect($affiliateFilesUnder($root.'/app/Policies'))->toBe([
+        'app/Policies/AffiliatePolicyGovernancePolicy.php',
+    ]);
+    expect($affiliateFilesUnder($root.'/app/Filament'))->toBe([
+        'app/Filament/Pages/AffiliateProgramme.php',
+        'app/Filament/Pages/Concerns/AuthorizesAffiliateAdmin.php',
+    ]);
+    expect($affiliateFilesUnder($root.'/app/Services'))->toBe([
+        'app/Services/Affiliate/AffiliateOperationException.php',
+        'app/Services/Affiliate/AffiliatePolicy.php',
+        'app/Services/Affiliate/AffiliatePolicyService.php',
+        'app/Services/Affiliate/AffiliateRefusalReason.php',
+        'app/Services/Affiliate/Concerns/UsesAffiliateAuthority.php',
+    ]);
+    expect($affiliateFilesUnder($root.'/config'))->toBe([
+        'config/affiliate.php',
+    ]);
 });
 
 it('never turns affiliation into a user role', function () {
