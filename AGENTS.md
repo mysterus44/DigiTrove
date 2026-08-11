@@ -141,7 +141,7 @@ P6  CRM & Marketing : segments, dashboards, campagnes
     ├─ C       paniers / relances (dormant : aucun flux panier)     ✅
     └─ D       affiliation
        ├─ D0   fondation BDD (000029, 9 tables, dormante)           ✅
-       ├─ D1   autorité PostgreSQL + gouvernance des politiques     ✅ (PR, non mergée)
+       ├─ D1   autorité PostgreSQL + gouvernance des politiques     ✅ mergé (PR #41)
        ├─ D1.1 cycle de vie affilié + codes                         ⬅ ACTIF
        ├─ D2   touches + attribution autoritative
        ├─ D3   moteur commissions + compensations de remboursement

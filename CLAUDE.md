@@ -699,10 +699,12 @@ structurellement** (quatre FK composites), plus deux **identités d'idempotence 
 `P6D0SecurityContractTest` devra être **rescopé par inventaire exact** des fichiers
 autorisés (comme P5-A3C et P6-B0), **jamais** par suppression d'assertion.
 
-**P6-D1 (Autorité d'affiliation + gouvernance des politiques) : IMPLÉMENTÉ ET VALIDÉ
-LOCALEMENT — PR OUVERTE, NON MERGÉE.** D-058, migration unique **`000030`**,
-**46 migrations**, aucune `000031`. Validation : P6-D1 **42 / 307**, suite complète
-**1566 / 12145**, 0 échec (35,87 min), Pint **510**.
+**P6-D1 (Autorité d'affiliation + gouvernance des politiques) : TERMINÉ, MERGÉ ET VALIDÉ**
+via [PR #41](https://github.com/mysterus44/DigiTrove/pull/41), head `d2ecfb44`, merge
+**`aeac8a5d`** (parents `ec0191f` + `d2ecfb44`), **CI SUCCESS**. D-058, migration unique
+**`000030`**, **46 migrations**, aucune `000031`. Validation : P6-D1 **42 / 307**,
+régressions **848 / 7776**, suite complète **1566 / 12145**, 0 échec (35,87 min),
+Pint **510**.
 
 **LA DETTE SUPERUSER EST FERMÉE.** Les neuf tables appartenaient à `digitrove`, le rôle
 migrateur **superuser** ; toute autorité `SECURITY DEFINER` s'y serait exécutée en

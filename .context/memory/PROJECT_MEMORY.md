@@ -93,10 +93,11 @@ php artisan schedule:work         # rollups, expirations, partitions
 à chaque gate, sous peine d'induire en erreur l'agent qui reprend.
 
 ```
-STATUS       : P0→P6-D0 MERGÉS · P6-D1 en PR non mergée
-               46 migrations · suite 1566 tests / 12145 assertions
-DERNIÈRE ACTION : P6-D1 implémenté (000030, D-058) — frontière d'autorité PostgreSQL
-                  de l'affiliation + gouvernance des politiques versionnées
+STATUS       : P0→P6-D1 MERGÉS · 46 migrations
+               suite 1566 tests / 12145 assertions
+DERNIÈRE ACTION : P6-D1 mergé (PR #41, merge aeac8a5d, CI SUCCESS, D-058, 000030) —
+                  frontière d'autorité PostgreSQL de l'affiliation + gouvernance
+                  des politiques versionnées
 PROCHAINE ACTION : P6-D1.1 — cycle de vie affilié (candidature → revue admin →
                   activation/suspension/fermeture) + codes affiliés
 BLOCAGES     : aucun. La dette superuser est FERMÉE : les 9 tables et 9 séquences

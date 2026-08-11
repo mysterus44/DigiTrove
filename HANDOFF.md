@@ -10,9 +10,13 @@
 - **Date** : 2026-08-11
 - **Branche git active** : **`p6-d1-affiliate-policy-governance`**, base D-058 `ec0191f`.
 
-### ✅ P6-D1 — Autorité d'affiliation + gouvernance des politiques (D-058)
+### ✅ P6-D1 — Autorité d'affiliation + gouvernance des politiques : MERGÉ
 
-**Migration unique `000030` — 46 migrations, aucune `000031`.** PR ouverte, **NON mergée**.
+**PR [#41](https://github.com/mysterus44/DigiTrove/pull/41)**, head `d2ecfb44`, merge
+**`aeac8a5d`** (parents `ec0191f` + `d2ecfb44`), **CI SUCCESS** (run #49, `Pint and tests`,
+sur le head exact). D-058, migration unique **`000030`** — **46 migrations**, aucune
+`000031`. Validation : P6-D1 **42 / 307** · régressions **848 / 7776** · suite complète
+**1566 / 12145**, 0 échec · Pint **510**.
 
 ⚠️ **LA DETTE CRITIQUE EST FERMÉE.** Les neuf tables `affiliate_*` appartenaient à
 `digitrove`, le rôle migrateur **superuser** : toute autorité `SECURITY DEFINER` créée en
@@ -845,8 +849,8 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🚧 P6-D1.1 — Cycle de vie affilié + codes (GATE SUIVANT)
 
-**Statut** : **P6-D1.1 NON COMMENCÉ.** P6-D1 est implémenté, validé localement et en PR
-**non mergée** (`000030`, **46 migrations**). Aucune migration `000031`.
+**Statut** : **P6-D1.1 NON COMMENCÉ.** P6-D1 est **MERGÉ** — PR #41, head `d2ecfb44`,
+merge `aeac8a5d`, **CI SUCCESS** (`000030`, **46 migrations**). Aucune migration `000031`.
 
 Ce que P6-D1.1 prendra en charge : **candidature · validation/refus · activation ·
 suspension · fermeture · codes affiliés**. Il réutilisera la frontière d'autorité posée par
@@ -985,6 +989,22 @@ Quatre tables (`crm_segments`, `crm_segment_versions`, `crm_segment_generations`
 ### Rappel D-049 (architecture P6-A2)
 
 Architecture **gelée dans D-049** : définitions typées allowlistées (aucun SQL/colonne/opérateur/JSONPath libre), versions immuables, générations matérialisées publiées **atomiquement**, critères commerce **currency-scoped** (aucun LTV global, aucun FX, aucun float), consentement marketing **séparé** de l'appartenance au segment. Migration `000025` (41 migrations). **P6-B0 (CRM Admin Views) NON COMMENCÉ.**
+
+### 2026-08-11 — Fable (P6-D1 mergé et clos)
+- Fait : merge de la **PR #41** (head `d2ecfb44`, merge **`aeac8a5d`**, parents `ec0191f` +
+  `d2ecfb44`, **CI SUCCESS** run #49 sur le head exact), stable synchronisée, puis
+  **clôture documentaire seule** — aucun code, aucune migration, aucun test modifié.
+- L'arbre du merge est **identique** au head validé : aucune résolution de conflit, donc
+  la suite complète n'a pas été rejouée (elle portait déjà sur ce SHA exact).
+- ⚠️ **Rappel à ne jamais affaiblir** : rollback lossless `46 → 45 → 46` **PASS** ;
+  downgrade lossy avec horodatages sous-seconde **REFUSED BEFORE MUTATION**, base laissée
+  **entièrement en P6-D1**. Après une publication réelle, ce refus est **normalement
+  attendu** — `now()` garde les microsecondes.
+- Décisions : **aucune**. D-057 et D-058 intactes, **aucun D-059**.
+- Laisse à : **P6-D1.1 — cycle de vie affilié + codes**, **NON COMMENCÉ**, aucune
+  migration `000031`. ⚠️ La **re-candidature après `rejected`** reste à arbitrer au
+  préflight D1.1 : `affiliates.user_id` est **UNIQUE** — rouvrir la ligne existante, refus
+  définitif, ou autre structure explicitement décidée. **Ne pas trancher avant.**
 
 ### 2026-08-11 — Fable (P6-D1 implémenté : autorité + gouvernance des politiques)
 - Fait : provisioning étendu (`digitrove_affiliate_executor`), migration **`000030`**
