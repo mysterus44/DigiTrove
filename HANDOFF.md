@@ -7,8 +7,65 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Fable
-- **Date** : 2026-08-10
-- **Branche git active** : **`p0-foundations-laravel13`** (stable), HEAD **`dcdc966`**.
+- **Date** : 2026-08-11
+- **Branche git active** : **`p6-d1-affiliate-policy-governance`**, base D-058 `ec0191f`.
+
+### ✅ P6-D1 — Autorité d'affiliation + gouvernance des politiques (D-058)
+
+**Migration unique `000030` — 46 migrations, aucune `000031`.** PR ouverte, **NON mergée**.
+
+⚠️ **LA DETTE CRITIQUE EST FERMÉE.** Les neuf tables `affiliate_*` appartenaient à
+`digitrove`, le rôle migrateur **superuser** : toute autorité `SECURITY DEFINER` créée en
+l'état se serait exécutée **en superuser** — la vulnérabilité fermée par D-029.6 / P4-B0.
+`000029` n'a **pas** été réécrite ; la correction vit entièrement dans `000030`.
+
+**Frontière PostgreSQL** — rôle `digitrove_affiliate_executor` **NOLOGIN / NOINHERIT /
+non-superuser**, créé par le **script de provisioning** (les rôles sont cluster-globaux,
+précédent P4-B0) et **jamais supprimé au `down()`**. Il possède les **9 tables et les
+9 séquences**. **Cinq autorités `SECURITY DEFINER`** lui appartiennent ; le runtime est
+**EXECUTE-only** sur elles et conserve **zéro** `SELECT/INSERT/UPDATE/DELETE` direct ;
+`PUBLIC` n'a **aucun** `EXECUTE`.
+
+**Gouvernance** — créer un brouillon · modifier un brouillon · publier · lire la politique
+en vigueur · historique borné. Aucun CRUD générique. Écran Filament **admin seul**.
+
+**Publication** — **immédiate uniquement**. `status='active'` **≡ en vigueur maintenant**.
+Intervalle **semi-ouvert `[effective_from, effective_until)`** ; le prédécesseur est fermé
+et le successeur ouvert avec **la même valeur `now()`**, donc `predecessor.until ==
+successor.from` — **ni trou ni chevauchement**. Aucune publication programmée : aucune
+autorité n'accepte d'horodatage.
+
+⚠️ **Précision élargie à `timestamptz(6)` par `000030`.** `000029` avait créé la période en
+`timestamptz(0)` — **précision seconde** — ce qui rend une succession rapide **non
+représentable** : les deux bornes s'écrasent sur la même valeur et
+`affiliate_program_policies_period_check` refuse. Une action d'administration légitime
+échouait donc sur un accident d'horloge.
+
+⚠️ **ROLLBACK LOSSLESS-ONLY — LIRE AVANT DE PROMETTRE UNE RÉVERSIBILITÉ.**
+Le retour `timestamptz(6) → (0)` n'est autorisé **que si aucune valeur persistée ne serait
+modifiée** par le cast PostgreSQL. Le contrôle est la **première opération** du `down()`,
+avant tout `DROP`, `REVOKE`, `ALTER OWNER` ou `ALTER COLUMN`.
+
+| Situation | Downgrade |
+|---|---|
+| Base vide / schéma seul | **exact, autorisé** |
+| Données toutes représentables à la seconde | **exact, autorisé** |
+| Chronologie avec précision sous-seconde | **REFUSÉ avant toute mutation** |
+
+**Après une publication réelle P6-D1, le refus est le cas NORMALEMENT ATTENDU** : `now()`
+conserve les microsecondes, donc la probabilité qu'une publication tombe exactement sur une
+seconde est de l'ordre de **1 sur 1 000 000**. Ce n'est **pas** un bug ni un rollback cassé :
+le système préfère **conserver l'historique exact** plutôt que prétendre restaurer D0 en
+falsifiant les horodatages qui expliquent les commissions passées.
+
+**Ne jamais écrire `rollback 46 → 45 → 46 PASS` sans qualification.** Formulation correcte :
+*rollback lossless `46 → 45 → 46` : PASS · rollback lossy peuplé : REFUSED BEFORE MUTATION,
+état D1 intact.*
+
+**Validation** : P6-D1 **42 / 307** · suite complète **1566 / 12145**, 0 échec (35,87 min) ·
+Pint **510** · `git diff --check` propre · **46 migrations**, aucune `000031`.
+
+### ✅ P6-D0 — Affiliation : MERGÉ (PR #40, head `1e8aa79`, merge `dcdc966`, CI SUCCESS)
 
 ### ✅ P6-D0 — Affiliation : MERGÉ (PR #40, head `1e8aa79`, merge `dcdc966`, CI SUCCESS)
 
@@ -786,12 +843,36 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
-## 🚧 P6-D1 — Frontière d'autorité + gouvernance des politiques (GATE ACTIF)
+## 🚧 P6-D1.1 — Cycle de vie affilié + codes (GATE SUIVANT)
 
-**Statut** : **P6-D0 est MERGÉ** (PR #40, merge `dcdc966`, D-057, **45 migrations**).
-**Architecture P6-D1 GELÉE par D-058** — arbitrage KingKouda : **Q1 = A** (gouvernance
-seule ; cycle de vie affilié reporté en **P6-D1.1**) et **Q2 = A** (rôle exécuteur dédié).
-P6-D1 est **NON COMMENCÉ**, **aucune migration `000030`**, aucun code écrit.
+**Statut** : **P6-D1.1 NON COMMENCÉ.** P6-D1 est implémenté, validé localement et en PR
+**non mergée** (`000030`, **46 migrations**). Aucune migration `000031`.
+
+Ce que P6-D1.1 prendra en charge : **candidature · validation/refus · activation ·
+suspension · fermeture · codes affiliés**. Il réutilisera la frontière d'autorité posée par
+P6-D1 — c'était toute la raison de l'ordre choisi.
+
+⚠️ **La re-candidature après `rejected` est délibérément différée à son préflight** :
+`affiliates.user_id` est **UNIQUE**, donc le schéma impose une **transition d'état** sur la
+ligne existante, jamais une seconde ligne. C'est une décision produit, pas une découverte
+d'implémentation. **Ne pas modifier `affiliates`** ni créer de table de candidature avant.
+
+⚠️ **Contrats à élargir explicitement, jamais à affaiblir** : `P4B_ALLOWED_SERVICE_FILES`
+(chemin par chemin, aucun joker) · `P6D0SecurityContractTest` (inventaire exact des surfaces
+autorisées) · les inventaires de rôles et de fonctions `%affiliate%` · les compteurs de
+frontière **46 → 47** sous **les deux formes**, en distinguant les contrats **d'état
+courant** des **frontières historiques** — ces dernières ne bougent jamais.
+
+⚠️ **`pg_catalog`, jamais `information_schema`** pour auditer ACL, propriété ou inventaire :
+filtré par privilèges, il retourne une liste **vide** sous un rôle sans droits et fait
+**passer un contrat à vide**. Défaut réel rencontré en D-057.
+
+---
+
+## 📜 HISTORIQUE — P6-D1 (implémenté, en PR)
+
+**Architecture GELÉE par D-058** — arbitrage KingKouda : **Q1 = A** (gouvernance seule ;
+cycle de vie affilié reporté en **P6-D1.1**) et **Q2 = A** (rôle exécuteur dédié).
 
 ### ⚠️ LA DETTE QUI JUSTIFIE CE GATE
 
@@ -904,6 +985,36 @@ Quatre tables (`crm_segments`, `crm_segment_versions`, `crm_segment_generations`
 ### Rappel D-049 (architecture P6-A2)
 
 Architecture **gelée dans D-049** : définitions typées allowlistées (aucun SQL/colonne/opérateur/JSONPath libre), versions immuables, générations matérialisées publiées **atomiquement**, critères commerce **currency-scoped** (aucun LTV global, aucun FX, aucun float), consentement marketing **séparé** de l'appartenance au segment. Migration `000025` (41 migrations). **P6-B0 (CRM Admin Views) NON COMMENCÉ.**
+
+### 2026-08-11 — Fable (P6-D1 implémenté : autorité + gouvernance des politiques)
+- Fait : provisioning étendu (`digitrove_affiliate_executor`), migration **`000030`**
+  (propriété des 9 tables + 9 séquences, 5 autorités `SECURITY DEFINER`, ACL EXECUTE-only,
+  élargissement `timestamptz(6)`, préflight de downgrade lossless), couche Laravel
+  (`UsesAffiliateAuthority`, `AffiliatePolicyService`, `AffiliatePolicy`, exception + enum
+  de refus, `AffiliateConfig` fail-closed, `AffiliatePolicyGovernancePolicy` + Gate), page
+  Filament de gouvernance **admin seule**, et 4 fichiers de tests P6-D1.
+- **Cinq défauts système fermés** : (1) import `use RuntimeException;` sans effet promu en
+  erreur ; (2) **`status` ambigu en PL/pgSQL** — c'est aussi une colonne **OUT**, donc une
+  variable ; (3) **`timestamptz(0)` rendait une publication rapide non représentable** →
+  élargissement à `(6)` ; (4) **15 contrats d'état courant restés à 45 migrations** ;
+  (5) **`glob('**/…')` ne récurse pas en PHP** — le contrat de surface P6-D0 était
+  partiellement édenté, remplacé par un parcours récursif et des inventaires exacts.
+- **Défaut de rollback, le plus important** : le test initial ne validait que le
+  **catalogue**, sur base **vide**. Une base ayant réellement publié échouait au retour vers
+  `(0)`. Correctif : **préflight lossless en tête du `down()`**, refus **avant** toute
+  mutation, plus trois scénarios de régression (vide · peuplé lossless · peuplé lossy).
+- ⚠️ **Conséquence assumée** : après une publication réelle, le downgrade est
+  **normalement refusé** — `now()` garde les microsecondes. Ce n'est pas un bug ; c'est le
+  refus de falsifier l'historique qui explique les commissions.
+- **Cinq bugs de tests** (distincts des défauts système) : propriétés Livewire inventées ·
+  `getProperties` incluant l'héritage · chasse au mot sur des termes légitimes
+  (`commission`, `attribution`, `payout` sont des **champs de politique**) · **`clic` ⊂
+  `wire:click`** · `abort()` de `mount()` absorbé par le harness Livewire.
+- État : P6-D1 **42 / 307** · régressions **848 / 7776** · suite complète **1566 / 12145**,
+  0 échec (35,87 min) · Pint **510** · **46 migrations**, aucune `000031`.
+- Décisions : **aucune nouvelle**. D-058 reste autoritative ; le rollback lossless-only est
+  une **clarification de sûreté d'implémentation**, pas une décision métier. Pas de D-059.
+- Laisse à : **P6-D1.1 — cycle de vie affilié + codes**, NON COMMENCÉ.
 
 ### 2026-08-10 — Fable (D-058 : architecture P6-D1 gelée — AUCUN CODE)
 - Fait : **préflight d'architecture** contre le dépôt réel (`pg_catalog`, migrations,

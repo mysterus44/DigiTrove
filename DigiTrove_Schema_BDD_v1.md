@@ -2954,16 +2954,19 @@ une infrastructure partagée qu'il ne possède pas. Le chevauchement historique 
 versions `superseded` est explicitement **différé à l'autorité P6-D1** ; « quelle
 politique s'applique maintenant » est déjà tranché par l'index unique partiel.
 
-### ⚠️ Dette de propriété, corrigée par `000030` (D-058)
+### ✅ Frontière d'autorité, posée par `000030` (P6-D1, D-058)
 
-Les neuf tables ci-dessus appartiennent encore à **`digitrove`**, le rôle migrateur
-**superuser**, alors que les surfaces d'autorité CRM appartiennent à
-`digitrove_crm_executor`. Toute fonction `SECURITY DEFINER` créée en l'état
-**s'exécuterait en superuser** — la vulnérabilité fermée par **D-029.6 / P4-B0**.
-`000030` transférera la propriété des neuf tables **et de leurs neuf séquences** à
-`digitrove_affiliate_executor` (NOLOGIN/NOINHERIT, créé par le script de provisioning,
-**jamais supprimé au `down()`** car un rôle est cluster-global). **`000029` n'est
-jamais réécrite.**
+Les neuf tables **et leurs neuf séquences** appartiennent désormais à
+**`digitrove_affiliate_executor`** — NOLOGIN, NOINHERIT, non-superuser, créé par
+`docker/postgres/provision-runtime-roles.sql` (les rôles sont **cluster-globaux**, donc
+**jamais supprimés au `down()`**). Elles appartenaient à `digitrove`, le rôle migrateur
+**superuser** : toute fonction `SECURITY DEFINER` s'y serait exécutée **en superuser**, la
+vulnérabilité fermée par **D-029.6 / P4-B0**. **`000029` n'a jamais été réécrite.**
+
+**Cinq autorités `SECURITY DEFINER`** appartiennent à cet exécuteur — créer un brouillon,
+modifier un brouillon, publier, lire la politique en vigueur, lister l'historique borné.
+Le runtime est **EXECUTE-only** sur elles et conserve **zéro** `SELECT/INSERT/UPDATE/DELETE`
+direct sur les neuf tables ; `PUBLIC` n'a **aucun** `EXECUTE`. Aucun CRUD générique.
 
 ### Sémantique temporelle des politiques (figée par D-058)
 
@@ -2975,10 +2978,36 @@ prédécesseur dans **une seule transition**, avec **`now()`** (et non
 `[from, until)`**, cela ne produit **ni trou ni chevauchement**, par construction.
 
 **La publication différée n'est pas livrée** : elle exigerait une contrainte
-d'exclusion `tstzrange` donc l'extension **`btree_gist`**, absente des 45 migrations.
+d'exclusion `tstzrange` donc l'extension **`btree_gist`**, absente du dépôt.
 Elle reste ajoutable ensuite **sans rouvrir cette frontière** (statut `scheduled` +
 ordonnanceur appelant la **même** autorité). ⚠️ `effective_from` d'un brouillon
 **n'est pas autoritatif** — la publication l'écrase.
+
+⚠️ **`000030` élargit `effective_from` et `effective_until` à `timestamptz(6)`.**
+`000029` les avait créés en **`timestamptz(0)`** — précision seconde — ce qui rend une
+succession rapide **non représentable** : les deux bornes s'écrasent sur la même valeur
+et `affiliate_program_policies_period_check` refuse. Une publication légitime échouait
+donc sur un accident d'horloge. Arrondir vers l'avant a été rejeté : cela placerait le
+successeur jusqu'à une seconde dans le futur, laissant le programme **sans politique en
+vigueur**.
+
+### ⚠️ Rollback `000030` : LOSSLESS-ONLY
+
+Le retour `timestamptz(6) → (0)` n'est autorisé **que si aucune valeur persistée ne
+serait modifiée** par le cast PostgreSQL. Le contrôle est la **première opération** du
+`down()`, avant tout `DROP`, `REVOKE`, `ALTER OWNER` ou `ALTER COLUMN`.
+
+| Situation | Downgrade |
+|---|---|
+| Base vide / schéma seul | **exact, autorisé** |
+| Données toutes représentables à la seconde | **exact, autorisé** |
+| Chronologie avec précision sous-seconde | **REFUSÉ avant toute mutation** |
+
+**Après une publication réelle, le refus est le cas normalement attendu** : `now()`
+conserve les microsecondes. Ce n'est **pas** un rollback cassé — le système préfère
+conserver l'historique exact plutôt que prétendre restaurer P6-D0 en falsifiant les
+horodatages qui expliquent les commissions passées. Ne jamais écrire
+`rollback 46 → 45 → 46 PASS` sans qualifier les données.
 
 ### Frontières des gates suivants
 

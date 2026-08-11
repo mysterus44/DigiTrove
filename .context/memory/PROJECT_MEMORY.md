@@ -45,7 +45,9 @@ E. CRM        crm_contacts · crm_marketing_consent_events · crm_order_attribut
 F. AFFILIATION affiliate_program_policies · affiliates · affiliate_codes
               affiliate_touches · affiliate_attributions · affiliate_commissions
               affiliate_commission_entries · affiliate_payouts · affiliate_payout_items
-              ⚠️ DORMANT : schéma seul, aucun flux applicatif (D-057)
+              ⚠️ owner = digitrove_affiliate_executor (P6-D1) ; runtime EXECUTE-only
+              ⚠️ Seule la GOUVERNANCE des politiques est livrée (D-058). Candidature,
+                 codes, touches, attribution, commissions et payouts : ABSENTS.
 ```
 
 ---
@@ -91,15 +93,22 @@ php artisan schedule:work         # rollups, expirations, partitions
 à chaque gate, sous peine d'induire en erreur l'agent qui reprend.
 
 ```
-STATUS       : P0→P6-D0 MERGÉS · 45 migrations · suite 1524 tests / 11835 assertions
-DERNIÈRE ACTION : P6-D0 clos et mergé (PR #40, merge dcdc966, D-057) — fondation BDD
-                  affiliation DORMANTE ; puis D-058 gelée (architecture P6-D1)
-PROCHAINE ACTION : P6-D1 — frontière d'autorité PostgreSQL de l'affiliation
-                  + gouvernance des politiques versionnées (D-058), migration 000030
-BLOCAGES     : aucun. Dette critique connue et planifiée : les 9 tables affiliate_*
-               appartiennent à `digitrove` (superuser) — corrigé par 000030, jamais
-               par réécriture de 000029.
+STATUS       : P0→P6-D0 MERGÉS · P6-D1 en PR non mergée
+               46 migrations · suite 1566 tests / 12145 assertions
+DERNIÈRE ACTION : P6-D1 implémenté (000030, D-058) — frontière d'autorité PostgreSQL
+                  de l'affiliation + gouvernance des politiques versionnées
+PROCHAINE ACTION : P6-D1.1 — cycle de vie affilié (candidature → revue admin →
+                  activation/suspension/fermeture) + codes affiliés
+BLOCAGES     : aucun. La dette superuser est FERMÉE : les 9 tables et 9 séquences
+               appartiennent désormais à digitrove_affiliate_executor.
 ```
+
+⚠️ **Rollback P6-D1 : LOSSLESS-ONLY.** `000030` élargit la période d'effet à
+`timestamptz(6)` (en `(0)`, deux publications rapprochées s'écrasent et violent le
+CHECK de période). Le `down()` ne rétrécit vers `(0)` **que si aucune valeur ne
+change** ; sinon il **refuse avant toute mutation**. Après une publication réelle,
+`now()` garde les microsecondes, donc **le refus est le cas normalement attendu** —
+le système préfère conserver l'historique exact plutôt que le falsifier.
 
 ⚠️ **Suite complète** : `php artisan test` meurt vers ~1 075 tests
 (`memory_limit` 128 M par défaut dans l'image). Utiliser

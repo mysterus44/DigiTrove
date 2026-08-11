@@ -699,16 +699,39 @@ structurellement** (quatre FK composites), plus deux **identités d'idempotence 
 `P6D0SecurityContractTest` devra être **rescopé par inventaire exact** des fichiers
 autorisés (comme P5-A3C et P6-B0), **jamais** par suppression d'assertion.
 
-**PROCHAIN GATE : P6-D1 — frontière d'autorité PostgreSQL + gouvernance des politiques**,
-architecture **GELÉE PAR D-058** (arbitrage KingKouda : gouvernance seule ; cycle de vie
-affilié reporté en **P6-D1.1**), **NON COMMENCÉ**, aucune migration `000030`.
+**P6-D1 (Autorité d'affiliation + gouvernance des politiques) : IMPLÉMENTÉ ET VALIDÉ
+LOCALEMENT — PR OUVERTE, NON MERGÉE.** D-058, migration unique **`000030`**,
+**46 migrations**, aucune `000031`. Validation : P6-D1 **42 / 307**, suite complète
+**1566 / 12145**, 0 échec (35,87 min), Pint **510**.
 
-⚠️ **LA DETTE QUI JUSTIFIE CE GATE** : les neuf tables `affiliate_*` appartiennent à
-**`digitrove`, le rôle migrateur superuser** — alors que `crm_segments` / `crm_exports`
-appartiennent à leur exécuteur dédié, propriétaire de **59** des 64 fonctions
-`SECURITY DEFINER` du dépôt. Une autorité créée en l'état **s'exécuterait en superuser** :
-la vulnérabilité fermée par **D-029.6 / P4-B0**. Correction en `000030`, **jamais** par
-réécriture de `000029`.
+**LA DETTE SUPERUSER EST FERMÉE.** Les neuf tables appartenaient à `digitrove`, le rôle
+migrateur **superuser** ; toute autorité `SECURITY DEFINER` s'y serait exécutée en
+superuser — la vulnérabilité fermée par **D-029.6 / P4-B0**. `000029` n'a **pas** été
+réécrite. Rôle `digitrove_affiliate_executor` **NOLOGIN/NOINHERIT/non-superuser**, créé par
+le **script de provisioning** (cluster-global, **jamais supprimé au `down()`**), propriétaire
+des **9 tables et 9 séquences** ; **5 autorités `SECURITY DEFINER`** lui appartiennent ;
+runtime **EXECUTE-only**, **zéro DML direct** ; `PUBLIC` sans `EXECUTE`.
+
+**Publication immédiate uniquement.** `status='active'` **≡ en vigueur maintenant** ;
+intervalle **`[effective_from, effective_until)`** avec **la même valeur `now()`** aux deux
+bornes, donc `predecessor.until == successor.from` — **ni trou ni chevauchement**. Aucune
+autorité n'accepte d'horodatage : rien ne peut être programmé.
+
+⚠️ **Précision élargie à `timestamptz(6)` par `000030`** : en `(0)`, deux publications
+séparées de moins d'une seconde s'écrasent sur la même valeur et violent
+`affiliate_program_policies_period_check`.
+
+⚠️ **ROLLBACK LOSSLESS-ONLY.** Le retour `(6) → (0)` n'est autorisé **que si aucune valeur
+persistée ne change** ; le contrôle est la **première opération** du `down()`, avant tout
+`DROP`/`REVOKE`/`ALTER`. Sinon : **refus avant toute mutation**, base laissée **entièrement
+en P6-D1**. **Après une publication réelle, ce refus est le cas NORMALEMENT ATTENDU** —
+`now()` garde les microsecondes. Ce n'est **pas** un bug : le système préfère conserver
+l'historique exact plutôt que falsifier les horodatages qui expliquent les commissions.
+Ne jamais écrire `rollback 46 → 45 → 46 PASS` sans qualifier les données.
+
+**PROCHAIN GATE : P6-D1.1 — cycle de vie affilié + codes**, **NON COMMENCÉ**, aucune
+migration `000031`. ⚠️ La **re-candidature après `rejected`** est différée à son préflight :
+`affiliates.user_id` est **UNIQUE**, donc transition d'état, jamais une seconde ligne.
 
 Points figés par D-058 : rôle `digitrove_affiliate_executor` NOLOGIN/NOINHERIT créé par le
 **script de provisioning** (les rôles sont cluster-globaux — précédent P4-B0) et **jamais

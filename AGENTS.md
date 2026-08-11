@@ -141,8 +141,8 @@ P6  CRM & Marketing : segments, dashboards, campagnes
     ├─ C       paniers / relances (dormant : aucun flux panier)     ✅
     └─ D       affiliation
        ├─ D0   fondation BDD (000029, 9 tables, dormante)           ✅
-       ├─ D1   autorité PostgreSQL + gouvernance des politiques     ⬅ ACTIF (D-058 📐)
-       ├─ D1.1 cycle de vie affilié + codes
+       ├─ D1   autorité PostgreSQL + gouvernance des politiques     ✅ (PR, non mergée)
+       ├─ D1.1 cycle de vie affilié + codes                         ⬅ ACTIF
        ├─ D2   touches + attribution autoritative
        ├─ D3   moteur commissions + compensations de remboursement
        └─ D4   payout administratif
@@ -169,3 +169,10 @@ propriétaire dans `pg_catalog`** : les 9 tables `affiliate_*` appartiennent enc
 inventaire.** `information_schema` est **filtré par privilèges** : sous un rôle sans
 droits il retourne une liste **vide**, et un contrat écrit ainsi **passe à vide sans
 rien prouver**. Défaut réel rencontré en D-057.
+
+⚠️ **Un rollback n'est prouvé que si le test porte des DONNÉES.** Un test qui rejoue
+`up → down → up` sur une base **vide** ne valide que le **catalogue** ; la réversibilité
+des données est une propriété différente. Toute migration qui **convertit un type**
+(précision, largeur, encodage) doit être testée avec des lignes réelles, et refuser
+**avant toute mutation** si la conversion serait destructive. Précédent : le `down()` de
+`000030` est **lossless-only** — après une publication réelle, il refuse, et c'est voulu.
