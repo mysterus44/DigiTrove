@@ -8,6 +8,7 @@ use App\Events\OrderPaid;
 use App\Listeners\QueueCrmOrderAttribution;
 use App\Listeners\QueueSecureDelivery;
 use App\Payments\PaymentProviderFactory;
+use App\Policies\AffiliatePolicyGovernancePolicy;
 use App\Policies\AnalyticsPolicy;
 use App\Policies\CrmPolicy;
 use App\Support\AnalyticsConfig;
@@ -57,6 +58,7 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::define('viewGlobalAnalytics', [AnalyticsPolicy::class, 'viewGlobalAnalytics']);
         Gate::define('manageCustomerRelationships', [CrmPolicy::class, 'manageCustomerRelationships']);
+        Gate::define('manageAffiliateProgramme', [AffiliatePolicyGovernancePolicy::class, 'manageAffiliateProgramme']);
 
         RateLimiter::for('analytics-ingestion', function (Request $request): Limit {
             try {
