@@ -142,7 +142,7 @@ P6  CRM & Marketing : segments, dashboards, campagnes
     └─ D       affiliation
        ├─ D0   fondation BDD (000029, 9 tables, dormante)           ✅
        ├─ D1   autorité PostgreSQL + gouvernance des politiques     ✅ mergé (PR #41)
-       ├─ D1.1 cycle de vie affilié + codes                         ⬅ ACTIF
+       ├─ D1.1 cycle de vie affilié + codes                         ⬅ ACTIF (D-059 📐)
        ├─ D2   touches + attribution autoritative
        ├─ D3   moteur commissions + compensations de remboursement
        └─ D4   payout administratif
@@ -169,6 +169,12 @@ propriétaire dans `pg_catalog`** : les 9 tables `affiliate_*` appartiennent enc
 inventaire.** `information_schema` est **filtré par privilèges** : sous un rôle sans
 droits il retourne une liste **vide**, et un contrat écrit ainsi **passe à vide sans
 rien prouver**. Défaut réel rencontré en D-057.
+
+⚠️ **Un snapshot d'état ne porte pas l'historique.** Des colonnes `*_at` n'ont qu'**une
+case par type d'événement** : dès qu'un cycle se répète (suspendre → réactiver →
+suspendre), la trace précédente est écrasée. Quand des transitions doivent être
+auditables, elles vivent dans un **ledger append-only**, et le snapshot ne garde que
+l'état courant. Précédent : `affiliates` + `affiliate_lifecycle_events` (D-059).
 
 ⚠️ **Un rollback n'est prouvé que si le test porte des DONNÉES.** Un test qui rejoue
 `up → down → up` sur une base **vide** ne valide que le **catalogue** ; la réversibilité

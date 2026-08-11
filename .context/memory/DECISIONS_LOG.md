@@ -4055,6 +4055,101 @@ DURCISSEMENT PRÉ-MERGE (audit KingKouda §3 → §7) — **quatre renforcements
 
 ⚠️ **DETTE OUVERTE POUR P6-D1** : `P6D0SecurityContractTest` exige aujourd'hui **zéro** fichier applicatif mentionnant « affiliate ». P6-D1 devra le **rescoper par inventaire exact** des fichiers autorisés — comme l'ont fait P5-A3C et P6-B0 — **jamais** en supprimant l'assertion. Et `P4B_ALLOWED_SERVICE_FILES` devra être **élargie explicitement** dès le premier fichier sous `app/Services`.
 
+### D-059 : P6-D1.1 — Cycle de vie affilié + codes — ARCHITECTURE GELÉE (PLAN SEULEMENT) 📐
+
+CONTEXTE : P6-D1 est clos et mergé (D-058, PR #41, merge `aeac8a5d`, closure `19b128b6`, **46 migrations**). La frontière d'autorité PostgreSQL de l'affiliation existe : `digitrove_affiliate_executor` possède les 9 tables et 9 séquences, 5 autorités bornées, runtime **EXECUTE-only**, `PUBLIC` sans accès. P6-D1.1 réutilise cette frontière — il ne la rouvre pas et ne la contourne pas. **Aucun code n'est écrit dans ce gel.**
+
+**TROIS FAITS MESURÉS DANS LE SCHÉMA RÉEL, QUI FIXENT LA CONCEPTION** :
+
+1. **`affiliates.user_id` est UNIQUE.** Une seconde ligne de candidature pour le même compte est **structurellement impossible**. Toute re-candidature est donc une **transition d'état sur la ligne existante**, jamais une création.
+2. **Les CHECK d'horodatage sont UNIDIRECTIONNELS.** `affiliates_status_timestamps_check` exige l'horodatage quand le statut correspond, mais **n'exige jamais le statut quand l'horodatage est posé**. Un `rejected_at` peut donc survivre sur une ligne redevenue `pending` — la base l'accepte.
+3. **Aucun horodatage n'est jamais effacé, et aucun n'est répété.** `applied_at`, `approved_at`, `rejected_at`, `suspended_at`, `closed_at` sont des **marqueurs cumulatifs à une seule case**. Après `active → suspended → active → suspended`, il ne reste **qu'une** date de suspension. **Le snapshot ne peut pas porter l'historique** : il n'en a physiquement pas la place. Il n'existe par ailleurs **ni `reviewed_at` ni `reactivated_at`**.
+
+CHOIX :
+
+1. **SNAPSHOT + LEDGER — la décision structurante.** `affiliates` reste le **snapshot de l'état courant**, une ligne par `user_id`. Un **ledger append-only `affiliate_lifecycle_events`** conserve **toutes** les transitions. Le snapshot répond « quel est son état **maintenant** ? » ; le ledger répond « **comment** y est-il arrivé ? ». ⚠️ **L'historique complet ne doit JAMAIS être dérivé des colonnes `*_at` de `affiliates`** — le fait n°3 le rend impossible. C'est aussi pourquoi une table `affiliate_applications` a été **écartée** : elle n'aurait historisé que les candidatures, laissant les cycles suspension/réactivation répétés sans trace.
+
+2. **Le ledger est append-only**, au même titre que `affiliate_commission_entries` : inséré, **jamais** modifié, **jamais** supprimé par le runtime, **jamais** réécrit pour « nettoyer » l'histoire, **conservé après fermeture**. Owner `digitrove_affiliate_executor` ; runtime **sans DML direct** ; écriture **uniquement** par les autorités métier, jamais isolément. Un événement doit permettre de déterminer : l'affilié · `from_status` · `to_status` · le type de transition · l'acteur (nullable) · l'instant · un `reason_code` structuré nullable. **Aucune taxonomie exhaustive n'est figée ici**, et **aucun texte libre n'est requis** — un motif obligatoire devra être une **liste bornée**, jamais un payload arbitraire. **Aucune PII n'est copiée dans le ledger** : il référence l'identité, il ne la snapshote pas.
+
+3. **SÉMANTIQUE DES HORODATAGES DU SNAPSHOT — clarifiée, pas durcie.** `applied_at` = candidature **la plus récente** (une re-candidature la remplace). `approved_at` = **dernière approbation issue de `pending`** ; une simple réactivation `suspended → active` **ne la réécrit pas**. `rejected_at` = **dernier refus**, et il **peut légitimement rester non nul** après une re-candidature approuvée. `suspended_at` = dernière suspension. `closed_at` = fermeture terminale. ⚠️ **Ne PAS durcir le CHECK en `status = X ⟺ X_at IS NOT NULL`** : cela détruirait exactement la sémantique cumulative retenue et rendrait la re-candidature impossible.
+
+4. **Ni `reviewed_at` ni `reactivated_at` ne sont ajoutés au snapshot.** Le dernier événement du ledger fournit déjà quand, qui et quelle transition. Les ajouter fabriquerait un **second historique incomplet** dans `affiliates`, avec un risque de divergence entre deux sources.
+
+5. **MACHINE À ÉTATS FIGÉE.** Autorisées : `NONE → pending` · `pending → active` · `pending → rejected` · **`rejected → pending`** · `active → suspended` · `suspended → active` · `active → closed` · `suspended → closed`. Interdites : `pending → suspended|closed` · `rejected → active|suspended|closed` · `closed → *` · `active|suspended → pending`. **`closed` est TERMINAL** : aucune réactivation, aucune re-candidature. **`rejected` n'est PAS terminal.**
+
+6. **Première candidature — atomique** : vérifier l'éligibilité du compte · créer la ligne `pending` · écrire l'événement. Deux candidatures concurrentes : `affiliates_user_id_unique` est le backstop structurel, un seul gagnant en `23505`.
+
+7. **Re-candidature — atomique** : verrouiller la ligne · exiger `status = 'rejected'` · passer à `pending` · **remplacer `applied_at`** par le nouvel instant · **préserver `rejected_at`** · écrire l'événement. **Jamais** de `DELETE` de l'identité, **jamais** de seconde ligne, **jamais** d'effacement du refus antérieur.
+
+8. **Éligibilité — dérivée du modèle réel, aucune notion inventée.** `UserStatus` vaut exactement `active|suspended|blocked` et `User` porte `SoftDeletes`. Sont donc refusés : compte **supprimé** (soft-deleted), `suspended`, `blocked`. Seuls les comptes **ordinaires** deviennent affiliés : `admin` et `staff` **ne deviennent pas affiliés en D1.1**. ⚠️ **`users.role` n'est jamais modifié** (D-014) et aucun rôle nouveau n'est créé. L'éligibilité est **relue DANS la transaction** avant approbation ou réactivation : un compte devenu inéligible entre-temps fait échouer la transition.
+
+9. **CODES — un seul actif au maximum par affilié**, garanti par un **index unique partiel** `(affiliate_id) WHERE is_active`. ⚠️ Le schéma actuel **ne l'impose pas** : plusieurs codes actifs sont aujourd'hui possibles. C'est la faille structurelle que `000031` doit fermer.
+
+10. **`active` ⇒ exactement un code actif** en fin de transaction. `pending`, `rejected`, `suspended`, `closed` ⇒ **zéro code actif**. L'index garantit « au plus un » ; **les autorités transactionnelles garantissent la cohérence statut ↔ code**. Un trigger de contrainte n'est pas exigé si autorités + index rendent tous les chemins runtime sûrs.
+
+11. **Génération serveur uniquement.** Code produit par un **CSPRNG**, conforme au format existant `^[A-Z0-9]{4,32}$`, longueur raisonnable dans cette plage, **retry de collision borné**. **Aucun vanity code** en D1.1 — ni par l'affilié, ni par l'admin, ni par le client : un code choisi ouvre l'usurpation (`SUPPORT`, `ADMIN`), les mots offensants et le squattage de marque, que le format n'arrête pas. **Aucune PII encodée** dans un code.
+
+12. **Non-réutilisation — déjà garantie.** `affiliate_codes_code_unique` est **GLOBAL** : un code désactivé reste **définitivement réservé**, pour tout affilié. ⚠️ **Ne jamais remplacer cette unicité globale par une unicité partielle** — ce serait ouvrir la réutilisation.
+
+13. **Désactivation** : `is_active = false` **et** `deactivated_at` posé. Durcissement **recommandé** vers la cohérence bidirectionnelle (`active ⇒ deactivated_at IS NULL`), **uniquement si le préflight de migration prouve qu'aucune donnée existante ne serait réécrite**. **Aucun nettoyage silencieux.**
+
+14. **Approbation `pending → active` — une seule transaction** : verrouiller · **reconfirmer l'éligibilité** · changer le statut · poser `approved_at` · **créer le code actif** · écrire l'événement. Si la création du code échoue, **l'approbation entière est annulée**. ⚠️ **Jamais d'affilié `active` sans code par demi-transaction.**
+
+15. **Refus `pending → rejected`** : poser `rejected_at` · conserver l'identité · **zéro code actif** · écrire l'événement avec l'acteur admin. Re-candidature future possible.
+
+16. **Suspension `active → suspended`** : verrouiller · statut · `suspended_at` · **désactiver le code actif** · écrire l'événement. Fin de transaction : **zéro code actif**, codes historiques conservés.
+
+17. **Réactivation `suspended → active` — un NOUVEAU code, jamais l'ancien.** Réactiver un code désactivé rendrait son `deactivated_at` **faux** et son historique mensonger. L'ancien reste inactif, un nouveau est généré. **`approved_at` n'est pas réécrit** (choix 3).
+
+18. **Rotation — réservée à `status = 'active'`**, transaction atomique : verrouiller l'affilié et son code actif · désactiver l'ancien · générer et insérer le nouveau · écrire l'événement. **Jamais deux codes actifs visibles**, même transitoirement ; l'index partiel est le backstop.
+
+19. **Fermeture `active|suspended → closed` — terminale** : poser `closed_at` · **désactiver tout code encore actif** · écrire l'événement · **conserver toutes les lignes et tous les codes historiques**. ⚠️ **Jamais de `DELETE`** d'affilié ni de code — les neuf FK entrantes sont **toutes `RESTRICT`**, ce qui l'interdit déjà structurellement dès qu'une touche, attribution, commission, écriture ou payout existe.
+
+20. **AUCUNE AUTORITÉ `issue_code` PUBLIQUE.** La création d'un code est un **effet interne** de `approve`, `reactivate` et `rotate`. Une autorité autonome permettrait de créer un code actif sur un affilié `pending`, `rejected`, `suspended` ou `closed` — exactement l'état incohérent que le choix 10 interdit.
+
+21. **`approve` et `reject` vivent dans UNE SEULE autorité de revue.** C'est **une décision unique** sur un dossier `pending`, bornée à une action structurée `approve|reject`. Deux autorités concurrentes dupliqueraient la transition et créeraient une vraie course approve/reject. Ici, les deux verrouillent la **même ligne** : un gagne, l'autre voit un dossier qui n'est plus `pending` et reçoit un refus métier propre. **Jamais de double revue.**
+
+22. **Autorités minimales** (noms SQL choisis à l'implémentation, **aucun CRUD générique**) : soumettre/re-soumettre une candidature · **réviser** (`approve|reject`) · suspendre · réactiver · fermer · faire tourner le code · lister candidatures et affiliés pour l'administration · lire le détail d'un affilié avec son historique et son code. Owner **`digitrove_affiliate_executor`**, `search_path` épinglé, objets qualifiés. **Aucun rôle nouveau.**
+
+23. **IDEMPOTENCE — refus explicite, jamais succès silencieux.** `approve` sur `active`, `reject` sur `rejected`, `suspend` sur `suspended`, `close` sur `closed`, `reactivate` sur `active` ⇒ **refus**. Un « succès » masquerait qu'un autre administrateur a déjà traité le dossier entre-temps. La machine à états et les identités naturelles suffisent : **aucune clé d'idempotence artificielle**.
+
+24. **CONCURRENCE** : deux candidatures initiales ⇒ `user_id UNIQUE` · `approve` vs `reject`, `suspend` vs `close`, `reactivate` vs `close`, re-candidature vs action admin ⇒ **`FOR UPDATE` sur la ligne affilié**, un gagnant, `closed` terminal · deux rotations ⇒ verrou affilié + code actif + **index unique partiel** · compte devenu inéligible pendant la revue ⇒ **relecture de l'éligibilité dans la transaction**.
+
+25. **Ordre historique du ledger** : identité monotone et **déterministe** (horodatage + identifiant, ou équivalent stable selon les conventions du dépôt). **Aucune dépendance à un texte libre** pour ordonner l'histoire.
+
+26. **SURFACE — backend complet + administration seule.** Fait mesuré : **le dépôt n'a AUCUNE zone client authentifiée** — les dix routes web sont l'accueil, le consentement analytics ×3, l'ingestion, la reprise de panier ×3 et le téléchargement, **sans un seul middleware `auth`**. Livrer login + espace client + formulaire ferait exploser le périmètre. D1.1 rend donc la candidature **capable côté domaine** ; l'admin peut l'enregistrer et la traiter. Le jour où l'espace client existera, il **appellera exactement les mêmes autorités** — ⚠️ **ne jamais construire deux workflows concurrents**.
+
+27. **Filament D1.1 — admin uniquement** : liste des candidatures `pending` · recherche d'affiliés · détail · **historique lifecycle** · approuver/refuser · suspendre · réactiver · fermer · code courant · rotation. **Interdits** : tableau de bord financier, commissions, payouts, attributions, touches, analytics de campagne. Seules les informations **nécessaires à la revue** sont exposées.
+
+28. **`000031` est NÉCESSAIRE.** Périmètre prévu : `affiliate_lifecycle_events` + ownership/ACL + invariants append-only · **index unique partiel « un seul code actif par affilié »** · durcissement bidirectionnel `is_active`/`deactivated_at` **si data-safe** · autorités D1.1 · `EXECUTE` runtime exact · `PUBLIC` révoqué · garde `up()` data-safe · garde `down()` **LOSSLESS-ONLY**. **Aucune table financière.**
+
+29. **GARDE `up()` — refuser avant mutation.** Avant de créer l'index « un seul actif », `000031` doit **vérifier les données réelles**. Si un affilié possède déjà plusieurs codes actifs : **REFUSER AVANT TOUTE MUTATION**. Interdits : désactiver arbitrairement, garder « le plus récent », supprimer les autres, corriger en silence. D0/D1 sont largement dormants, mais **le garde doit exister quand même**.
+
+30. **GARDE `down()` — LOSSLESS-ONLY, la leçon de P6-D1 est désormais une règle.** Le ledger contient une histoire qui n'existe **nulle part ailleurs** : le supprimer serait un rollback **destructif**. Base sans événement ⇒ downgrade exact possible. **Ledger peuplé ⇒ `down()` REFUSE AVANT TOUTE MUTATION.** Le préflight est la **première opération** du `down()`. ⚠️ Ne pas déclarer une migration réversible au motif qu'un catalogue vide se rétracte.
+
+31. **PRÉCISION TEMPORELLE — ne pas généraliser le correctif de P6-D1.** L'élargissement à `timestamptz(6)` en `000030` répondait à une **contrainte mathématique de continuité instantanée** entre deux bornes de politique. Les transitions de cycle de vie sont **humaines** : la seconde suffit. **Ne pas modifier la précision** des horodatages de `affiliates` / `affiliate_codes` sans preuve fonctionnelle — et si cela devenait nécessaire, **reproduire le garde lossless**, sans quoi le défaut de P6-D1 se rejouerait à l'identique.
+
+32. **CONTRATS HISTORIQUES — élargir nommément, jamais affaiblir.** `P6D0SecurityContractTest` (inventaire exact de 11 chemins ; couches `Console/Commands`, `Jobs`, `Listeners`, `Mail`, `Models` **restant vides**) · `P6D0AffiliateSchemaTest` (inventaire exact de **8 fonctions** `%affiliate%` et du **rôle unique**) · `P6D1*` (frontières préservées) · `P4B_ALLOWED_SERVICE_FILES` (**chemin par chemin, aucun joker**) · inventaires Filament · compteurs **46 → 47** **uniquement sur les contrats d'état courant**, les **frontières historiques ne bougent jamais**. ⚠️ **`pg_catalog`, jamais `information_schema`** pour tout audit d'ACL, de propriété ou d'inventaire.
+
+HORS PÉRIMÈTRE — NON NÉGOCIABLE : aucune route publique, aucun `/affiliate/apply`, aucun formulaire public, aucun login, aucune zone client, aucun cookie, aucun paramètre de parrainage · **aucune anticipation de D2** (consommation du code dans une URL, capture de clic, touche, `code_then_last_click`, attribution de commande, storefront) — **les codes D1.1 existent sans être consommés publiquement, et c'est volontaire** · **aucun objet financier** : ni commission, ni accrual, ni reversal, ni payout, ni Hamilton.
+
+D3 et D4 restent inchangés : **D3** commission au niveau `order_item`, répartition des remboursements via **`App\Services\Pricing\DiscountAllocator`** (Hamilton existant, **aucune seconde implémentation**) ; **D4** payout manuel.
+
+ALTERNATIVES REJETÉES :
+- **Table `affiliate_applications`** → n'historise que les candidatures ; les cycles suspension/réactivation répétés resteraient sans trace, alors que le snapshot ne peut pas les porter (fait n°3).
+- **Dériver l'historique des colonnes `*_at`** → physiquement impossible : une seule case par type d'événement.
+- **Durcir le CHECK en `status = X ⟺ X_at IS NOT NULL`** → détruit la sémantique cumulative et rend la re-candidature impossible.
+- **Ajouter `reviewed_at` / `reactivated_at` au snapshot** → fabrique un second historique incomplet et divergent.
+- **`rejected` terminal** → bannissement à vie pour un motif corrigeable, et incitation directe à créer un second compte — précisément ce que `user_id UNIQUE` cherche à empêcher.
+- **Plusieurs codes actifs par affilié** → D2 devrait arbitrer « quel code a gagné » ; la question doit être fermée par le schéma.
+- **Vanity code choisi** → usurpation, mots offensants, squattage de marque ; le format `^[A-Z0-9]{4,32}$` n'en protège pas.
+- **Réactiver l'ancien code à la réactivation** → rend `deactivated_at` faux.
+- **Autorité `issue_code` autonome** → permettrait un code actif sur un affilié non actif.
+- **Deux autorités séparées `approve` et `reject`** → duplique la transition et crée une vraie course.
+- **Candidature client dans D1.1** → aucune zone client authentifiée n'existe ; le gate déborderait sur login et espace client.
+
+IMPACT : **P6-D1.1 = plan seulement, aucun code écrit dans ce gel.** L'implémentation utilisera **une** migration `000031` (**47 migrations**), créera le ledger `affiliate_lifecycle_events` et ses autorités sous `digitrove_affiliate_executor`, fermera la faille « plusieurs codes actifs », livrera une couche Laravel mince et une administration Filament, et rescopera **quatre** familles de contrats par inventaire exact. **Aucune surface publique, aucune capture de clic, aucun objet financier.**
+
 ### D-058 : P6-D1 — Frontière d'autorité affiliation + gouvernance des politiques — ARCHITECTURE GELÉE (PLAN SEULEMENT) 📐
 
 CONTEXTE : P6-D0 est clos et mergé (D-057, PR #40, merge `dcdc966`, **45 migrations**). Le schéma d'affiliation existe et est **dormant**. Un préflight d'architecture a audité le dépôt réel — `pg_catalog`, migrations, tests, patterns P4-B0 / P6-A2 / P6-B0-B1 — et a découvert **une dette critique que la documentation D-057 ne nommait pas**. KingKouda a arbitré : **Q1 = A** (gouvernance seule en D1, cycle de vie affilié en D1.1) et **Q2 = A** (rôle exécuteur dédié). Ce gate **ne livre aucun code** ; il fige la frontière.

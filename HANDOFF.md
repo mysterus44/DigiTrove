@@ -849,17 +849,59 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🚧 P6-D1.1 — Cycle de vie affilié + codes (GATE SUIVANT)
 
-**Statut** : **P6-D1.1 NON COMMENCÉ.** P6-D1 est **MERGÉ** — PR #41, head `d2ecfb44`,
-merge `aeac8a5d`, **CI SUCCESS** (`000030`, **46 migrations**). Aucune migration `000031`.
+**Statut** : **ARCHITECTURE GELÉE PAR D-059**, arbitrage KingKouda **Q1 = C · Q2 = A ·
+Q3 = C**. **NON COMMENCÉ**, aucune migration `000031`, aucun code écrit. P6-D1 est **MERGÉ**
+— PR #41, head `d2ecfb44`, merge `aeac8a5d`, **CI SUCCESS** (`000030`, **46 migrations**).
 
-Ce que P6-D1.1 prendra en charge : **candidature · validation/refus · activation ·
-suspension · fermeture · codes affiliés**. Il réutilisera la frontière d'autorité posée par
-P6-D1 — c'était toute la raison de l'ordre choisi.
+### ⚠️ LA DÉCISION STRUCTURANTE : SNAPSHOT + LEDGER
 
-⚠️ **La re-candidature après `rejected` est délibérément différée à son préflight** :
-`affiliates.user_id` est **UNIQUE**, donc le schéma impose une **transition d'état** sur la
-ligne existante, jamais une seconde ligne. C'est une décision produit, pas une découverte
-d'implémentation. **Ne pas modifier `affiliates`** ni créer de table de candidature avant.
+Trois faits mesurés dans le schéma réel la commandent :
+
+1. **`affiliates.user_id` est UNIQUE** ⇒ toute re-candidature est une **transition d'état**,
+   jamais une seconde ligne.
+2. **Les CHECK d'horodatage sont UNIDIRECTIONNELS** : ils exigent la date quand le statut
+   correspond, jamais l'inverse. Un `rejected_at` peut donc survivre sur une ligne
+   redevenue `pending` — la base l'accepte.
+3. **Les horodatages sont des marqueurs cumulatifs à UNE SEULE CASE.** Après
+   `active → suspended → active → suspended`, il ne reste **qu'une** date de suspension.
+   **Le snapshot ne peut physiquement pas porter l'historique.**
+
+D'où : `affiliates` = **état courant** · **`affiliate_lifecycle_events`** = ledger
+**append-only** de **toutes** les transitions. ⚠️ **Ne JAMAIS dériver l'historique des
+colonnes `*_at`.** Une table `affiliate_applications` a été **écartée** : elle n'aurait
+historisé que les candidatures, laissant les cycles suspension/réactivation sans trace.
+
+**Machine à états figée** — autorisées : `NONE → pending` · `pending → active|rejected` ·
+**`rejected → pending`** · `active → suspended` · `suspended → active` ·
+`active|suspended → closed`. **`closed` est TERMINAL** ; **`rejected` ne l'est pas**.
+
+⚠️ **Ne PAS durcir le CHECK en `status = X ⟺ X_at IS NOT NULL`** : cela détruirait la
+sémantique cumulative retenue et rendrait la re-candidature impossible.
+
+**Codes** — **un seul actif au maximum par affilié** (index unique partiel à créer :
+le schéma actuel **ne l'impose pas**) · **génération serveur CSPRNG**, aucun vanity code ·
+**non-réutilisation déjà garantie** par `code` UNIQUE **global** — ne jamais la remplacer
+par une unicité partielle · réactivation ⇒ **nouveau code**, jamais l'ancien (sinon
+`deactivated_at` devient faux) · **aucune autorité `issue_code` publique** : créer un code
+est un **effet interne** de `approve`, `reactivate`, `rotate`.
+
+⚠️ **`approve` et `reject` dans UNE SEULE autorité de revue** — c'est une décision unique
+sur un dossier `pending` ; deux autorités dupliqueraient la transition et créeraient une
+vraie course.
+
+**Surface** — **backend complet + administration seule**. Fait mesuré : le dépôt n'a
+**aucune zone client authentifiée** (10 routes web, **aucun middleware `auth`**). La
+candidature est **capable côté domaine** ; l'espace client viendra à son propre gate et
+appellera **les mêmes autorités**. ⚠️ **Ne jamais construire deux workflows concurrents.**
+
+⚠️ **`000031` : gardes obligatoires dans les DEUX sens.** `up()` doit **refuser avant
+mutation** si un affilié possède déjà plusieurs codes actifs — jamais de correction
+silencieuse. `down()` doit être **LOSSLESS-ONLY** : le ledger contient une histoire qui
+n'existe nulle part ailleurs, donc **ledger peuplé ⇒ refus avant toute mutation**.
+
+⚠️ **Ne pas généraliser le `timestamptz(6)` de P6-D1.** Il répondait à une contrainte de
+continuité instantanée entre bornes de politique. Les transitions de cycle de vie sont
+humaines : la seconde suffit.
 
 ⚠️ **Contrats à élargir explicitement, jamais à affaiblir** : `P4B_ALLOWED_SERVICE_FILES`
 (chemin par chemin, aucun joker) · `P6D0SecurityContractTest` (inventaire exact des surfaces
@@ -989,6 +1031,27 @@ Quatre tables (`crm_segments`, `crm_segment_versions`, `crm_segment_generations`
 ### Rappel D-049 (architecture P6-A2)
 
 Architecture **gelée dans D-049** : définitions typées allowlistées (aucun SQL/colonne/opérateur/JSONPath libre), versions immuables, générations matérialisées publiées **atomiquement**, critères commerce **currency-scoped** (aucun LTV global, aucun FX, aucun float), consentement marketing **séparé** de l'appartenance au segment. Migration `000025` (41 migrations). **P6-B0 (CRM Admin Views) NON COMMENCÉ.**
+
+### 2026-08-11 — Fable (D-059 : architecture P6-D1.1 gelée — AUCUN CODE)
+- Fait : **préflight P6-D1.1 en lecture seule** contre le schéma réel (`pg_catalog`,
+  `affiliates`, `affiliate_codes`, FK entrantes, ACL, routes), puis **gel de D-059**.
+  Documentation seule ; **aucune migration `000031`, aucun code, aucune fonction, aucun
+  test, aucun rôle**.
+- **Trois faits mesurés qui commandent la décision** : `affiliates.user_id` est **UNIQUE** ·
+  les CHECK d'horodatage sont **unidirectionnels** (un `rejected_at` survit sur une ligne
+  redevenue `pending`) · les horodatages sont des **marqueurs cumulatifs à une seule case**,
+  donc **le snapshot ne peut physiquement pas porter l'historique**.
+- **Arbitrage KingKouda Q1 = C · Q2 = A · Q3 = C**, avec une **amélioration de KingKouda
+  sur ma recommandation** : un ledger `affiliate_lifecycle_events` couvrant **toutes** les
+  transitions, plutôt qu'une table `affiliate_applications` qui n'aurait historisé que les
+  candidatures et laissé les cycles suspension/réactivation sans trace.
+- **Deux autres faits mesurés** : `affiliate_codes.code` est UNIQUE **globalement**, donc la
+  **non-réutilisation est déjà garantie** — mais **aucun index ne limite le nombre de codes
+  actifs**, faille que `000031` doit fermer. Et le dépôt n'a **aucune zone client
+  authentifiée** (10 routes web, aucun middleware `auth`), ce qui tranche la question de la
+  surface sans avoir à en débattre.
+- Décisions prises (→ DECISIONS_LOG.md) : **D-059**. D-057 et D-058 **intactes**.
+- Laisse à : **P6-D1.1 — implémentation BDD/autorités**, migration `000031`.
 
 ### 2026-08-11 — Fable (P6-D1 mergé et clos)
 - Fait : merge de la **PR #41** (head `d2ecfb44`, merge **`aeac8a5d`**, parents `ec0191f` +

@@ -731,9 +731,28 @@ en P6-D1**. **Après une publication réelle, ce refus est le cas NORMALEMENT AT
 l'historique exact plutôt que falsifier les horodatages qui expliquent les commissions.
 Ne jamais écrire `rollback 46 → 45 → 46 PASS` sans qualifier les données.
 
-**PROCHAIN GATE : P6-D1.1 — cycle de vie affilié + codes**, **NON COMMENCÉ**, aucune
-migration `000031`. ⚠️ La **re-candidature après `rejected`** est différée à son préflight :
-`affiliates.user_id` est **UNIQUE**, donc transition d'état, jamais une seconde ligne.
+**PROCHAIN GATE : P6-D1.1 — cycle de vie affilié + codes**, architecture **GELÉE PAR D-059**
+(arbitrage KingKouda **Q1 = C · Q2 = A · Q3 = C**), **NON COMMENCÉ**, aucune migration
+`000031`, aucun code écrit.
+
+⚠️ **Décision structurante : SNAPSHOT + LEDGER.** `affiliates` porte l'**état courant** ;
+un ledger **append-only `affiliate_lifecycle_events`** porte **toutes** les transitions.
+Trois faits mesurés l'imposent : `user_id` **UNIQUE** (re-candidature = transition d'état,
+jamais une seconde ligne) · les **CHECK d'horodatage sont unidirectionnels** · les
+horodatages sont des **marqueurs cumulatifs à une seule case**, donc **le snapshot ne peut
+physiquement pas porter l'historique**. ⚠️ **Ne jamais dériver l'historique des colonnes
+`*_at`**, et **ne pas durcir le CHECK en `status = X ⟺ X_at IS NOT NULL`** — cela rendrait
+la re-candidature impossible.
+
+Machine à états : `rejected → pending` **autorisée**, **`closed` TERMINAL**. Codes : **un
+seul actif par affilié** (index partiel à créer — le schéma ne l'impose pas), **génération
+serveur CSPRNG**, aucun vanity code, **non-réutilisation déjà garantie** par l'unicité
+**globale**, réactivation ⇒ **nouveau code**, **aucune autorité `issue_code`**. Surface :
+**backend + admin seuls** — le dépôt n'a **aucune zone client authentifiée**.
+
+⚠️ **`000031` exige deux gardes** : `up()` **refuse avant mutation** si un affilié a déjà
+plusieurs codes actifs ; `down()` est **LOSSLESS-ONLY** — ledger peuplé ⇒ refus avant toute
+mutation, la leçon de P6-D1 étant désormais une règle.
 
 Points figés par D-058 : rôle `digitrove_affiliate_executor` NOLOGIN/NOINHERIT créé par le
 **script de provisioning** (les rôles sont cluster-globaux — précédent P4-B0) et **jamais

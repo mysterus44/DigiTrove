@@ -98,8 +98,8 @@ STATUS       : P0→P6-D1 MERGÉS · 46 migrations
 DERNIÈRE ACTION : P6-D1 mergé (PR #41, merge aeac8a5d, CI SUCCESS, D-058, 000030) —
                   frontière d'autorité PostgreSQL de l'affiliation + gouvernance
                   des politiques versionnées
-PROCHAINE ACTION : P6-D1.1 — cycle de vie affilié (candidature → revue admin →
-                  activation/suspension/fermeture) + codes affiliés
+PROCHAINE ACTION : P6-D1.1 — cycle de vie affilié + codes, architecture GELÉE par
+                  D-059 (snapshot + ledger append-only), migration 000031 à écrire
 BLOCAGES     : aucun. La dette superuser est FERMÉE : les 9 tables et 9 séquences
                appartiennent désormais à digitrove_affiliate_executor.
 ```
