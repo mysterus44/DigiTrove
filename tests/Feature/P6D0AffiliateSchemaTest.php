@@ -19,12 +19,16 @@ function p6d0Tables(): array
     ];
 }
 
-it('creates exactly migration 000029 and no 000030', function () {
+// À VALIDER (P6-D1, D-058): the P6-D1 boundary (000030) has landed, so the frontier moved
+// from 45 to 46. Teeth preserved: 000029 and 000030 must each be present exactly once, and
+// no 000031 may appear early.
+it('sits behind the P6-D1 boundary: 46 migrations, 000029 and 000030 present, no 000031', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(45)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(46)
         ->and(glob($root.'/database/migrations/2026_07_14_000029*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000030*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000030*.php'))->toHaveCount(1)
+        ->and(glob($root.'/database/migrations/2026_07_14_000031*.php') ?: [])->toBe([]);
 });
 
 it('creates the nine affiliate tables and nothing else', function () {
@@ -106,12 +110,20 @@ it('denies the runtime any direct write on the affiliate schema', function () {
     }
 });
 
-it('creates no new database role and no premature authority function', function () {
-    expect(Fx::owner()->select("SELECT rolname FROM pg_roles WHERE rolname LIKE '%affiliate%'"))->toBe([]);
+// À VALIDER (P6-D1, D-058): P6-D1 legitimately adds the restricted executor role and the
+// five bounded authorities. Rescoped to an EXACT inventory rather than an absence, so a
+// SECOND affiliate role or an UNEXPECTED affiliate function still fails here — the teeth are
+// kept, the scope moved.
+it('provisions exactly the affiliate executor role, the three D0 guards and the five D1 authorities', function () {
+    $roles = array_map(
+        static fn (object $r): string => (string) $r->rolname,
+        Fx::owner()->select("SELECT rolname FROM pg_roles WHERE rolname LIKE '%affiliate%' ORDER BY 1"),
+    );
 
-    // Exactly three functions, and all three are structural INTEGRITY guards behind a
-    // trigger — none of them is an operational authority. Those belong to P6-D1/D2/D3, and
-    // freezing their contracts here would decide too early.
+    expect($roles)->toBe(['digitrove_affiliate_executor']);
+
+    // Three structural INTEGRITY guards (D0) plus the five bounded operational authorities
+    // (D1). Nothing else may carry an affiliate name.
     $functions = array_map(
         static fn (object $r): string => (string) $r->proname,
         Fx::owner()->select(<<<'SQL'
@@ -121,9 +133,14 @@ it('creates no new database role and no premature authority function', function 
     );
 
     expect($functions)->toBe([
+        'create_affiliate_program_policy_draft',
+        'current_affiliate_program_policy',
         'enforce_affiliate_ledger_append_only',
         'enforce_affiliate_policy_immutability',
         'enforce_affiliate_touch_subject',
+        'list_affiliate_program_policies',
+        'publish_affiliate_program_policy',
+        'update_affiliate_program_policy_draft',
     ]);
 });
 

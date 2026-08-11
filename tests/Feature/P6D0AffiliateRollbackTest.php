@@ -97,8 +97,13 @@ it('rolls back 45 to 44 and back to 45 while preserving every earlier gate', fun
             ->and($affiliateIndexes())->toContain('affiliate_program_policies_single_active')
             ->and($constraintsWhenApplied)->toBeGreaterThan(0)
             ->and($orderItemsTargetIndex())->toBeTrue()
-            // No new role, and the runtime is given nothing at all.
-            ->and($pdo->query("SELECT count(*) FROM pg_roles WHERE rolname LIKE '%affiliate%'")->fetchColumn())->toBe(0)
+            // À VALIDER (P6-D1, D-058): digitrove_affiliate_executor is CLUSTER-GLOBAL — it is
+            // created by provisioning (provision-runtime-roles.sql), NOT by any migration, so it
+            // is visible on this harness database even though 000030 is not applied here.
+            // Rescoped from "zero affiliate roles" to an EXACT inventory: exactly one, named
+            // precisely, so a second %affiliate% role would still fail. And the runtime still
+            // holds nothing directly on the affiliate tables at this frontier.
+            ->and(array_map('strval', $pdo->query("SELECT rolname FROM pg_roles WHERE rolname LIKE '%affiliate%' ORDER BY 1")->fetchAll(PDO::FETCH_COLUMN)))->toBe(['digitrove_affiliate_executor'])
             ->and((bool) $pdo->query("SELECT has_table_privilege('digitrove_runtime', 'public.affiliate_commissions', 'SELECT')")->fetchColumn())->toBeFalse();
 
         // ── 3. ROLLBACK 000029 ── every affiliate object disappears, function included.

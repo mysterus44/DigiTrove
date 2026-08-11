@@ -38,13 +38,13 @@ it('installs only the P6-A1.1 table with closed physical constraints', function 
         'visitor_id'
     );
 
-    // Exactly 45 migrations, the last being 000029 (P6-D0 affiliate schema foundation).
+    // Exactly 46 migrations, the last being 000030 (P6-D1 affiliate policy governance).
     $migrations = DB::table('migrations')->orderBy('id')->get();
-    expect($migrations)->toHaveCount(45)
-        ->and($migrations->last()->migration)->toBe('2026_07_14_000029_create_affiliate_schema_foundation');
+    expect($migrations)->toHaveCount(46)
+        ->and($migrations->last()->migration)->toBe('2026_07_14_000030_create_affiliate_policy_governance_authorities');
 
-    // No migration 000030 exists: P6-D0 ships the schema only, and stops there.
-    expect(glob(database_path('migrations').'/2026_07_14_000030*.php') ?: [])->toBe([]);
+    // No migration 000031 exists: P6-D1 stops at the governance boundary.
+    expect(glob(database_path('migrations').'/2026_07_14_000031*.php') ?: [])->toBe([]);
 });
 
 it('verifies exact restrictive foreign keys checks and primary key', function () {
