@@ -18,7 +18,7 @@ use Throwable;
  * Two guarantees matter here. First, the runtime identity is asserted rather than
  * assumed: if the connection is not the restricted role, the operation refuses instead of
  * silently running with more power than it should have. Second, an ambient transaction is
- * refused — an authority that publishes a policy must own its own transactional boundary,
+ * refused — a bounded affiliate authority must own its own transactional boundary,
  * so a caller cannot widen it and leave a half-published timeline hanging on someone
  * else's rollback.
  */
@@ -75,6 +75,11 @@ trait UsesAffiliateAuthority
             '23514' => AffiliateRefusalReason::NotADraft,
             '23505' => AffiliateRefusalReason::VersionTaken,
             '40001' => AffiliateRefusalReason::ConcurrentPublication,
+            // A DigiTrove-specific code. It exists precisely so that a stale rotation is
+            // not mistaken for a concurrent publication — both would otherwise arrive as
+            // `40001` and the administrator would read a message about policies while
+            // rotating a code.
+            'AF001' => AffiliateRefusalReason::StaleCodeRotation,
             default => AffiliateRefusalReason::Unavailable,
         });
     }

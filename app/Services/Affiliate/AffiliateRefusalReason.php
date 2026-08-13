@@ -17,6 +17,7 @@ enum AffiliateRefusalReason: string
     case NotADraft = 'not_a_draft';
     case VersionTaken = 'version_taken';
     case ConcurrentPublication = 'concurrent_publication';
+    case StaleCodeRotation = 'stale_code_rotation';
 
     public function message(): string
     {
@@ -26,6 +27,7 @@ enum AffiliateRefusalReason: string
             self::NotADraft => 'Only a draft policy can be edited or published.',
             self::VersionTaken => 'That policy version already exists.',
             self::ConcurrentPublication => 'Another policy was published at the same time. Reload and try again.',
+            self::StaleCodeRotation => 'The affiliate code changed since this page was loaded. Reload the affiliate before rotating its code again.',
         };
     }
 }

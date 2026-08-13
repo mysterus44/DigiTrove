@@ -35,10 +35,15 @@ const P4B_ALLOWED_SERVICE_FILES = [
     // policy authorities. They hold NO privilege on the affiliate tables; the runtime's
     // only door is the five bounded functions. Listed FIRST because PHP sort() orders
     // 'Affiliate/…' before 'Analytics/…'; confirm the order with `php artisan test`.
+    'Affiliate/AffiliateDetail.php',
+    'Affiliate/AffiliateLifecycleService.php',
     'Affiliate/AffiliateOperationException.php',
     'Affiliate/AffiliatePolicy.php',
     'Affiliate/AffiliatePolicyService.php',
     'Affiliate/AffiliateRefusalReason.php',
+    'Affiliate/AffiliateReviewDecision.php',
+    'Affiliate/AffiliateSummary.php',
+    'Affiliate/AffiliateTransition.php',
     'Affiliate/Concerns/UsesAffiliateAuthority.php',
     // P5-A2 (D-039) — EXECUTE-only rollup and partition operation clients.
     'Analytics/AuthoritativeRollupService.php',

@@ -44,12 +44,20 @@ function p6d1Publish(int $policyId): object
 
 // ── The frontier itself ──────────────────────────────────────────────────────────
 
-it('adds exactly migration 000030 and no 000031', function () {
+/**
+ * CURRENT-STATE. The count moves as the roadmap advances; what must never move is that
+ * each gate owns exactly one migration and never reaches past its own. P6-D1.1 (D-059)
+ * added `000031`, so the frontier now sits one file further on — and `000032` must still
+ * be absent, because no gate after D1.1 has been opened.
+ */
+it('keeps one migration per affiliate gate and reaches no further', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(46)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(47)
+        ->and(glob($root.'/database/migrations/2026_07_14_000029*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000030*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000031*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
+        ->and(glob($root.'/database/migrations/2026_07_14_000032*.php') ?: [])->toBe([]);
 });
 
 /**
@@ -65,11 +73,29 @@ it('hands every affiliate table and sequence to the restricted executor', functi
         ORDER BY 1
         SQL);
 
-    $tables = array_values(array_filter($relations, static fn (object $r): bool => $r->relkind === 'r'));
-    $sequences = array_values(array_filter($relations, static fn (object $r): bool => $r->relkind === 'S'));
+    $named = static fn (string $kind): array => array_values(array_map(
+        static fn (object $r): string => $r->relname,
+        array_filter($relations, static fn (object $r): bool => $r->relkind === $kind),
+    ));
 
-    expect($tables)->toHaveCount(9)
-        ->and($sequences)->toHaveCount(9);
+    // CURRENT-STATE, by NAME rather than by count: a count of ten would be satisfied by
+    // any tenth table, and the point is that the tenth is the D-059 ledger and nothing
+    // else. An eleventh — from a gate that has not been opened — must fail here.
+    $tables = [
+        'affiliate_attributions',
+        'affiliate_codes',
+        'affiliate_commission_entries',
+        'affiliate_commissions',
+        'affiliate_lifecycle_events',
+        'affiliate_payout_items',
+        'affiliate_payouts',
+        'affiliate_program_policies',
+        'affiliate_touches',
+        'affiliates',
+    ];
+
+    expect($named('r'))->toBe($tables)
+        ->and($named('S'))->toBe(array_map(static fn (string $t): string => $t.'_id_seq', $tables));
 
     foreach ($relations as $relation) {
         expect($relation->owner)->toBe(
@@ -397,8 +423,12 @@ it('keeps every P6-D0 trigger firing after the tables changed owner', function (
             SQL),
     );
 
+    // CURRENT-STATE, named exactly. The fourth is D-059's lifecycle ledger guard; it
+    // protects a history table and grants the financial triggers nothing they did not
+    // already have.
     expect($triggers)->toBe([
         'affiliate_commission_entries_append_only_trigger',
+        'affiliate_lifecycle_events_append_only_trigger',
         'affiliate_program_policies_immutability_trigger',
         'affiliate_touches_subject_trigger',
     ]);

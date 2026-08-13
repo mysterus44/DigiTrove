@@ -54,15 +54,16 @@ function p6d0ApplicationFiles(): array
 
 // ── The gate boundary ────────────────────────────────────────────────────────────
 
-// À VALIDER (P6-D1, D-058): the P6-D1 boundary (000030) has landed. The frontier moved from
-// 45 to 46; teeth kept — 000029 and 000030 each present once, no 000031 opened early.
-it('sits behind the P6-D1 boundary: 46 migrations, 000029 and 000030 present, no 000031', function () {
+// À VALIDER (P6-D1, D-058): the P6-D1.1 boundary (000031) has landed. The frontier moved
+// from 46 to 47; teeth kept — 000029, 000030 and 000031 each present once, no 000032 early.
+it('sits behind the P6-D1.1 boundary: 47 migrations, 000029 to 000031 present, no 000032', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(46)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(47)
         ->and(glob($root.'/database/migrations/2026_07_14_000029*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000030*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000031*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
+        ->and(glob($root.'/database/migrations/2026_07_14_000032*.php') ?: [])->toBe([]);
 });
 
 /**
@@ -97,18 +98,27 @@ it('ships exactly the P6-D1 governance surface and no other affiliate file', fun
 
     sort($offenders);
 
+    // P6-D1.1 (D-059) adds the lifecycle surface. Named one by one, as before: the list is
+    // the contract, and anything not on it still fails.
     expect($offenders)->toBe([
+        'app/Filament/Pages/AffiliateLifecycle.php',
         'app/Filament/Pages/AffiliateProgramme.php',
         'app/Filament/Pages/Concerns/AuthorizesAffiliateAdmin.php',
         'app/Policies/AffiliatePolicyGovernancePolicy.php',
         'app/Providers/AppServiceProvider.php',
+        'app/Services/Affiliate/AffiliateDetail.php',
+        'app/Services/Affiliate/AffiliateLifecycleService.php',
         'app/Services/Affiliate/AffiliateOperationException.php',
         'app/Services/Affiliate/AffiliatePolicy.php',
         'app/Services/Affiliate/AffiliatePolicyService.php',
         'app/Services/Affiliate/AffiliateRefusalReason.php',
+        'app/Services/Affiliate/AffiliateReviewDecision.php',
+        'app/Services/Affiliate/AffiliateSummary.php',
+        'app/Services/Affiliate/AffiliateTransition.php',
         'app/Services/Affiliate/Concerns/UsesAffiliateAuthority.php',
         'app/Support/AffiliateConfig.php',
         'config/affiliate.php',
+        'resources/views/filament/pages/affiliate-lifecycle.blade.php',
     ]);
 });
 
@@ -156,14 +166,20 @@ it('adds no affiliate route, command, job, listener, mail or model, and only the
         'app/Policies/AffiliatePolicyGovernancePolicy.php',
     ]);
     expect($affiliateFilesUnder($root.'/app/Filament'))->toBe([
+        'app/Filament/Pages/AffiliateLifecycle.php',
         'app/Filament/Pages/AffiliateProgramme.php',
         'app/Filament/Pages/Concerns/AuthorizesAffiliateAdmin.php',
     ]);
     expect($affiliateFilesUnder($root.'/app/Services'))->toBe([
+        'app/Services/Affiliate/AffiliateDetail.php',
+        'app/Services/Affiliate/AffiliateLifecycleService.php',
         'app/Services/Affiliate/AffiliateOperationException.php',
         'app/Services/Affiliate/AffiliatePolicy.php',
         'app/Services/Affiliate/AffiliatePolicyService.php',
         'app/Services/Affiliate/AffiliateRefusalReason.php',
+        'app/Services/Affiliate/AffiliateReviewDecision.php',
+        'app/Services/Affiliate/AffiliateSummary.php',
+        'app/Services/Affiliate/AffiliateTransition.php',
         'app/Services/Affiliate/Concerns/UsesAffiliateAuthority.php',
     ]);
     expect($affiliateFilesUnder($root.'/config'))->toBe([
