@@ -26,8 +26,15 @@ migration `000031` et ses tests. La stable et la branche Storefront repartent de
 ### 🚧 Storefront MVP — PRÉREQUIS ACTIFS
 
 Plan validé : achat invité uniquement, XOF sans sélecteur, quantité 1, coupons non exposés.
-Avant le catalogue : fermer **D-030 GLOBAL** (garde mail P4-C + SMTP réel sans secret
-committé), puis corriger la récupération concurrente de `PaymentInitiationService`.
+Le premier prérequis est désormais fermé par **D-061** : P4-C et P6-C utilisent la même
+autorité `MailTransportGuard`, qui contrôle le transport réellement résolu, refuse
+`log`/`array`/`null`/inconnu/incomplet et inspecte récursivement les compositions. Le SMTP
+réel reste exclusivement configuré dans le `.env` de déploiement ; aucun credential n'est
+versionné et le template vide échoue volontairement en mode fail-closed. Validation ciblée :
+**33 tests / 94 assertions**.
+
+Prochain prérequis avant le catalogue : corriger et reproduire réellement la course
+d'idempotence dans `PaymentInitiationService::recoverFromInsertFailure()`.
 
 ### ✅ P6-D1 — Autorité d'affiliation + gouvernance des politiques : MERGÉ
 

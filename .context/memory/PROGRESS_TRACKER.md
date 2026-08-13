@@ -14,9 +14,9 @@ P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
-P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
+P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle. D-061 aligne son garde mail sur l'autorité stricte P6-C : D-030 GLOBAL fermé sur la branche de prérequis Storefront.
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
-P6 CRM & MARKETING  : █████████░  P6-A0→P6-D1 mergés ; P6-D1.1 gelé par D-059 puis MIS EN PAUSE par D-060, WIP préservé à `f15d192`. Priorité active : Storefront MVP invité.
+P6 CRM & MARKETING  : █████████░  P6-A0→P6-D1 mergés ; P6-D1.1 gelé par D-059 puis MIS EN PAUSE par D-060, WIP préservé à `f15d192`. Priorité active : prérequis Storefront MVP invité ; D-030 GLOBAL fermé par D-061, course d'idempotence paiement à corriger ensuite.
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 

@@ -4253,6 +4253,40 @@ IMPACT : branche active `codex/storefront-mvp-prerequisites` depuis `4407fca` ; 
 migration Storefront créée par cette décision. Prochaine séquence : D-030 GLOBAL, bug
 concurrent paiement, puis catalogue dynamique avec provisionnement produit à valider.
 
+### D-061 : Autorité mail partagée — D-030 GLOBAL fermé ✅
+
+CONTEXTE : D-056 avait fermé localement le risque mail de P6-C avec
+`MailTransportGuard`, mais démontré que P4-C conservait cinq contournements dans
+`DeliveryConfig::assertMailerSafe()` : contrôle du nom au lieu du transport résolu,
+`array` toléré en test/local, transport inconnu accepté, SMTP incomplet accepté, et
+composition `failover`/`roundrobin` inspectée sur un seul niveau. P4-C peut envoyer des
+capabilities de téléchargement brutes ; un fallback `log` les exposerait dans les logs.
+
+CHOIX :
+1. **Une autorité unique.** `DeliveryConfig::assertPipelineReady()` délègue désormais à
+   `MailTransportGuard::assertSafe()`. L'ancien garde privé plus faible est supprimé ;
+   aucune seconde implémentation de la politique mail ne subsiste.
+2. **Fail-closed dans tous les environnements.** Le transport réellement résolu est
+   contrôlé. `log`, `array`, `null`, un transport absent/inconnu ou incomplet sont refusés,
+   y compris en `local`/`testing`. Toute branche d'une composition imbriquée est auditée,
+   avec profondeur bornée contre les cycles. Un expéditeur configuré est obligatoire.
+3. **SMTP réel, secrets hors dépôt.** `.env.example` sélectionne `smtp` mais laisse
+   volontairement `MAIL_HOST`, username et password vides : ce template ne peut donc pas
+   activer un envoi. L'opérateur configure hôte, identité, secret et expéditeur uniquement
+   dans le `.env` non suivi, puis valide le domaine et un envoi sandbox. Aucun credential,
+   endpoint propriétaire ni appel fournisseur n'est ajouté au dépôt.
+4. **Tests sans réseau.** Le chemin P4-C prouve lui-même les cinq classes de refus et un
+   SMTP complet accepté ; les contrats P6-C restent l'autorité exhaustive. Les tests
+   utilisent uniquement la configuration Laravel et `Mail::fake()` : aucun réseau CI.
+
+VALIDATION CIBLÉE : `P4C0QueueMailSecretSafetyTest` + `P6CMailTransportSafetyTest` =
+**33 tests / 94 assertions**, 0 échec ; `git diff --check` propre.
+
+IMPACT : **D-030 GLOBAL = CLOSED** sur la branche de prérequis Storefront. Les deux seuls
+chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la même frontière.
+Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
+vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
+
 ### D-048 : P6-A1.3 — Explicit Historical Commerce Rollup Backfill ✅ (MERGÉ)
 CONTEXTE : P6-A1.2 rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouveau** refund `succeeded` survient, mais ne reconstruit pas l'historique antérieur. P6-A1.3 est l'**outil opérateur explicite** qui retrouve les couples historiques et les injecte dans le pipeline P6-A1.2. **Mergé sur la stable** via PR #35 (head `ba32582`, merge `106ffb0a`, CI #42 success). **P6-A2 (Typed Versioned CRM Segments) devient le gate actif ; P6-B0 non commencé.**
 

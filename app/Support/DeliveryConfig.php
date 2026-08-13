@@ -41,7 +41,7 @@ final class DeliveryConfig
         self::grantMaxDownloads();
         self::jobUniqueSeconds();
         self::downloadBaseUrl();
-        self::assertMailerSafe();
+        MailTransportGuard::assertSafe();
     }
 
     public static function grantTtlMinutes(): int
@@ -232,27 +232,6 @@ final class DeliveryConfig
     private static function requiresHttps(): bool
     {
         return (bool) (config('delivery.require_https') ?? ! in_array(config('app.env'), ['local', 'testing'], true));
-    }
-
-    private static function assertMailerSafe(): void
-    {
-        $mailer = config('mail.default');
-
-        if (! is_string($mailer) || trim($mailer) === '' || $mailer === 'log') {
-            throw new RuntimeException('The delivery mail transport is unsafe.');
-        }
-
-        if ($mailer === 'array' && ! in_array(config('app.env'), ['local', 'testing'], true)) {
-            throw new RuntimeException('The delivery mail transport cannot deliver messages.');
-        }
-
-        if (in_array($mailer, ['failover', 'roundrobin'], true)) {
-            $members = config("mail.mailers.{$mailer}.mailers");
-
-            if (! is_array($members) || $members === [] || array_intersect($members, ['log', 'array']) !== []) {
-                throw new RuntimeException('The delivery mail transport contains an unsafe fallback.');
-            }
-        }
     }
 
     private static function bounded(int $value, int $min, int $max, string $key): int
