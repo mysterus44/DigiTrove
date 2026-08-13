@@ -4223,6 +4223,36 @@ ALTERNATIVES REJETÉES :
 
 IMPACT : **P6-D1 = plan seulement, aucun code écrit dans ce gel.** L'implémentation utilisera **une** migration `000030` (**46 migrations**), créera le rôle via le script de provisioning, transférera la propriété des neuf tables et de leurs séquences, posera cinq autorités bornées et l'ACL `EXECUTE`-only, livrera une couche Laravel mince et un écran Filament de gouvernance, et rescopera **quatre** familles de contrats historiques par inventaire exact. **Aucune candidature, aucun code affilié, aucune touche, aucune attribution, aucune commission, aucun payout.**
 
+### D-060 : Re-séquencement Storefront MVP avant P6-D1.1 ✅
+
+CONTEXTE : P6-D1.1 dispose d'une architecture validée dans D-059, mais DigiTrove ne
+possède encore aucun storefront transactionnel. Sans catalogue dynamique, panier public
+et checkout, aucune vente réelle ni touche affiliée ne peut alimenter les gates D2/D3.
+KingKouda priorise donc le chemin de revenu minimal avant la poursuite de l'affiliation.
+
+CHOIX :
+1. **P6-D1.1 est mis en pause, pas annulé.** D-059, sa machine à états, son ledger et ses
+   invariants restent intégralement autoritatifs pour la reprise future.
+2. Le WIP est préservé sur `p6-d1-1-affiliate-lifecycle-codes` au checkpoint
+   `f15d192566c4c968fd00a9eb03bd5159e6cc52ba`. Cette branche contient un brouillon
+   `000031` non livré. La stable `4407fca` reste à 46 migrations, sans `000031`.
+3. Le sprint actif devient **Storefront MVP invité** : XOF sans sélecteur, quantité 1,
+   coupons non exposés, aucun login/register/espace client. Le schéma multi-devises et le
+   moteur coupons restent intacts pour les évolutions futures.
+4. Avant le catalogue, deux prérequis sont séquentiels : fermeture **D-030 GLOBAL** pour
+   qu'aucun lien de livraison ne tombe dans un transport mail de journalisation, puis
+   correction de la récupération concurrente de `PaymentInitiationService`.
+5. Aucun travail P6-D1.1 ne doit être mélangé à la branche Storefront. Sa reprise exigera
+   une décision explicite après livraison et validation du parcours de vente.
+
+ALTERNATIVES REJETÉES : continuer D1.1 avant toute vente réelle ; supprimer ou réinitialiser
+le WIP ; mélanger son brouillon `000031` aux prérequis Storefront ; lancer plusieurs agents
+en parallèle sur le même worktree.
+
+IMPACT : branche active `codex/storefront-mvp-prerequisites` depuis `4407fca` ; aucune
+migration Storefront créée par cette décision. Prochaine séquence : D-030 GLOBAL, bug
+concurrent paiement, puis catalogue dynamique avec provisionnement produit à valider.
+
 ### D-048 : P6-A1.3 — Explicit Historical Commerce Rollup Backfill ✅ (MERGÉ)
 CONTEXTE : P6-A1.2 rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouveau** refund `succeeded` survient, mais ne reconstruit pas l'historique antérieur. P6-A1.3 est l'**outil opérateur explicite** qui retrouve les couples historiques et les injecte dans le pipeline P6-A1.2. **Mergé sur la stable** via PR #35 (head `ba32582`, merge `106ffb0a`, CI #42 success). **P6-A2 (Typed Versioned CRM Segments) devient le gate actif ; P6-B0 non commencé.**
 

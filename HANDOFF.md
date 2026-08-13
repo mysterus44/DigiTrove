@@ -6,9 +6,28 @@
 
 ## 📍 ÉTAT ACTUEL
 
-- **Dernier agent** : Fable
-- **Date** : 2026-08-11
-- **Branche git active** : **`p6-d1-affiliate-policy-governance`**, base D-058 `ec0191f`.
+- **Dernier agent** : Codex
+- **Date** : 2026-08-13
+- **Branche git active** : **`codex/storefront-mvp-prerequisites`**, base stable
+  **`4407fca18c9451585c8b99e271b2520dcee812c6`**.
+
+### ⏸️ P6-D1.1 — PAUSE PRODUIT, WIP PRÉSERVÉ
+
+KingKouda a priorisé le **Storefront MVP invité** avant la poursuite de l'affiliation :
+sans storefront, aucune vente ni touche réelle ne peut alimenter D2/D3. **D-059 reste
+intégralement valide** ; son implémentation est reportée, pas annulée.
+
+Le WIP P6-D1.1 a été figé **sans modification de contenu** puis poussé sur
+`p6-d1-1-affiliate-lifecycle-codes` au checkpoint
+**`f15d192566c4c968fd00a9eb03bd5159e6cc52ba`**. Cette branche contient le brouillon de
+migration `000031` et ses tests. La stable et la branche Storefront repartent de
+`4407fca` : elles restent à **46 migrations et ne contiennent aucune `000031`**.
+
+### 🚧 Storefront MVP — PRÉREQUIS ACTIFS
+
+Plan validé : achat invité uniquement, XOF sans sélecteur, quantité 1, coupons non exposés.
+Avant le catalogue : fermer **D-030 GLOBAL** (garde mail P4-C + SMTP réel sans secret
+committé), puis corriger la récupération concurrente de `PaymentInitiationService`.
 
 ### ✅ P6-D1 — Autorité d'affiliation + gouvernance des politiques : MERGÉ
 
@@ -847,11 +866,20 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
-## 🚧 P6-D1.1 — Cycle de vie affilié + codes (GATE SUIVANT)
+## 🚧 Storefront MVP — prérequis avant catalogue
 
-**Statut** : **ARCHITECTURE GELÉE PAR D-059**, arbitrage KingKouda **Q1 = C · Q2 = A ·
-Q3 = C**. **NON COMMENCÉ**, aucune migration `000031`, aucun code écrit. P6-D1 est **MERGÉ**
-— PR #41, head `d2ecfb44`, merge `aeac8a5d`, **CI SUCCESS** (`000030`, **46 migrations**).
+**Ordre séquentiel validé** : (1) fermeture D-030 GLOBAL et préparation SMTP ;
+(2) correction du chemin concurrent de `PaymentInitiationService` ; (3) catalogue
+dynamique et provisionnement produit, après rapport et validation des deux prérequis.
+P6-D1.1 reste en pause sur son checkpoint distant `f15d192`.
+
+## ⏸️ Référence P6-D1.1 — Cycle de vie affilié + codes
+
+**Statut** : **ARCHITECTURE GELÉE PAR D-059 ET IMPLÉMENTATION EN PAUSE**, arbitrage
+KingKouda **Q1 = C · Q2 = A · Q3 = C**. Le WIP non livré est préservé uniquement sur
+`p6-d1-1-affiliate-lifecycle-codes` à `f15d192`. La stable n'a aucune migration `000031`.
+P6-D1 est **MERGÉ** — PR #41, head `d2ecfb44`, merge `aeac8a5d`, **CI SUCCESS**
+(`000030`, **46 migrations**).
 
 ### ⚠️ LA DÉCISION STRUCTURANTE : SNAPSHOT + LEDGER
 
@@ -1031,6 +1059,16 @@ Quatre tables (`crm_segments`, `crm_segment_versions`, `crm_segment_generations`
 ### Rappel D-049 (architecture P6-A2)
 
 Architecture **gelée dans D-049** : définitions typées allowlistées (aucun SQL/colonne/opérateur/JSONPath libre), versions immuables, générations matérialisées publiées **atomiquement**, critères commerce **currency-scoped** (aucun LTV global, aucun FX, aucun float), consentement marketing **séparé** de l'appartenance au segment. Migration `000025` (41 migrations). **P6-B0 (CRM Admin Views) NON COMMENCÉ.**
+
+### 2026-08-13 — Codex (pause P6-D1.1 et checkpoint avant Storefront MVP)
+- Fait : WIP P6-D1.1 existant sauvegardé **sans modification de contenu** sur
+  `p6-d1-1-affiliate-lifecycle-codes`, commit et push
+  `f15d192566c4c968fd00a9eb03bd5159e6cc52ba`.
+- Fait : retour à la stable `4407fca`, création de
+  `codex/storefront-mvp-prerequisites`. La stable reste à 46 migrations sans `000031` ;
+  le brouillon `000031` existe uniquement sur la branche gelée.
+- Décision : **D-060**, P6-D1.1 reporté après le Storefront MVP ; D-059 inchangée.
+- Laisse à : fermeture D-030 GLOBAL, puis correction concurrente paiement, séquentiellement.
 
 ### 2026-08-11 — Fable (D-059 : architecture P6-D1.1 gelée — AUCUN CODE)
 - Fait : **préflight P6-D1.1 en lecture seule** contre le schéma réel (`pg_catalog`,
