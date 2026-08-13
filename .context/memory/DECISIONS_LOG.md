@@ -4282,6 +4282,12 @@ CHOIX :
 VALIDATION CIBLÉE : `P4C0QueueMailSecretSafetyTest` + `P6CMailTransportSafetyTest` =
 **33 tests / 94 assertions**, 0 échec ; `git diff --check` propre.
 
+VALIDATION GLOBALE DU GATE : P3-D3 **55 tests / 257 assertions** ; suite complète
+**1571 tests / 12167 assertions** ; Pint **510 fichiers** ; `git diff --check` propre.
+La course d'idempotence conserve un budget de verrou explicitement inférieur au timeout du
+processus et prouve que l'appel perdant est encore bloqué au commit du gagnant ; une lenteur
+CI ne peut donc plus être confondue avec la collision `23505` visée.
+
 IMPACT : **D-030 GLOBAL = CLOSED** sur la branche de prérequis Storefront. Les deux seuls
 chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la même frontière.
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un

@@ -932,7 +932,11 @@ function p3d3InitiationProcess(int $userId, string $orderPublicId, string $key, 
         require getcwd().'/vendor/autoload.php';
         $app = require getcwd().'/bootstrap/app.php';
         $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-        Illuminate\Support\Facades\DB::statement("SET lock_timeout = '10s'");
+        // This process is deliberately held behind an advisory lock while its
+        // competitor boots and commits. Keep the database timeout below the
+        // process timeout, but large enough that slow CI I/O cannot turn the
+        // intended 23505 race into an unrelated 55P03 refusal.
+        Illuminate\Support\Facades\DB::statement("SET lock_timeout = '90s'");
         Illuminate\Support\Facades\DB::selectOne(
             "SELECT set_config('application_name', ?, false)",
             [$argv[4]],
@@ -987,7 +991,7 @@ function p3d3InitiationProcess(int $userId, string $orderPublicId, string $key, 
         base_path(),
         null,
         null,
-        60,
+        120,
     );
 }
 
@@ -1183,7 +1187,11 @@ it('recovers an actual concurrent digest insert with the precise conflict reason
 
         $winner = json_decode($second->getOutput(), true, flags: JSON_THROW_ON_ERROR);
         expect($winner['outcome'])->toBe('created')
-            ->and($winner['provider_calls'])->toBe(1);
+            ->and($winner['provider_calls'])->toBe(1)
+            ->and($first->isRunning())->toBeTrue(
+                'The blocked call exited before the advisory lock was released: '
+                .$first->getErrorOutput().$first->getOutput()
+            );
 
         $locker->query("SELECT pg_advisory_unlock({$advisoryKey})");
         $released = true;

@@ -38,10 +38,18 @@ Le second prérequis est également corrigé : `PaymentInitiationService` propag
 variable hors portée après une collision `23505`. Une preuve à deux processus bloque
 l'INSERT A après son lookup, laisse l'INSERT B gagner le digest sur une autre commande,
 puis vérifie que A ressort en `idempotency_conflict`, sans appel fournisseur ni seconde
-ligne. P3-D3 : **55 tests / 256 assertions**.
+ligne. P3-D3 : **55 tests / 257 assertions**.
 
-Prochaine étape : validation globale de ces deux prérequis, puis plan du catalogue
-dynamique et arbitrage du provisionnement produit Filament.
+Le test de course vérifie aussi que l'appel perdant est encore réellement bloqué lorsque
+le gagnant a committé. Son `lock_timeout` est inférieur au timeout du processus mais assez
+large pour que les I/O lentes de CI ne remplacent pas la collision `23505` attendue par
+une erreur `55P03` sans rapport. Validation finale : P3-D3 **55 tests / 257 assertions** ;
+suite complète **1571 tests / 12167 assertions** ; Pint **510 fichiers** ;
+`git diff --check` propre.
+
+Prochaine étape : rapport des prérequis à KingKouda, puis prompt dédié au catalogue
+dynamique et arbitrage du provisionnement produit Filament. **Aucun code catalogue n'est
+commencé dans cette branche.**
 
 ### ✅ P6-D1 — Autorité d'affiliation + gouvernance des politiques : MERGÉ
 
@@ -882,9 +890,10 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🚧 Storefront MVP — prérequis avant catalogue
 
-**Ordre séquentiel validé** : (1) fermeture D-030 GLOBAL et préparation SMTP ;
-(2) correction du chemin concurrent de `PaymentInitiationService` ; (3) catalogue
-dynamique et provisionnement produit, après rapport et validation des deux prérequis.
+**Prérequis terminés** : (1) D-030 GLOBAL fermé et préparation SMTP documentée ;
+(2) chemin concurrent de `PaymentInitiationService` corrigé et prouvé sous course réelle.
+Le catalogue dynamique et le provisionnement produit restent à lancer **uniquement après
+le prochain prompt validé**.
 P6-D1.1 reste en pause sur son checkpoint distant `f15d192`.
 
 ## ⏸️ Référence P6-D1.1 — Cycle de vie affilié + codes
@@ -1073,6 +1082,19 @@ Quatre tables (`crm_segments`, `crm_segment_versions`, `crm_segment_generations`
 ### Rappel D-049 (architecture P6-A2)
 
 Architecture **gelée dans D-049** : définitions typées allowlistées (aucun SQL/colonne/opérateur/JSONPath libre), versions immuables, générations matérialisées publiées **atomiquement**, critères commerce **currency-scoped** (aucun LTV global, aucun FX, aucun float), consentement marketing **séparé** de l'appartenance au segment. Migration `000025` (41 migrations). **P6-B0 (CRM Admin Views) NON COMMENCÉ.**
+
+### 2026-08-13 — Codex (prérequis Storefront MVP fermés)
+- Fait : D-030 GLOBAL fermé par l'autorité partagée `MailTransportGuard` ; P4-C et
+  P6-C refusent désormais les transports résolus dangereux, inconnus, incomplets ou
+  imbriqués. SMTP réel documenté, secrets exclusivement dans `.env`, aucun réseau CI.
+- Corrigé : `$now` est propagé jusqu'à la récupération concurrente de
+  `PaymentInitiationService`; collision réelle à deux processus classée précisément en
+  `idempotency_conflict`. Le test prouve que le perdant est bloqué jusqu'au commit gagnant.
+- Validation : garde mail **33/94** ; P3-D3 **55/257** ; suite complète
+  **1571/12167** ; Pint **510** ; `git diff --check` propre ; **46 migrations**, aucune
+  `000031` sur cette branche.
+- Laisse à : rapport humain puis prompt catalogue/provisionnement Filament. Aucun code
+  catalogue, panier ou checkout HTTP commencé.
 
 ### 2026-08-13 — Codex (pause P6-D1.1 et checkpoint avant Storefront MVP)
 - Fait : WIP P6-D1.1 existant sauvegardé **sans modification de contenu** sur
