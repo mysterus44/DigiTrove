@@ -168,9 +168,10 @@ it('stores the artefact on a private disk under a path carrying no PII', functio
     expect($disk)->toBe('private')
         ->and($path)->toStartWith('crm-exports/')
         ->and($path)->toEndWith('.csv')
-        // No address, no user id, no segment name in the path.
+        // The path may contain only the export id and a random opaque token.
+        ->and($path)->toMatch('/\Acrm-exports\/'.preg_quote((string) $export['export_id'], '/').'-[A-Za-z0-9]{32}\.csv\z/')
         ->and($path)->not->toContain($email)
-        ->and($path)->not->toContain((string) $adminId.'-'.$adminId);
+        ->and($path)->not->toContain('@');
 
     // Traversal-proof: no absolute path, no '..', no backslash.
     expect($path)->not->toContain('..')
