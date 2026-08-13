@@ -265,7 +265,7 @@ final class PaymentInitiationService
                 'initiated_at' => $now,
             ]));
         } catch (Throwable $exception) {
-            return $this->recoverFromInsertFailure($exception, $order, $providerName, $digest);
+            return $this->recoverFromInsertFailure($exception, $order, $providerName, $digest, $now);
         }
 
         return [$payment->id, $this->buildProviderRequest($payment, $order)];
@@ -285,6 +285,7 @@ final class PaymentInitiationService
         Order $order,
         string $providerName,
         string $digest,
+        CarbonImmutable $now,
     ): array {
         if (PostgresConstraintViolation::isUniqueViolationOf($exception, 'payments_idempotency_key_hash_unique')) {
             $existing = Payment::query()->where('idempotency_key_hash', $digest)->first();

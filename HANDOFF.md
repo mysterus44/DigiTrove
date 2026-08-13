@@ -33,8 +33,15 @@ réel reste exclusivement configuré dans le `.env` de déploiement ; aucun cred
 versionné et le template vide échoue volontairement en mode fail-closed. Validation ciblée :
 **33 tests / 94 assertions**.
 
-Prochain prérequis avant le catalogue : corriger et reproduire réellement la course
-d'idempotence dans `PaymentInitiationService::recoverFromInsertFailure()`.
+Le second prérequis est également corrigé : `PaymentInitiationService` propage le même
+`CarbonImmutable $now` jusqu'à `recoverFromInsertFailure()` au lieu de référencer une
+variable hors portée après une collision `23505`. Une preuve à deux processus bloque
+l'INSERT A après son lookup, laisse l'INSERT B gagner le digest sur une autre commande,
+puis vérifie que A ressort en `idempotency_conflict`, sans appel fournisseur ni seconde
+ligne. P3-D3 : **55 tests / 256 assertions**.
+
+Prochaine étape : validation globale de ces deux prérequis, puis plan du catalogue
+dynamique et arbitrage du provisionnement produit Filament.
 
 ### ✅ P6-D1 — Autorité d'affiliation + gouvernance des politiques : MERGÉ
 
