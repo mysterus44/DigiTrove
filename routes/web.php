@@ -5,13 +5,15 @@ use App\Http\Controllers\AnalyticsEventController;
 use App\Http\Controllers\CartResumeController;
 use App\Http\Controllers\DownloadFileController;
 use App\Http\Controllers\DownloadLandingController;
+use App\Http\Controllers\Storefront\CatalogController;
+use App\Http\Controllers\Storefront\ProductController;
 use App\Http\Middleware\EnsureAnalyticsSameOrigin;
 use App\Http\Middleware\RequireCurrentAnalyticsConsent;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::get('/', CatalogController::class)->name('storefront.home');
+Route::get('/products', [ProductController::class, 'index'])->name('products.index');
+Route::get('/products/{product:slug}', [ProductController::class, 'show'])->name('products.show');
 
 Route::get('/analytics/consent', [AnalyticsConsentController::class, 'show'])
     ->name('analytics.consent.show');

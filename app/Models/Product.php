@@ -5,11 +5,14 @@ namespace App\Models;
 use App\Enums\ProductStatus;
 use App\Enums\ProductType;
 use Database\Factories\ProductFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 
 class Product extends Model
 {
@@ -46,6 +49,16 @@ class Product extends Model
     public function prices(): HasMany
     {
         return $this->hasMany(ProductPrice::class);
+    }
+
+    /**
+     * @return HasOne<ProductPrice, $this>
+     */
+    public function activeXofPrice(): HasOne
+    {
+        return $this->hasOne(ProductPrice::class)
+            ->where('currency', 'XOF')
+            ->where('is_active', true);
     }
 
     /**
@@ -96,6 +109,32 @@ class Product extends Model
     {
         return $this->belongsToMany(self::class, 'product_bundles', 'child_product_id', 'bundle_id')
             ->withPivot('position');
+    }
+
+    /**
+     * @param  Builder<Product>  $query
+     * @return Builder<Product>
+     */
+    public function scopePublished(Builder $query): Builder
+    {
+        return $query
+            ->where('status', ProductStatus::Published)
+            ->whereNotNull('published_at')
+            ->where('published_at', '<=', now())
+            ->whereHas('activeXofPrice');
+    }
+
+    public function coverUrl(): ?string
+    {
+        $path = trim((string) $this->cover_image_path);
+
+        if ($path === '') {
+            return null;
+        }
+
+        return str_starts_with($path, 'images/')
+            ? asset($path)
+            : Storage::disk('public')->url($path);
     }
 
     /**
