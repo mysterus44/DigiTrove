@@ -36,8 +36,9 @@ archives, futurs, soft-deleted et produits sans prix XOF actif restent invisible
 `storage_path` et `checksum_sha256` ne sont jamais rendus ; descriptions et métadonnées
 sont échappées. Aucun Schema.org, panier, checkout, coupon ou paiement n'est ajouté.
 
-Validation ciblée : **18 tests / 120 assertions** ; 46 migrations inchangées ; build Vite
-PASS ; rendu desktop/mobile contrôlé sans overflow ; Pint **536 fichiers** ; diff-check
+Validation ciblée : **19 tests / 124 assertions** ; 46 migrations inchangées ; build Vite
+PASS ; **inspection manuelle** du rendu desktop/mobile sans overflow — aucun test
+responsive automatisé n'existe ; Pint **536 fichiers** ; diff-check
 propre. Suite exhaustive via Pest avec 1 Gio : **1586 tests / 12281 assertions**, 0 échec ;
 `artisan test` seul hérite du plafond mémoire PHP de 128 Mio sur ce workspace.
 

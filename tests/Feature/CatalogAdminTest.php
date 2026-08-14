@@ -159,3 +159,35 @@ it('enforces the admin-only resource boundary over HTTP', function () {
 
     $this->actingAs($staff)->get(ProductResource::getUrl('index'))->assertForbidden();
 });
+
+/**
+ * The upload physically lands on the private disk BEFORE the record is written, so a
+ * failure between those two moments must take the file with it. Otherwise every retry of
+ * a broken upload leaves another unreferenced blob on the private disk — invisible to the
+ * catalogue, impossible to clean up from the admin, and still holding customer content.
+ */
+it('removes the private upload when its stream cannot be read', function () {
+    $fake = Storage::fake('private');
+    $this->actingAs(catalogAdmin());
+    $product = Product::factory()->create();
+
+    // Everything behaves normally except the read: the file exists, and it is the digest
+    // pass that fails. This is the branch that previously threw without deleting.
+    $broken = Mockery::mock($fake)->makePartial();
+    $broken->shouldReceive('readStream')->andReturn(false);
+    Storage::set('private', $broken);
+
+    expect(fn () => Livewire::test(CreateProductFile::class)
+        ->fillForm([
+            'product_id' => $product->id,
+            'uploaded_file' => UploadedFile::fake()->createWithContent('course.zip', 'private-course-content'),
+            'version' => '1.0',
+            'position' => 0,
+            'is_active' => true,
+        ])
+        ->call('create'))->toThrow(RuntimeException::class);
+
+    expect(ProductFile::query()->count())->toBe(0)
+        // No orphan: the private disk is exactly as empty as before the attempt.
+        ->and(Storage::disk('private')->allFiles())->toBe([]);
+});

@@ -24,38 +24,42 @@ class CreateProductFile extends CreateRecord
             throw new RuntimeException('Private product upload is unavailable.');
         }
 
-        $stream = Storage::disk('private')->readStream($path);
-
-        if (! is_resource($stream)) {
-            throw new RuntimeException('Private product upload is unreadable.');
-        }
-
+        // From here on the upload physically exists on the private disk, so EVERY failure
+        // has to remove it. A per-branch cleanup was tried first and left one hole: a
+        // stream that could not be opened threw before any delete, stranding the file
+        // with no row pointing at it. One catch around the whole body closes every exit
+        // at once, including the ones a future edit might add.
         try {
-            $checksum = hash_init('sha256');
-            hash_update_stream($checksum, $stream);
-        } finally {
-            fclose($stream);
-        }
+            $stream = Storage::disk('private')->readStream($path);
 
-        $originalName = trim((string) ($data['uploaded_original_name'] ?? ''));
+            if (! is_resource($stream)) {
+                throw new RuntimeException('Private product upload is unreadable.');
+            }
 
-        if ($originalName === '') {
-            Storage::disk('private')->delete($path);
+            try {
+                $checksum = hash_init('sha256');
+                hash_update_stream($checksum, $stream);
+            } finally {
+                // Closed before any delete: the handle must not outlive the file.
+                fclose($stream);
+            }
 
-            throw new RuntimeException('Private product upload name is unavailable.');
-        }
+            $originalName = trim((string) ($data['uploaded_original_name'] ?? ''));
 
-        unset($data['uploaded_file'], $data['uploaded_original_name']);
+            if ($originalName === '') {
+                throw new RuntimeException('Private product upload name is unavailable.');
+            }
 
-        $data['storage_disk'] = 'private';
-        $data['storage_path'] = $path;
-        $data['original_name'] = $originalName;
-        $data['size_bytes'] = Storage::disk('private')->size($path);
-        $data['mime_type'] = Storage::disk('private')->mimeType($path) ?: null;
-        $data['checksum_sha256'] = hash_final($checksum);
-        $data['created_at'] = now();
+            unset($data['uploaded_file'], $data['uploaded_original_name']);
 
-        try {
+            $data['storage_disk'] = 'private';
+            $data['storage_path'] = $path;
+            $data['original_name'] = $originalName;
+            $data['size_bytes'] = Storage::disk('private')->size($path);
+            $data['mime_type'] = Storage::disk('private')->mimeType($path) ?: null;
+            $data['checksum_sha256'] = hash_final($checksum);
+            $data['created_at'] = now();
+
             return parent::handleRecordCreation($data);
         } catch (Throwable $exception) {
             Storage::disk('private')->delete($path);

@@ -269,8 +269,9 @@ Vérifications P2 passées :
   `draft` ; second passage 0 création. Trois avis ignorés explicitement faute de table.
 - Public : `/`, `/products`, `/products/{product:slug}` ; scope fail-closed sur statut,
   date, soft-delete et prix XOF actif ; aucune donnée privée de `product_files` exposée.
-- Validation : catalogue **18 tests / 120 assertions**, build Vite, audit responsive
-  desktop/mobile, suite exhaustive **1586 / 12281**, Pint **536 fichiers**, diff-check propre.
+- Validation : catalogue **19 tests / 124 assertions**, build Vite, **inspection manuelle**
+  du responsive desktop/mobile (aucun test automatisé), suite exhaustive, Pint **536
+  fichiers**, diff-check propre.
 - Hors gate : panier, checkout, coupon public, Schema.org, P6-D1.1, P7.
 
 Vérifications post-merge P2 sur `p0-foundations-laravel13` (`aff4d05`) :
