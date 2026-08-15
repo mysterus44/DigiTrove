@@ -4293,6 +4293,47 @@ chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la mêm
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
 vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
 
+### D-062 : Catalogue Storefront dynamique et provisionnement produit ✅
+
+CONTEXTE : le schéma P2 complet existait, mais aucune ressource Filament produit,
+catégorie ou fichier, aucun import de contenu réel et aucune lecture publique dynamique
+n'existaient. SITE-00 conservait cinq offres, quatre catégories et trois avis dans une vue
+statique. Le Storefront MVP doit rendre ce catalogue consultable avant d'ouvrir le panier,
+sans inventer de nouvelle structure de données ni publier automatiquement un contenu.
+
+CHOIX :
+1. **Réutiliser strictement P2, sans migration.** `products`, `product_prices`,
+   `product_files`, `categories` et leurs relations restent l'unique schéma. Aucun champ
+   d'avis n'est inventé : les trois avis legacy sont signalés comme ignorés par l'import et
+   restent du contenu historique non persistant.
+2. **Provisionnement administrateur uniquement.** Trois ressources Filament couvrent
+   Product, Category et ProductFile. Leur policy commune exige un admin actif et non
+   supprimé ; staff, customer, suspended et blocked sont refusés. Les prix sont saisis en
+   XOF entier. Les livrables sont écrits sur le disque privé et leur SHA-256 est calculé
+   côté serveur ; chemin et digest ne sont jamais rendus publiquement.
+3. **Import audité et idempotent.** Une source PHP structurée remplace la duplication de
+   tableaux dans `welcome.blade.php`. `catalog:import-legacy` crée 5 produits, 4 catégories,
+   5 prix XOF et 5 liaisons au premier passage, tous en `draft` avec `published_at = NULL`.
+   Un rejeu ignore les lignes existantes et ne publie rien. Les factories restent réservées
+   aux tests.
+4. **Lecture publique fail-closed.** Le scope `Product::published()` exige simultanément
+   `status = published`, une date `published_at` non future, l'absence de soft-delete et un
+   prix XOF actif. `/`, `/products` et `/products/{product:slug}` utilisent ce scope ; la
+   fiche d'un brouillon, d'une archive, d'un produit futur, supprimé ou sans prix XOF actif
+   répond 404.
+5. **Frontière MVP.** Prix XOF seulement, descriptions et métadonnées échappées, aucune
+   donnée structurée Schema.org, aucun panier, checkout, coupon, paiement ou téléchargement
+   public. La couverture marketing peut être publique ; le livrable reste privé.
+
+VALIDATION : import réel = **5 produits / 4 catégories / 5 prix, tous draft**, puis rejeu
+idempotent = **0 création** ; tests catalogue **18 / 120** ; `npm run build` et contrôle
+responsive desktop/mobile sans débordement ; Pint **536 fichiers** ; `git diff --check`
+propre ; suite exhaustive **1586 / 12281** ; **46 migrations inchangées**.
+
+IMPACT : le catalogue public dynamique et son administration sont prêts pour revue sur
+`codex/storefront-catalogue`. P6-D1.1 reste en pause à `f15d192`. Le prochain gate produit
+est le panier invité, dans un prompt séparé ; aucune logique panier n'est anticipée ici.
+
 ### D-048 : P6-A1.3 — Explicit Historical Commerce Rollup Backfill ✅ (MERGÉ)
 CONTEXTE : P6-A1.2 rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouveau** refund `succeeded` survient, mais ne reconstruit pas l'historique antérieur. P6-A1.3 est l'**outil opérateur explicite** qui retrouve les couples historiques et les injecte dans le pipeline P6-A1.2. **Mergé sur la stable** via PR #35 (head `ba32582`, merge `106ffb0a`, CI #42 success). **P6-A2 (Typed Versioned CRM Segments) devient le gate actif ; P6-B0 non commencé.**
 

@@ -9,14 +9,15 @@
 P0 FONDATIONS       : ██████████  100%
 P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
+STOREFRONT MVP      : ████░░░░░░  Catalogue dynamique D-062 prêt pour revue ; panier/checkout non commencés
 P1 IDENTITÉ         : ██████████  100%
-P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
+P2 CATALOGUE        : ██████████  Schéma mergé PR #3 ; admin/import/lecture publique livrés sur `codex/storefront-catalogue`
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**. Le prérequis Storefront corrige la variable `$now` hors portée dans la récupération concurrente d'idempotence et ajoute une collision réelle à deux processus (P3-D3 : **55/257**).
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle. D-061 aligne son garde mail sur l'autorité stricte P6-C : D-030 GLOBAL fermé sur la branche de prérequis Storefront.
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
-P6 CRM & MARKETING  : █████████░  P6-A0→P6-D1 mergés ; P6-D1.1 gelé par D-059 puis MIS EN PAUSE par D-060, WIP préservé à `f15d192`. Les prérequis Storefront MVP invité sont fermés : D-030 GLOBAL par D-061 et récupération concurrente d'idempotence paiement prouvée. Prochain gate après retour humain : catalogue dynamique/provisionnement produit.
+P6 CRM & MARKETING  : █████████░  P6-A0→P6-D1 mergés ; P6-D1.1 gelé par D-059 puis MIS EN PAUSE par D-060, WIP préservé à `f15d192`. Les prérequis Storefront sont mergés via PR #42 et le catalogue dynamique D-062 est prêt pour revue. Reprise affiliation différée.
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
@@ -225,10 +226,12 @@ Statut : ✅ implémenté et **mergé** dans `p0-foundations-laravel13` via PR #
 | Prix fixes par devise via `product_prices` | ✅ DECIDED — D-018 |
 | Bundles avec prix commercial propre via `product_prices` | ✅ DECIDED — D-018 |
 | product_price_history | ⏸️ PAUSED — reporté hors P2 |
-| Références fichiers sur disque **privé** | ✅ DONE — aucune URL publique, aucun upload réel |
+| Références fichiers sur disque **privé** | ✅ DONE — upload Filament privé, SHA-256 serveur, aucune métadonnée publique |
 | checksum_sha256 contraint | ✅ DONE |
-| Reviews + modération + verified_purchase | ⬜ TODO — probablement hors première livraison P2 |
-| Filament ProductResource | ⏸️ PAUSED — hors P2 |
+| Reviews + modération + verified_purchase | ⏸️ PAUSED — aucun schéma ; 3 avis legacy non persistés et signalés par l'import |
+| Filament Product/Category/ProductFile | ✅ DONE — ressources admin actif uniquement sur la branche Storefront |
+| Import legacy audité | ✅ DONE — 5 produits, 4 catégories et 5 prix XOF en draft ; rejeu idempotent |
+| Lecture publique dynamique | ✅ DONE — accueil, catalogue paginé, fiche publiée uniquement |
 | Tests catalogue et garde-fous sécurité | ✅ DONE |
 
 Décisions P2 validées :
@@ -255,6 +258,21 @@ Vérifications P2 passées :
   29 tests, 173 assertions
 - `./vendor/bin/pint --test` via `digitrove-php:dev` : PASS, 55 fichiers
 - `git diff --check` : PASS
+
+### Storefront catalogue dynamique - D-062 (pré-merge)
+
+- Base propre : prérequis Storefront mergés via PR #42, merge `2c5da024`.
+- Schéma : **aucune migration**, 46 migrations existantes inchangées.
+- Admin : trois ressources Filament, policy admin actif/non supprimé, XOF entier,
+  couverture publique et livrable privé avec digest SHA-256 calculé côté serveur.
+- Import réel : premier passage 4 catégories / 5 produits / 5 prix / 5 pivots, tous
+  `draft` ; second passage 0 création. Trois avis ignorés explicitement faute de table.
+- Public : `/`, `/products`, `/products/{product:slug}` ; scope fail-closed sur statut,
+  date, soft-delete et prix XOF actif ; aucune donnée privée de `product_files` exposée.
+- Validation : catalogue **19 tests / 124 assertions**, build Vite, **inspection manuelle**
+  du responsive desktop/mobile (aucun test automatisé), suite exhaustive, Pint **536
+  fichiers**, diff-check propre.
+- Hors gate : panier, checkout, coupon public, Schema.org, P6-D1.1, P7.
 
 Vérifications post-merge P2 sur `p0-foundations-laravel13` (`aff4d05`) :
 - Merge GitHub : `aff4d05 Merge pull request #3 from mysterus44/p2-catalog`
@@ -554,7 +572,7 @@ commencés.
 | Affiliation P6-D1 | ✅ **MERGÉ** (PR #41, head `d2ecfb44`, merge `aeac8a5d`, **CI SUCCESS** ; P6-D1 **42 / 307**, régressions **848 / 7776**, suite complète **1566 / 12145**, Pint **510**) — D-058, migration **000030**, **46 migrations**, aucune `000031`. **La dette superuser est fermée** : rôle `digitrove_affiliate_executor` **NOLOGIN/NOINHERIT/non-superuser** créé par le script de provisioning (jamais supprimé au `down()` — cluster-global), propriétaire des **9 tables et 9 séquences** ; **5 autorités `SECURITY DEFINER`** lui appartiennent ; runtime **EXECUTE-only**, **zéro DML direct** ; `PUBLIC` sans `EXECUTE`. Gouvernance : brouillon → modification → **publication immédiate** → politique en vigueur → historique borné ; Filament **admin seul**. `status='active'` **≡ en vigueur maintenant**, intervalle **`[from, until)`** avec **la même valeur `now()`** aux deux bornes (ni trou ni chevauchement), **aucune publication programmée**. Précision élargie à **`timestamptz(6)`** : en `(0)` une succession rapide était **non représentable** et violait le CHECK de période. ⚠️ **ROLLBACK LOSSLESS-ONLY** : le retour vers `(0)` n'est autorisé **que si aucune valeur ne change** ; sinon le `down()` **refuse avant toute mutation**. **Après une publication réelle, ce refus est le cas normalement attendu** (`now()` garde les microsecondes) — c'est voulu, pas un bug. Validation : P6-D1 **42 / 307**, suite complète **1566 / 12145**, Pint **510**. |
 | Affiliation P6-D1 *(plan d'origine)* | 📐 **ARCHITECTURE GELÉE (D-058).** Périmètre arbitré par KingKouda : **frontière d'autorité PostgreSQL + gouvernance des politiques versionnées UNIQUEMENT**. ⚠️ **Dette critique découverte au préflight** : les 9 tables `affiliate_*` appartiennent à **`digitrove`, rôle migrateur superuser** (alors que les surfaces CRM appartiennent à `digitrove_crm_executor`, qui possède **59** des 64 fonctions `SECURITY DEFINER` du dépôt) — une autorité créée en l'état **s'exécuterait en superuser**, la vulnérabilité fermée par D-029.6/P4-B0. Correction en `000030`, **jamais** par réécriture de `000029`. Rôle `digitrove_affiliate_executor` NOLOGIN/NOINHERIT créé par le **script de provisioning** (précédent P4-B0 : les rôles sont cluster-globaux), **jamais supprimé au `down()`**. **Publication atomique** : fermer le prédécesseur et publier le successeur = **une seule transition**, avec **`now()`** et non `clock_timestamp()` pour que `effective_until` et `effective_from` soient **identiques** (intervalle semi-ouvert ⇒ ni trou ni chevauchement). **`status='active'` ≡ « en vigueur maintenant »** : la **publication différée n'est PAS livrée** (elle exigerait `btree_gist`, jamais installée), mais reste ajoutable plus tard **sans rouvrir la frontière**. Cinq autorités bornées, **aucun CRUD générique**. |
 | Affiliation P6-D1.1 | ⏸️ **ARCHITECTURE D-059 INCHANGÉE, IMPLÉMENTATION EN PAUSE PAR D-060.** WIP non livré préservé sur `p6-d1-1-affiliate-lifecycle-codes` à `f15d192`, avec brouillon `000031`. La stable `4407fca` reste à **46 migrations, sans `000031`**. Reprise uniquement après le Storefront MVP. |
-| Prochain gate | ⏳ **Storefront MVP — attente du prompt catalogue**. Sur `codex/storefront-mvp-prerequisites`, D-030 GLOBAL et la récupération concurrente du paiement sont fermés ; validation finale **1571/12167**, Pint **510**. Catalogue dynamique et provisionnement produit non commencés. P6-D1.1 est préservé, pas abandonné. |
+| Prochain gate | ⏳ **Storefront MVP - panier invité, après rapport et prompt humain.** Catalogue D-062 prêt pour revue sur `codex/storefront-catalogue` ; aucun panier/checkout anticipé. P6-D1.1 est préservé, pas abandonné. |
 
 ## P7 — BLOG & SEO
 | Tâche | Statut |

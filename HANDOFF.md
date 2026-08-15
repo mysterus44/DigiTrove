@@ -7,9 +7,40 @@
 ## 📍 ÉTAT ACTUEL
 
 - **Dernier agent** : Codex
-- **Date** : 2026-08-13
-- **Branche git active** : **`codex/storefront-mvp-prerequisites`**, base stable
-  **`4407fca18c9451585c8b99e271b2520dcee812c6`**.
+- **Date** : 2026-08-14
+- **Branche git active** : **`codex/storefront-catalogue`**, créée depuis le merge
+  des prérequis **`2c5da0241d99232abd715d34399bfbd8cb78ebb9`**.
+
+### ✅ Storefront MVP - PRÉREQUIS MERGÉS
+
+La PR [#42](https://github.com/mysterus44/DigiTrove/pull/42) a mergé les prérequis
+Storefront : head `58a4b3531c7b224869cfa04e8127a239deb7f928`, merge
+`2c5da0241d99232abd715d34399bfbd8cb78ebb9`. D-030 GLOBAL est fermé par l'autorité
+partagée `MailTransportGuard`, et la récupération concurrente d'idempotence du paiement
+est corrigée et testée. La branche catalogue part de ce merge, pas du WIP d'affiliation.
+
+### 🚧 Storefront MVP - CATALOGUE DYNAMIQUE PRÊT POUR REVUE
+
+Le gate D-062 réutilise le schéma P2 sans migration. Les ressources Filament Product,
+Category et ProductFile ont été construites : admin actif uniquement, prix XOF entiers,
+couvertures marketing publiques et livrables privés avec SHA-256 calculé côté serveur.
+
+`catalog:import-legacy` lit une source structurée issue de SITE-00. Premier passage réel :
+**4 catégories, 5 produits, 5 prix XOF et 5 pivots créés**, tous en `draft` sans
+`published_at`. Rejeu : **0 création**, 4 catégories et 5 produits ignorés. Les **3 avis**
+sont explicitement ignorés car aucune table d'avis n'existe ; aucun schéma n'a été inventé.
+
+Routes publiques en lecture seule : `/`, `/products`, `/products/{product:slug}`. Le scope
+public exige produit publié, date non future, non supprimé et prix XOF actif. Brouillons,
+archives, futurs, soft-deleted et produits sans prix XOF actif restent invisibles/404.
+`storage_path` et `checksum_sha256` ne sont jamais rendus ; descriptions et métadonnées
+sont échappées. Aucun Schema.org, panier, checkout, coupon ou paiement n'est ajouté.
+
+Validation ciblée : **19 tests / 124 assertions** ; 46 migrations inchangées ; build Vite
+PASS ; **inspection manuelle** du rendu desktop/mobile sans overflow — aucun test
+responsive automatisé n'existe ; Pint **536 fichiers** ; diff-check
+propre. Suite exhaustive via Pest avec 1 Gio : **1586 tests / 12281 assertions**, 0 échec ;
+`artisan test` seul hérite du plafond mémoire PHP de 128 Mio sur ce workspace.
 
 ### ⏸️ P6-D1.1 — PAUSE PRODUIT, WIP PRÉSERVÉ
 
@@ -20,36 +51,9 @@ intégralement valide** ; son implémentation est reportée, pas annulée.
 Le WIP P6-D1.1 a été figé **sans modification de contenu** puis poussé sur
 `p6-d1-1-affiliate-lifecycle-codes` au checkpoint
 **`f15d192566c4c968fd00a9eb03bd5159e6cc52ba`**. Cette branche contient le brouillon de
-migration `000031` et ses tests. La stable et la branche Storefront repartent de
-`4407fca` : elles restent à **46 migrations et ne contiennent aucune `000031`**.
-
-### 🚧 Storefront MVP — PRÉREQUIS ACTIFS
-
-Plan validé : achat invité uniquement, XOF sans sélecteur, quantité 1, coupons non exposés.
-Le premier prérequis est désormais fermé par **D-061** : P4-C et P6-C utilisent la même
-autorité `MailTransportGuard`, qui contrôle le transport réellement résolu, refuse
-`log`/`array`/`null`/inconnu/incomplet et inspecte récursivement les compositions. Le SMTP
-réel reste exclusivement configuré dans le `.env` de déploiement ; aucun credential n'est
-versionné et le template vide échoue volontairement en mode fail-closed. Validation ciblée :
-**33 tests / 94 assertions**.
-
-Le second prérequis est également corrigé : `PaymentInitiationService` propage le même
-`CarbonImmutable $now` jusqu'à `recoverFromInsertFailure()` au lieu de référencer une
-variable hors portée après une collision `23505`. Une preuve à deux processus bloque
-l'INSERT A après son lookup, laisse l'INSERT B gagner le digest sur une autre commande,
-puis vérifie que A ressort en `idempotency_conflict`, sans appel fournisseur ni seconde
-ligne. P3-D3 : **55 tests / 257 assertions**.
-
-Le test de course vérifie aussi que l'appel perdant est encore réellement bloqué lorsque
-le gagnant a committé. Son `lock_timeout` est inférieur au timeout du processus mais assez
-large pour que les I/O lentes de CI ne remplacent pas la collision `23505` attendue par
-une erreur `55P03` sans rapport. Validation finale : P3-D3 **55 tests / 257 assertions** ;
-suite complète **1571 tests / 12167 assertions** ; Pint **510 fichiers** ;
-`git diff --check` propre.
-
-Prochaine étape : rapport des prérequis à KingKouda, puis prompt dédié au catalogue
-dynamique et arbitrage du provisionnement produit Filament. **Aucun code catalogue n'est
-commencé dans cette branche.**
+migration `000031` et ses tests. Le checkpoint de pause repartait de `4407fca` ; après la
+PR #42, la branche catalogue repart du merge `2c5da024`. La stable et le Storefront restent
+à **46 migrations et ne contiennent aucune `000031`**.
 
 ### ✅ P6-D1 — Autorité d'affiliation + gouvernance des politiques : MERGÉ
 
@@ -888,13 +892,13 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
-## 🚧 Storefront MVP — prérequis avant catalogue
+## ⏳ Storefront MVP - rapport catalogue puis panier invité
 
-**Prérequis terminés** : (1) D-030 GLOBAL fermé et préparation SMTP documentée ;
-(2) chemin concurrent de `PaymentInitiationService` corrigé et prouvé sous course réelle.
-Le catalogue dynamique et le provisionnement produit restent à lancer **uniquement après
-le prochain prompt validé**.
-P6-D1.1 reste en pause sur son checkpoint distant `f15d192`.
+Le catalogue dynamique D-062 est implémenté sur `codex/storefront-catalogue`. Rapporter à
+KingKouda la construction des trois ressources Filament, l'import réel 5 produits / 4
+catégories en brouillon et les validations. **Attendre ensuite son prompt panier invité
+(tâche 5)** : aucune route panier, logique de checkout ou exposition coupon ne doit être
+anticipée. P6-D1.1 reste en pause sur son checkpoint distant `f15d192`.
 
 ## ⏸️ Référence P6-D1.1 — Cycle de vie affilié + codes
 
@@ -1082,6 +1086,19 @@ Quatre tables (`crm_segments`, `crm_segment_versions`, `crm_segment_generations`
 ### Rappel D-049 (architecture P6-A2)
 
 Architecture **gelée dans D-049** : définitions typées allowlistées (aucun SQL/colonne/opérateur/JSONPath libre), versions immuables, générations matérialisées publiées **atomiquement**, critères commerce **currency-scoped** (aucun LTV global, aucun FX, aucun float), consentement marketing **séparé** de l'appartenance au segment. Migration `000025` (41 migrations). **P6-B0 (CRM Admin Views) NON COMMENCÉ.**
+
+### 2026-08-14 - Codex (catalogue dynamique Storefront)
+- Fait : ressources Filament Product/Category/ProductFile créées, policy admin actif,
+  prix XOF entiers, upload privé et SHA-256 serveur ; aucune migration ni service ajouté.
+- Fait : import SITE-00 dédié et idempotent. Premier passage réel : 4 catégories, 5
+  produits, 5 prix XOF et 5 pivots, tous en draft ; rejeu sans duplication ; 3 avis
+  signalés non persistés faute de schéma.
+- Fait : accueil, catalogue paginé et fiche produit alimentés par le scope public strict ;
+  contrôles desktop/mobile, XSS et absence de métadonnées privées.
+- Validation : tests catalogue 18/120 ; suite exhaustive 1586/12281 ; build Vite ;
+  Pint 536 ; diff-check ; 46 migrations inchangées.
+- Décision : D-062.
+- Laisse à : rapport humain, puis prompt panier invité. P6-D1.1 reste en pause.
 
 ### 2026-08-13 — Codex (prérequis Storefront MVP fermés)
 - Fait : D-030 GLOBAL fermé par l'autorité partagée `MailTransportGuard` ; P4-C et
