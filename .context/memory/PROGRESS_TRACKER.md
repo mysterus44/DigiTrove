@@ -274,7 +274,7 @@ Vérifications P2 passées :
   fichiers**, diff-check propre.
 - Hors gate : panier, checkout, coupon public, Schema.org, P6-D1.1, P7.
 
-### Storefront panier invité - D-063 (en revue)
+### Storefront panier invité - D-063 (MERGÉ, PR #44, merge `01896f5`)
 
 - Base propre : catalogue mergé, `73d4f407`. **Aucune migration**, 46 inchangées.
 - Schéma imposé : `carts.secret_hash` NOT NULL/UNIQUE/64 hex ⇒ secret CSPRNG obligatoire,
@@ -288,6 +288,22 @@ Vérifications P2 passées :
 - ⚠️ Non prouvé : course réelle à deux connexions (harnais transactionnel, `57014`).
 - Validation : panier **29 / 100**, suite complète **1616 / 12388**, 0 échec, Pint.
 - Hors gate : checkout, paiement, coupon public, compte client, affiliation, P7.
+
+### Storefront checkout invité - D-064 (en revue)
+
+- Base : panier mergé `01896f5`. **Aucune migration**, 46 inchangées.
+- ⚠️ Branche canonique : `p0-foundations-laravel13`. `main` est 213 commits en retard et
+  ne porte **aucun code exclusif** (`git diff p0...main` vide).
+- Orchestration pure : `OrderService`/`PaymentInitiationService` acceptaient déjà
+  `Visitor` + `guestEmail`. Aucune autorité P3-D/P4-C modifiée.
+- Routes : `/checkout`, `/checkout/return` (sans paramètre, config statique),
+  `/checkout/{order}/status`. `order_number` affiché, jamais routé.
+- Le retour navigateur ne confirme rien — prouvé par paramètres forgés.
+- ⚠️ Défaut corrigé : dépendance paiement rendue paresseuse (l'affichage du formulaire
+  ne doit pas exiger une passerelle).
+- ⚠️ Cause racine du « flake » résolue : `compare_at_price_minor` aléatoire vs CHECK.
+- Livraison invitée prouvée : `user_id` NULL, usurpation refusée en `23514`.
+- Hors gate : compte client, coupon, affiliation, suivi hors session, P7.
 
 Vérifications post-merge P2 sur `p0-foundations-laravel13` (`aff4d05`) :
 - Merge GitHub : `aff4d05 Merge pull request #3 from mysterus44/p2-catalog`

@@ -45,7 +45,7 @@ function guestCartFixture(): array
     ]);
 
     ProductPrice::factory()->create([
-        'product_id' => $product->id, 'currency' => 'XOF', 'price_minor' => 15_000, 'is_active' => true,
+        'product_id' => $product->id, 'currency' => 'XOF', 'price_minor' => 15_000, 'compare_at_price_minor' => null, 'is_active' => true,
     ]);
 
     return ['cart' => $cart, 'product' => $product];
