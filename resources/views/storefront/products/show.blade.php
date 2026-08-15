@@ -20,7 +20,9 @@
             <div class="detail-price">
                 <strong>{{ number_format($product->activeXofPrice->price_minor, 0, ',', ' ') }} XOF</strong>
                 @if ($product->activeXofPrice->compare_at_price_minor !== null && $product->activeXofPrice->compare_at_price_minor > $product->activeXofPrice->price_minor)
-                    <span>{{ number_format($product->activeXofPrice->compare_at_price_minor, 0, ',', ' ') }} XOF</span>
+                    {{-- <s> porte la semantique « ancien prix » ; un <span> nu se lisait comme un
+                         second prix courant. Le libelle visuellement cache nomme ce qu'il est. --}}
+                    <s><span class="sr-only">Ancien prix : </span>{{ number_format($product->activeXofPrice->compare_at_price_minor, 0, ',', ' ') }} XOF</s>
                 @endif
             </div>
 

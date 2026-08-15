@@ -305,6 +305,21 @@ Vérifications P2 passées :
 - Livraison invitée prouvée : `user_id` NULL, usurpation refusée en `23514`.
 - Hors gate : compte client, coupon, affiliation, suivi hors session, P7.
 
+### Storefront polish - D-065 (en revue)
+
+- ⚠️ **Leçon** : les tests fonctionnels ne prouvent RIEN sur le rendu. Neuf classes CSS
+  posées sur trois gates, aucune définie — panier et checkout n'étaient pas stylés, et
+  aucun test ne l'a vu (`assertSee` vérifie du contenu, pas du rendu).
+- ⚠️ `main > section` ne protège que les enfants DIRECTS : blocs non enveloppés = débordement
+  pleine largeur. Invisible à la lecture, visible à la capture.
+- CSS panier/checkout sur les jetons existants, `.button*` réutilisés.
+- A11y mesurée sur l'arbre réel : aide sortie du `<label>` vers `aria-describedby`,
+  prix barré en `<s>` + libellé masqué, `.sr-only`, `focus-visible` explicite.
+- 404 aux couleurs du storefront, contenu identique pour inexistant et non-possédé.
+- ⚠️ `php artisan serve` bloque avec session Redis en conteneur ; `php -S` fonctionne
+  (consigné dans HANDOFF).
+- Hors gate : migration, autorités, coupon, compte client, affiliation, P7.
+
 Vérifications post-merge P2 sur `p0-foundations-laravel13` (`aff4d05`) :
 - Merge GitHub : `aff4d05 Merge pull request #3 from mysterus44/p2-catalog`
   (commits `d43751d` + `fbaa33a`, base `9a11791`)

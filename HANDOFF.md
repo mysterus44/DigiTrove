@@ -11,6 +11,24 @@
 - **Branche git active** : **`codex/storefront-checkout`**, créée depuis le merge du panier
   invité **`01896f585390f266c66f51f2371399e21d41f387`**.
 
+### ⚠️ PRÉVISUALISATION LOCALE : `php -S`, PAS `php artisan serve`
+
+Mesuré, pas supposé. Dans ce contexte conteneurisé, `php artisan serve` **se bloque
+silencieusement** avec une session Redis : aucune requête n'est journalisée, la connexion
+expire au bout de 30 s, et rien dans les logs n'indique la cause. Postgres, Redis (`PONG`)
+et phpredis répondent tous normalement — la piste est donc trompeuse.
+
+La forme qui fonctionne est celle du serveur intégré de PHP :
+
+```
+cd public && php -S 0.0.0.0:<port> ../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php
+```
+
+⚠️ Ce piège a coûté quatre tentatives de diagnostic et deux fausses hypothèses (décalage
+de port Redis, cache de configuration figé). Il a aussi produit une conclusion erronée —
+« `SessionStoreGuard` a un coût opérationnel » — qui était **fausse** : les sessions Redis
+fonctionnent parfaitement, le garde n'a jamais été en cause.
+
 ### ⚠️ BRANCHE CANONIQUE : `p0-foundations-laravel13`, PAS `main`
 
 Vérifié par mesure, pas par convention : `git diff p0-foundations-laravel13...main` est

@@ -785,3 +785,168 @@ blockquote {
         flex-direction: column;
     }
 }
+
+/* Visible pour les lecteurs d'ecran, invisible a l'oeil. Utilise pour nommer un
+   ancien prix barre : sans ce libelle, « 3 500 XOF 7 700 XOF » se lit comme deux
+   prix courants, et le second peut etre pris pour le vrai. */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+/* ── Panier et checkout invité (D-065) ──────────────────────────────────────────
+   Memes jetons que le catalogue : --panel pour les surfaces, --line pour les
+   separateurs, --green-dark pour l'action principale. Les boutons reutilisent
+   .button/.button-primary deja definis plus haut plutot que d'en redefinir. */
+
+.cart-lines,
+.checkout-lines {
+    list-style: none;
+    margin: 0 0 24px;
+    padding: 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+}
+.cart-line,
+.checkout-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--line);
+}
+.cart-line:last-child,
+.checkout-line:last-child {
+    border-bottom: 0;
+}
+.cart-line-name,
+.checkout-line-name {
+    flex: 1 1 60%;
+    min-width: 0;
+    font-weight: 700;
+    color: var(--ink);
+    text-decoration: none;
+}
+.cart-line-name:hover {
+    text-decoration: underline;
+}
+.cart-line-price,
+.checkout-line-price {
+    font-weight: 800;
+    white-space: nowrap;
+}
+/* Ligne dont le produit n'est plus vendable : neutre, sans nom ni prix ni motif. */
+.cart-line-unavailable {
+    flex: 1 1 60%;
+    color: var(--muted);
+    font-style: italic;
+}
+.cart-line form {
+    margin: 0;
+    flex: 0 0 auto;
+}
+
+.cart-total,
+.checkout-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    margin: 0 0 24px;
+    padding: 18px 20px;
+    background: var(--panel-alt);
+    border-radius: 12px;
+    font-size: 1.15rem;
+}
+
+.cart-actions,
+.checkout-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+}
+
+.cart-empty,
+.checkout-empty {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 32px 24px;
+    text-align: center;
+    color: var(--muted);
+}
+
+.checkout-summary,
+.checkout-form {
+    margin-bottom: 32px;
+}
+.checkout-form label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+.checkout-form-help {
+    display: block;
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+}
+.checkout-form input[type='email'] {
+    width: 100%;
+    max-width: 460px;
+    min-height: 46px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    font-size: 1rem;
+}
+.checkout-form input[type='email']:focus-visible {
+    outline: 3px solid var(--green);
+    outline-offset: 2px;
+    border-color: var(--green-dark);
+}
+.form-error {
+    color: var(--red);
+    font-weight: 700;
+    margin: 8px 0 0;
+}
+
+.checkout-status {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--green-dark);
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin-bottom: 24px;
+}
+
+/* Le focus clavier doit rester visible partout : sans cette regle, un theme peut
+   supprimer l'outline par defaut et rendre le parcours inutilisable au clavier. */
+.cart-lines a:focus-visible,
+.cart-lines button:focus-visible,
+.cart-actions a:focus-visible,
+.cart-actions button:focus-visible,
+.checkout-form button:focus-visible,
+.checkout-actions a:focus-visible {
+    outline: 3px solid var(--green);
+    outline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+    .cart-line,
+    .checkout-line {
+        flex-wrap: nowrap;
+    }
+}
