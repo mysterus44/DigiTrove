@@ -21,6 +21,7 @@
 
         <nav class="nav-links" aria-label="Sections">
             <a href="{{ route('products.index') }}">Catalogue</a>
+            <a href="{{ route('cart.show') }}">Panier</a>
             <a href="{{ route('storefront.home') }}#avis">Avis</a>
             <a href="{{ route('storefront.home') }}#newsletter">Acces</a>
         </nav>

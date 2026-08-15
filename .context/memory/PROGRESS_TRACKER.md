@@ -259,7 +259,7 @@ Vérifications P2 passées :
 - `./vendor/bin/pint --test` via `digitrove-php:dev` : PASS, 55 fichiers
 - `git diff --check` : PASS
 
-### Storefront catalogue dynamique - D-062 (pré-merge)
+### Storefront catalogue dynamique - D-062 (MERGÉ, PR #43, merge `73d4f407`, CI #52)
 
 - Base propre : prérequis Storefront mergés via PR #42, merge `2c5da024`.
 - Schéma : **aucune migration**, 46 migrations existantes inchangées.
@@ -273,6 +273,21 @@ Vérifications P2 passées :
   du responsive desktop/mobile (aucun test automatisé), suite exhaustive, Pint **536
   fichiers**, diff-check propre.
 - Hors gate : panier, checkout, coupon public, Schema.org, P6-D1.1, P7.
+
+### Storefront panier invité - D-063 (en revue)
+
+- Base propre : catalogue mergé, `73d4f407`. **Aucune migration**, 46 inchangées.
+- Schéma imposé : `carts.secret_hash` NOT NULL/UNIQUE/64 hex ⇒ secret CSPRNG obligatoire,
+  SHA-256 seul persisté, `public_id` dans aucune route.
+- TTL **14 jours configurable** (`config/cart.php`, `CART_TTL_DAYS`), posé une fois.
+- Non-résurrection : `converted`/`abandoned`/`expired`/périmé ⇒ nouveau panier.
+- `SessionStoreGuard` fail-closed sur le **handler** Redis ; aucune table `sessions` créée.
+- Produit retiré ⇒ ligne muette, exclue du total, **aucune écriture sur `GET`**.
+- ⚠️ Défaut corrigé : `firstOrCreate` ⇒ 500 sur course ; `23505` sur
+  `cart_items_cart_product_unique` désormais toléré via `PostgresConstraintViolation`.
+- ⚠️ Non prouvé : course réelle à deux connexions (harnais transactionnel, `57014`).
+- Validation : panier **29 / 100**, suite complète **1616 / 12388**, 0 échec, Pint.
+- Hors gate : checkout, paiement, coupon public, compte client, affiliation, P7.
 
 Vérifications post-merge P2 sur `p0-foundations-laravel13` (`aff4d05`) :
 - Merge GitHub : `aff4d05 Merge pull request #3 from mysterus44/p2-catalog`

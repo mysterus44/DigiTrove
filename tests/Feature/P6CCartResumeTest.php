@@ -294,8 +294,19 @@ it('adds no generic cart route or controller', function () {
 
     sort($uris);
 
-    // EXACTLY the three P6-C resume URIs. No storefront, no cart API, no CRUD.
-    expect($uris)->toBe(['cart/resume', 'cart/resume/{cartpublicid}', 'cart/resumed']);
+    // CURRENT-STATE, named one by one. The three P6-C resume URIs, plus the storefront
+    // guest cart added by tache 5 — `cart/items/{slug}` appears twice because POST and
+    // DELETE share it. Any other cart URI still fails: no cart API, no CRUD, and above
+    // all nothing carrying a cart id, a `public_id` or a secret outside the resume
+    // capability, which is a different scope with its own hashed token.
+    expect($uris)->toBe([
+        'cart',
+        'cart/items/{slug}',
+        'cart/items/{slug}',
+        'cart/resume',
+        'cart/resume/{cartpublicid}',
+        'cart/resumed',
+    ]);
 
     expect(glob(app_path('Http/Controllers/CartController.php')) ?: [])->toBe([]);
 });

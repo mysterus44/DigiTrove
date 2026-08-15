@@ -5,6 +5,7 @@ use App\Http\Controllers\AnalyticsEventController;
 use App\Http\Controllers\CartResumeController;
 use App\Http\Controllers\DownloadFileController;
 use App\Http\Controllers\DownloadLandingController;
+use App\Http\Controllers\Storefront\CartController;
 use App\Http\Controllers\Storefront\CatalogController;
 use App\Http\Controllers\Storefront\ProductController;
 use App\Http\Middleware\EnsureAnalyticsSameOrigin;
@@ -14,6 +15,13 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', CatalogController::class)->name('storefront.home');
 Route::get('/products', [ProductController::class, 'index'])->name('products.index');
 Route::get('/products/{product:slug}', [ProductController::class, 'show'])->name('products.show');
+
+// Guest cart. GET never mutates; the two mutations are POST/DELETE and therefore carry
+// the normal web CSRF boundary. No route exposes a cart id, a `public_id` or a secret:
+// ownership is proved by the session's visitor, not by anything in the URL.
+Route::get('/cart', [CartController::class, 'show'])->name('cart.show');
+Route::post('/cart/items/{slug}', [CartController::class, 'store'])->name('cart.items.store');
+Route::delete('/cart/items/{slug}', [CartController::class, 'destroy'])->name('cart.items.destroy');
 
 Route::get('/analytics/consent', [AnalyticsConsentController::class, 'show'])
     ->name('analytics.consent.show');
