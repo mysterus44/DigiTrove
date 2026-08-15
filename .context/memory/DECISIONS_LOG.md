@@ -4293,6 +4293,97 @@ chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la mêm
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
 vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
 
+### D-063 : Panier invité Storefront ✅
+
+CONTEXTE : `carts` et `cart_items` existent depuis P3, et P6-C leur a ajouté
+`last_activity_at` avec son trigger d'abandon, mais AUCUN flux applicatif ne les
+utilisait. Le préflight a établi trois faits qui contraignent l'architecture bien plus
+que les intentions initiales : `carts.secret_hash` est `NOT NULL`, `UNIQUE` et contraint
+à `^[0-9a-f]{64}$`, donc un panier sans secret SHA-256 ne peut PHYSIQUEMENT pas exister ;
+aucun TTL panier autoritatif n'existait, la seule valeur du dépôt étant les sept jours de
+`CartFactory`, une fixture et non une décision ; et `config/session.php` a pour défaut
+`database` alors qu'aucune table `sessions` n'existe ni n'est créée par une migration.
+
+CHOIX (arbitrages MAESTRO) :
+1. **Aucune migration.** Le schéma P3 et les ajouts P6-C suffisent. 46 migrations
+   inchangées.
+2. **TTL de 14 jours, configurable.** `config/cart.php` + `CART_TTL_DAYS`, même patron
+   que `CHECKOUT_PENDING_TTL_MINUTES`. `expires_at` est posé UNE FOIS à la création et
+   jamais recalculé : le prolonger à chaque visite rendrait l'expiration inatteignable
+   pour exactement les paniers qui en ont besoin. Valeur invalide ⇒ refus AVANT écriture.
+3. **Rien ne ressuscite.** Un panier `converted`, `abandoned`, `expired` ou dépassé
+   retrouvé en session est REMPLACÉ, jamais réactivé ni cloné. Réactiver contredirait
+   littéralement le commentaire du trigger P6-C, qui refuse de bouger `last_activity_at`
+   sur ces états précisément pour qu'un churn d'items ne rappelle pas un panier mort ;
+   cloner produirait un panier sans trace d'abandon exploitable par le ledger de relances.
+4. **Garde de session fail-closed**, même patron que `MailTransportGuard` (D-061). Le NOM
+   ne prouve rien : `SessionStoreGuard` résout le HANDLER et exige un
+   `CacheBasedSessionHandler` adossé à un `RedisStore`. Le driver `array` n'est admis que
+   si `app()->runningUnitTests()` est vrai — condition qu'aucune requête ne peut
+   influencer. AUCUNE table `sessions` n'est créée : le déploiement voulu est Redis.
+5. **Secret imposé par le schéma.** CSPRNG 256 bits en mémoire, SHA-256 seul persisté, la
+   valeur brute ne quitte jamais le service. Ce gate n'en fait PAS une capacité de reprise
+   par lien : `public_id` n'apparaît dans aucune route. L'appartenance est prouvée par le
+   `visitor_id` de session, jamais par une valeur venue du client.
+6. **Produit devenu indisponible.** Ligne générique « Article indisponible » : ni nom, ni
+   prix, ni MOTIF — dépublication, archivage, suppression et retrait de prix sont
+   indiscernables de l'extérieur. Exclue du total, et JAMAIS supprimée sur un `GET`.
+7. **Quantité fixée à 1**, aucun sélecteur, aucune route `PATCH`. Ajout idempotent.
+
+⚠️ DÉFAUT RÉEL TROUVÉ EN TENTANT DE PROUVER LA CONCURRENCE. `firstOrCreate` vérifie PUIS
+insère : le perdant d'une course arrive sur un INSERT dont la ligne existe déjà et
+recevait un 500. Le service tolère désormais un `23505` **confirmé sur la seule contrainte
+`cart_items_cart_product_unique`**, via `PostgresConstraintViolation` (SQLSTATE + nom
+exact, jamais par sous-chaîne) ; toute autre erreur BDD remonte. C'est la tentative
+honnête de preuve qui a révélé le bug, pas la relecture.
+
+⚠️ LIMITE DE PREUVE ASSUMÉE — À CONNAÎTRE AVANT LE CHECKOUT. La course RÉELLE à deux
+connexions n'est PAS prouvée. `RefreshesDatabaseAsMigrator` enveloppe chaque test dans une
+transaction : un `commit()` interne ne libère qu'un savepoint, la transaction externe garde
+le verrou, et la seconde connexion expire en **`57014`** au lieu de voir **`23505`**. La
+prouver exigerait le harnais non transactionnel utilisé en P6-D1.1. Ce qui EST prouvé :
+PostgreSQL rejette le doublon en `23505` sur la contrainte nommée, et la classification
+refuse un autre nom. ⚠️ Le verrou `Cache::lock` ne prouve rien non plus en test
+(`CACHE_STORE=array` ⇒ verrou par processus) et sa clé est le visiteur : il sérialise deux
+requêtes qui PARTAGENT DÉJÀ une session, pas deux qui ont couru avant qu'un visiteur
+existe. **L'index unique est la garantie structurelle, pas le verrou applicatif.**
+
+⚠️ `PricingService` N'EST PAS APPELÉ À L'AFFICHAGE. Son `quote()` est fail-closed sur le
+produit (P3-D1) et refuse le devis ENTIER si une ligne devient invendable — `/cart`
+deviendrait un 500 dès qu'un admin dépublie un produit. Le total d'affichage somme les
+`price_minor` XOF actifs, en entiers, quantité 1, sans coupon. `PricingService` reste
+l'autorité du checkout, là où refuser EST le bon comportement.
+
+⚠️ AUCUN SWEEP D'EXPIRATION. Le contrôle `now() > expires_at` à la lecture suffit pour ce
+gate ; c'est un choix assumé, pas un oubli.
+
+PREUVE MESURÉE (trigger P6-C sous privilèges runtime) : `session_user` = `current_user` =
+`digitrove_runtime`, `has_function_privilege(…, 'touch_cart_last_activity()', 'EXECUTE')`
+= **false**, et l'INSERT comme le DELETE déplacent bien `last_activity_at` ; sur un panier
+non actif il ne bouge pas. ⚠️ Le test a d'abord échoué pour une raison qui n'était PAS le
+trigger : `last_activity_at` est `timestamptz(0)`, donc un INSERT et un DELETE de la même
+seconde produisent la MÊME valeur stockée.
+
+HORS PÉRIMÈTRE : aucun coupon (`coupon_id` reste NULL), aucun checkout, aucun paiement,
+aucun compte client (`user_id` reste NULL), aucune reprise par lien, aucun Schema.org,
+aucune affiliation. Un panier invité reste structurellement inadressable par e-mail et
+n'est donc pas candidat aux relances P6-C.
+
+CONTRAT RESCOPÉ : `P6CCartResumeTest` exigeait EXACTEMENT les trois URI de reprise.
+Rescopé par ÉNUMÉRATION EXACTE — `cart`, `cart/items/{slug}` ×2 (POST et DELETE partagent
+l'URI), plus les trois URI P6-C. Aucun wildcard : toute autre URI panier échoue toujours.
+`P4B_ALLOWED_SERVICE_FILES` élargie de deux chemins nommés.
+
+TESTS : `StorefrontGuestCartTest` (lecture sans écriture, création, TTL configuré, refus
+d'un TTL invalide, éligibilité produit fail-closed, idempotence, retrait, isolation entre
+sessions, non-résurrection, produit retiré, garde de session, confidentialité) et
+`StorefrontGuestCartConcurrencyTest` (trigger sous privilèges runtime, horloge figée sur
+panier non actif, classification `23505`). Suite complète : **1616 tests / 12388
+assertions**, 0 échec.
+
+IMPACT : le panier invité est fonctionnel de bout en bout. Le checkout invité est le gate
+suivant et devra lire cette entrée avant de s'appuyer sur la concurrence du panier.
+
 ### D-062 : Catalogue Storefront dynamique et provisionnement produit ✅
 
 CONTEXTE : le schéma P2 complet existait, mais aucune ressource Filament produit,

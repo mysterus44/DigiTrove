@@ -23,6 +23,14 @@
                     <span>{{ number_format($product->activeXofPrice->compare_at_price_minor, 0, ',', ' ') }} XOF</span>
                 @endif
             </div>
+
+            {{-- Ajout au panier : POST, donc protege par le CSRF web standard. La
+                 quantite est fixee a 1 et n'est pas saisissable ; un second clic ne
+                 duplique rien, l'unicite (cart_id, product_id) le garantit. --}}
+            <form method="POST" action="{{ route('cart.items.store', $product->slug) }}" class="detail-add">
+                @csrf
+                <button type="submit">Ajouter {{ $product->name }} au panier</button>
+            </form>
         </div>
     </section>
 

@@ -6,10 +6,48 @@
 
 ## 📍 ÉTAT ACTUEL
 
-- **Dernier agent** : Codex
-- **Date** : 2026-08-14
-- **Branche git active** : **`codex/storefront-catalogue`**, créée depuis le merge
-  des prérequis **`2c5da0241d99232abd715d34399bfbd8cb78ebb9`**.
+- **Dernier agent** : Claude Code
+- **Date** : 2026-08-15
+- **Branche git active** : **`claude/storefront-guest-cart`**, créée depuis le merge du
+  catalogue **`73d4f40762c9d4b4b67474d3f61e6eafe10f84e5`**.
+
+### 🚧 Storefront MVP - PANIER INVITÉ EN REVUE (D-063)
+
+Le catalogue **D-062 est MERGÉ** via [PR #43](https://github.com/mysterus44/DigiTrove/pull/43),
+head `e461298`, merge `73d4f407`, **CI #52 SUCCESS**.
+
+Le panier invité est implémenté **sans migration** (46 inchangées). Trois faits du schéma
+ont contraint l'architecture plus que les intentions : `carts.secret_hash` est `NOT NULL`,
+`UNIQUE` et contraint à 64 hex — **un panier sans secret SHA-256 ne peut pas exister** ;
+aucun TTL panier autoritatif n'existait (les 7 jours de `CartFactory` sont une fixture) ;
+et `config/session.php` a pour défaut `database` alors qu'**aucune table `sessions`
+n'existe**.
+
+D'où : TTL **14 jours configurable** (`CART_TTL_DAYS`) posé une seule fois à la création ·
+panier `converted`/`abandoned`/`expired` **remplacé, jamais réactivé ni cloné** ·
+`SessionStoreGuard` fail-closed résolvant le **handler** (Redis) et non le nom, sans créer
+de table `sessions` · secret CSPRNG 256 bits → SHA-256 seul, `public_id` dans **aucune
+route** · produit retiré ⇒ ligne muette exclue du total, **zéro écriture sur `GET`** ·
+quantité fixée à 1, ajout idempotent.
+
+⚠️ **Défaut réel trouvé en tentant de prouver la concurrence** : `firstOrCreate` laissait
+le perdant d'une course recevoir un 500. Le service tolère désormais un `23505` **confirmé
+sur `cart_items_cart_product_unique`** via `PostgresConstraintViolation`.
+
+⚠️ **Limite de preuve assumée** : la course réelle à deux connexions n'est PAS prouvée —
+`RefreshesDatabaseAsMigrator` enveloppe le test dans une transaction, la seconde connexion
+expire en `57014` au lieu de voir `23505`. Le verrou `Cache::lock` ne prouve rien non plus
+en test (`CACHE_STORE=array`) et sa clé est le visiteur. **L'index unique est la garantie
+structurelle, pas le verrou.**
+
+⚠️ **`PricingService` n'est pas appelé à l'affichage** : fail-closed par conception, il
+ferait un 500 dès qu'un produit est dépublié. Réservé au checkout.
+
+Preuve mesurée : le trigger P6-C se déclenche bien pour une écriture `digitrove_runtime`
+**sans EXECUTE** sur `touch_cart_last_activity()`, et reste inerte sur un panier non actif.
+
+Validation : panier **29 tests / 100 assertions**, suite complète **1616 tests / 12388
+assertions**, 0 échec ; Pint ; diff-check propre ; 46 migrations.
 
 ### ✅ Storefront MVP - PRÉREQUIS MERGÉS
 
