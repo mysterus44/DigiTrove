@@ -1,6 +1,7 @@
-{{-- Panier invité. Aucun coupon, aucun checkout, aucune collecte d'identité : ce gate
-     s'arrête au panier consultable. Les montants sont des entiers XOF (exposant 0),
-     formatés comme dans le catalogue — aucune division, aucun flottant. --}}
+{{-- Panier invité. Aucun coupon, aucun checkout, aucune collecte d'identité ici.
+     Les montants sont des entiers XOF (exposant 0), formatés comme dans le catalogue —
+     aucune division, aucun flottant. Les classes réutilisent les jetons du catalogue
+     (.button, .button-primary) plutôt que d'en redéfinir à côté. --}}
 @extends('storefront.layouts.app')
 
 @section('title', 'Votre panier - DigiTrove')
@@ -15,15 +16,19 @@
     @if ($lines === [])
         <section class="cart-empty">
             <p>Votre panier est vide.</p>
-            <p><a href="{{ route('products.index') }}">Parcourir le catalogue</a></p>
+            <p><a class="button button-secondary" href="{{ route('products.index') }}">Parcourir le catalogue</a></p>
         </section>
     @else
+        {{-- Enveloppe <section> obligatoire : la largeur de page vient de
+             `main > section`, donc un <ul> enfant direct de main deborde sur toute
+             la fenetre. C'est ce que la capture a montre. --}}
+        <section class="cart-body">
         <ul class="cart-lines">
             @foreach ($lines as $line)
                 <li class="cart-line">
                     @if ($line['available'])
-                        <a href="{{ route('products.show', $line['product']->slug) }}">{{ $line['product']->name }}</a>
-                        <strong>{{ number_format($line['priceMinor'], 0, ',', ' ') }} {{ $currency }}</strong>
+                        <a class="cart-line-name" href="{{ route('products.show', $line['product']->slug) }}">{{ $line['product']->name }}</a>
+                        <span class="cart-line-price">{{ number_format($line['priceMinor'], 0, ',', ' ') }} {{ $currency }}</span>
                     @else
                         {{-- Ligne volontairement muette : ni nom, ni prix, ni motif. Une
                              dépublication, une suppression et un prix retiré doivent être
@@ -35,7 +40,7 @@
                     <form method="POST" action="{{ route('cart.items.destroy', $line['slug']) }}">
                         @csrf
                         @method('DELETE')
-                        <button type="submit">Retirer cet article du panier</button>
+                        <button class="button button-muted button-compact" type="submit">Retirer cet article du panier</button>
                     </form>
                 </li>
             @endforeach
@@ -43,9 +48,15 @@
 
         {{-- Les lignes indisponibles ne sont pas comptées : le total ne promet que ce qui
              est réellement achetable aujourd'hui. --}}
-        <p class="cart-total"><strong>Total : {{ number_format($totalMinor, 0, ',', ' ') }} {{ $currency }}</strong></p>
+        <p class="cart-total">
+            <span>Total</span>
+            <strong>{{ number_format($totalMinor, 0, ',', ' ') }} {{ $currency }}</strong>
+        </p>
 
-        <p><a href="{{ route('checkout.show') }}">Passer la commande</a></p>
-        <p><a href="{{ route('products.index') }}">Continuer mes achats</a></p>
+        <div class="cart-actions">
+            <a class="button button-primary" href="{{ route('checkout.show') }}">Passer la commande</a>
+            <a class="button button-secondary" href="{{ route('products.index') }}">Continuer mes achats</a>
+        </div>
+        </section>
     @endif
 @endsection

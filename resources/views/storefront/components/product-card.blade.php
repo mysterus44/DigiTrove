@@ -16,7 +16,9 @@
         <div class="price-row">
             <strong>{{ number_format($price->price_minor, 0, ',', ' ') }} XOF</strong>
             @if ($price->compare_at_price_minor !== null && $price->compare_at_price_minor > $price->price_minor)
-                <span>{{ number_format($price->compare_at_price_minor, 0, ',', ' ') }} XOF</span>
+                {{-- <s> porte la semantique « ancien prix » ; un <span> nu se lisait comme un
+                     second prix courant. Le libelle visuellement cache nomme ce qu'il est. --}}
+                <s><span class="sr-only">Ancien prix : </span>{{ number_format($price->compare_at_price_minor, 0, ',', ' ') }} XOF</s>
             @endif
         </div>
         <div class="card-footer">

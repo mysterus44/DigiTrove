@@ -219,8 +219,12 @@ it('shows a withdrawn product as an unnamed line, excluded from the total and ne
         // Nothing about the withdrawn product leaks: not its name, not its price, and
         // above all not WHY it went away.
         ->assertDontSee('Secret interne')
-        // Total counts the available line only.
-        ->assertSee('Total : 15 000 XOF');
+        // Total counts the available line only. Asserted on the AMOUNT alone: the label
+        // and the figure now live in separate elements so the total can sit on its own
+        // row, and a literal "Total : 15 000 XOF" would break on that markup rather than
+        // on the guarantee.
+        ->assertSee('15 000 XOF')
+        ->assertDontSee('30 000 XOF');
 
     // A GET must not silently erase part of the cart.
     expect(CartItem::query()->count())->toBe(2);

@@ -4293,6 +4293,67 @@ chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la mêm
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
 vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
 
+### D-065 : Polish Storefront — contrôle visuel réel, états d'erreur, accessibilité ✅
+
+CONTEXTE : les gates D-062 à D-064 ont produit un parcours d'achat invité complet et
+testé, mais **jamais regardé**. Le seul contrôle responsive du sprint était une inspection
+manuelle non tracée. Aucune migration, aucune autorité P3-D/P4-C touchée.
+
+⚠️ **LA LEÇON DE CE GATE : LES TESTS FONCTIONNELS NE PROUVENT RIEN SUR LE RENDU.**
+Neuf classes CSS — `cart-lines`, `cart-line`, `cart-total`, `cart-empty`,
+`checkout-summary`, `checkout-form`, `checkout-status`, `form-error`, `detail-add` — ont
+été posées dans les vues sur **trois gates successifs** sans qu'aucune ne soit définie dans
+`app.css`. Panier et checkout n'étaient donc **pas stylés du tout** : liste à puces brute,
+bouton par défaut du navigateur, liens nus. **Aucun test ne l'a vu**, parce qu'ils
+vérifient du contenu (`assertSee`), jamais du rendu. Ce n'est pas une négligence isolée :
+c'est un angle mort structurel de toute la suite jusqu'ici, et il faut le savoir avant de
+conclure qu'une page « marche » parce qu'elle est verte.
+
+⚠️ **SECOND DÉFAUT, INVISIBLE À LA LECTURE.** Après avoir écrit le CSS, la capture a
+montré des blocs **débordant sur toute la largeur**, bouton coupé au bord. La cause est
+dans la feuille existante : `main > section { width: min(1180px, calc(100% - 32px)) }` ne
+protège que les **enfants directs**. Les `<ul>`/`<p>`/`<div>` non enveloppés dans une
+`<section>` échappent à la largeur de page. Aucune lecture de classes ne pouvait le
+révéler — seule la capture.
+
+CORRECTIONS :
+1. **CSS panier/checkout** écrit sur les jetons EXISTANTS (`--panel`, `--line`,
+   `--panel-alt`, `--green-dark`) et réutilisant `.button`/`.button-primary`/`.button-muted`
+   plutôt que de redéfinir une échelle à côté.
+2. **`<section>` enveloppante** sur le corps du panier — la largeur de page en dépend.
+3. **Texte d'aide sorti du `<label>`** vers `aria-describedby` (+ `aria-invalid` en erreur).
+   Mesuré sur l'arbre d'accessibilité réel : le champ s'annonçait
+   « Adresse e-mail Vos liens de téléchargement y seront envoyés. Aucun compte n'est créé. »
+   Le nom accessible doit rester court ; l'aide est une description, pas un nom.
+4. **Prix barré en `<s>` + libellé masqué** « Ancien prix : », sur la fiche et la carte.
+   Il se lisait « 3 500 XOF 7 700 XOF » — le second pouvant passer pour le prix réel.
+5. **`.sr-only`** ajoutée (support du point 4).
+6. **`focus-visible` explicite** sur les éléments interactifs du parcours.
+7. **404 aux couleurs du storefront**. L'ancienne était la page blanche de Laravel : sûre
+   (aucune trace, aucune donnée de commande) mais sans marque ni sortie. Son contenu est
+   **identique** pour une commande inexistante et celle d'un autre acheteur — la page ne
+   doit jamais devenir un oracle d'existence (D-064).
+
+⚠️ **ASSERTION RECENTRÉE SUR LA GARANTIE.** Séparer le libellé « Total » du montant
+cassait `assertSee('Total : 15 000 XOF')`. L'assertion porte désormais sur le **montant**,
+plus un `assertDontSee` prouvant que la ligne indisponible reste exclue du total. Même
+principe que le rescope du contrat de routes P6-C : le test vise la garantie, pas la forme
+exacte du HTML.
+
+⚠️ **PIÈGE D'INFRASTRUCTURE CONSIGNÉ DANS `HANDOFF.md`** : `php artisan serve` se bloque
+silencieusement avec une session Redis en conteneur ; `php -S … server.php` fonctionne.
+Quatre tentatives et deux fausses hypothèses (port Redis, cache de config) avant de trouver.
+Ce diagnostic a aussi produit une conclusion **erronée puis rétractée** — « `SessionStoreGuard`
+a un coût opérationnel » — qui ne tenait pas : les sessions Redis fonctionnent, le garde
+n'a jamais été en cause, et il reste **intact**.
+
+MÉTHODE : écrire, capturer, corriger, recapturer — trois passages sur le panier avant
+qu'il soit présentable. Plus lent qu'une feuille écrite d'un coup, et c'est précisément ce
+qui évite de reproduire l'erreur trouvée.
+
+HORS PÉRIMÈTRE : aucune migration, aucune autorité, aucun coupon, compte client,
+affiliation ou P7.
+
 ### D-064 : Checkout invité Storefront ✅
 
 CONTEXTE : le panier invité (D-063) s'arrêtait avant toute commande. Le préflight a établi
