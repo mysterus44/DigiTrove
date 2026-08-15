@@ -8,8 +8,47 @@
 
 - **Dernier agent** : Claude Code
 - **Date** : 2026-08-15
-- **Branche git active** : **`claude/storefront-guest-cart`**, créée depuis le merge du
-  catalogue **`73d4f40762c9d4b4b67474d3f61e6eafe10f84e5`**.
+- **Branche git active** : **`codex/storefront-checkout`**, créée depuis le merge du panier
+  invité **`01896f585390f266c66f51f2371399e21d41f387`**.
+
+### ⚠️ BRANCHE CANONIQUE : `p0-foundations-laravel13`, PAS `main`
+
+Vérifié par mesure, pas par convention : `git diff p0-foundations-laravel13...main` est
+**VIDE**. `main` est **213 commits en retard**, figé au 2026-07-15, et son unique commit
+propre (`11130f4`) est un merge dont le second parent EST la merge-base — **aucun code
+n'existe uniquement sur `main`**. Toute PR cible `p0-foundations-laravel13`. Ne rebranchez
+jamais depuis `main` : vous perdriez 213 commits sans qu'aucun conflit ne vous prévienne.
+
+### 🚧 Storefront MVP - CHECKOUT INVITÉ EN REVUE (D-064)
+
+Le panier invité **D-063 est MERGÉ** (PR #44, merge `01896f5`).
+
+Le checkout invité **orchestre** sans modifier aucune autorité : `OrderService::checkout()`
+et `PaymentInitiationService::initiate()` acceptaient déjà `Visitor` et `?string
+$guestEmail`. **Aucune migration**, 46 inchangées.
+
+Routes : `GET /checkout`, `POST /checkout`, `GET /checkout/return` (**sans paramètre** —
+`CINETPAY_RETURN_URL` est une config statique, elle ne peut pas porter un `public_id`), et
+`GET /checkout/{order}/status`. Le `public_id` est comparé à celui de la session ; toute
+non-correspondance rend un **404 identique octet pour octet**. `order_number` est affiché,
+jamais routé.
+
+⚠️ **Le retour navigateur ne confirme rien** : seuls le webhook signé et le contre-appel
+fournisseur produisent `paid` (D-034). Prouvé par trois jeux de paramètres forgés laissant
+la ligne `orders` identique octet pour octet.
+
+⚠️ **Défaut corrigé** : `PaymentInitiationService` injecté au constructeur faisait échouer
+l'AFFICHAGE du formulaire quand `PAYMENT_DRIVER` est vide. Résolution paresseuse.
+
+⚠️ **Cause racine du « flake » des gates précédents — résolue** : `ProductPriceFactory`
+tire un `compare_at_price_minor` aléatoire que le CHECK exige supérieur au prix. Les
+fixtures storefront l'épinglent désormais. Trois exécutions identiques le confirment.
+
+⚠️ **Livraison invitée prouvée** : grants à `user_id` NULL, grant usurpant un compte refusé
+en `23514`, e-mail adressé depuis `orders.customer_email`.
+
+⚠️ **Hors périmètre assumé** : pas de suivi de commande hors session — aucun lien e-mail ne
+rouvre une commande plus tard.
 
 ### 🚧 Storefront MVP - PANIER INVITÉ EN REVUE (D-063)
 

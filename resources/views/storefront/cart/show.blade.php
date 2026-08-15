@@ -45,6 +45,7 @@
              est réellement achetable aujourd'hui. --}}
         <p class="cart-total"><strong>Total : {{ number_format($totalMinor, 0, ',', ' ') }} {{ $currency }}</strong></p>
 
+        <p><a href="{{ route('checkout.show') }}">Passer la commande</a></p>
         <p><a href="{{ route('products.index') }}">Continuer mes achats</a></p>
     @endif
 @endsection

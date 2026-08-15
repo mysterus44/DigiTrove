@@ -4293,6 +4293,91 @@ chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la mêm
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
 vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
 
+### D-064 : Checkout invité Storefront ✅
+
+CONTEXTE : le panier invité (D-063) s'arrêtait avant toute commande. Le préflight a établi
+que les autorités P3-D acceptaient DÉJÀ un achat invité — `OrderService::checkout()` et
+`PaymentInitiationService::initiate()` prennent `User|Visitor` et `?string $guestEmail`, et
+`orders.customer_email` est `CITEXT NOT NULL`. Rien n'a dû être élargi : ce gate ORCHESTRE.
+
+CHOIX (arbitrages MAESTRO) :
+1. **Aucune migration.** 46 inchangées. Aucune autorité P3-D/P4-C modifiée.
+2. **`public_id` dans les URLs, `order_number` jamais.** Le numéro est lisible et dictable
+   par téléphone (Crockford base32) — exactement ce qu'il ne faut pas mettre dans un
+   chemin. Il est affiché, jamais routé.
+3. **Le `public_id` n'est PAS une autorisation.** Il est comparé à celui que la session a
+   posé au checkout ; toute non-correspondance rend un **404 identique octet pour octet**
+   à celui d'une commande inexistante, sinon la route deviendrait un oracle d'existence.
+4. **Le retour navigateur ne confirme RIEN.** Seuls le webhook signé et le contre-appel
+   fournisseur peuvent faire passer une commande à `paid` (D-034). La page de statut lit
+   l'état déjà en base et n'appelle aucune logique de confirmation.
+5. **`clientInstructions['payment_url']` seule clé lue**, validée comme URL. Absente ou
+   invalide ⇒ échec fermé, aucune redirection improvisée.
+6. **Refus `PricingService` ⇒ message générique + retour panier.** Il refuse le devis
+   ENTIER quand une ligne devient invendable — c'est correct ici, contrairement à
+   l'affichage panier. Nommer la ligne rapporterait l'état catalogue d'un produit qu'un
+   administrateur vient de retirer.
+7. **`Cache-Control: no-store`** sur le statut : un cache partagé pourrait servir l'état
+   d'un acheteur à un autre.
+
+⚠️ **`CINETPAY_RETURN_URL` est une valeur de config STATIQUE** — elle ne peut pas porter un
+`public_id` variable. D'où deux routes : `/checkout/return` **sans paramètre**, qui lit la
+session et redirige, et `/checkout/{order}/status`, canonique. Cette séparation rend la
+preuve de session PLUS forte que la vérification demandée : la route de retour ne peut
+littéralement pas fonctionner sans cookie valide.
+
+⚠️ **DÉFAUT DE CONCEPTION CORRIGÉ.** Injecter `PaymentInitiationService` au constructeur
+faisait échouer toute la surface checkout avec « No payment provider is configured »,
+y compris le simple AFFICHAGE du formulaire — le binding est fail-closed quand
+`PAYMENT_DRIVER` est vide. Un résumé de panier ne doit pas exiger une passerelle de
+paiement : la dépendance est résolue paresseusement dans `startPayment()`.
+
+⚠️ **CAUSE RACINE DU « FLAKE » DES GATES PRÉCÉDENTS — RÉSOLUE.** Ce n'était pas une
+dépendance d'ordre. `ProductPriceFactory` tire un `compare_at_price_minor` ALÉATOIRE, et le
+CHECK exige qu'il soit SUPÉRIEUR au prix ; les fixtures storefront fixaient
+`price_minor = 15 000` en laissant le prix barré au hasard, donc un tirage sous 15 000
+violait la contrainte de façon intermittente. Le prix barré est désormais épinglé dans les
+quatre fixtures. Trois exécutions consécutives identiques (48/190) confirment le
+déterminisme. ⚠️ **Une fixture partiellement aléatoire est un piège** : elle ne casse que
+parfois, et ressemble alors à un problème d'ordre.
+
+⚠️ **`.env.example` NETTOYÉ** : `PAYMENT_PROVIDER=cinetpay` et un bloc `CINETPAY_*`
+incomplet coexistaient avec le bloc `PAYMENT_DRIVER` réellement lu par `config/payments.php`.
+Deux clés pour la même intention, dont une pré-remplie. Le doublon est supprimé.
+
+⚠️ **LIVRAISON INVITÉE PROUVÉE, PAS DÉDUITE.** Une commande invitée réelle (aucune ligne
+`users`, `user_id` NULL) traverse `GrantIssuanceService` : les grants naissent à
+`user_id` NULL, et un grant revendiquant un compte sur cette commande est REFUSÉ en
+`23514`. La garantie est bidirectionnelle grâce au `IS NOT DISTINCT FROM` du trigger G3.
+L'e-mail part de `orders.customer_email` via un `Mailable` adressé à une chaîne — aucun
+`Notifiable`, donc aucun compte nécessaire.
+
+⚠️ **DEUX LIMITES DE HARNAIS ASSUMÉES.** `SecureDeliveryJob` refuse de tourner à un niveau
+de transaction autre que 0 et `RefreshesDatabaseAsMigrator` en impose un : le job n'est
+donc pas exercé de bout en bout, seule l'adresse de l'enveloppe est prouvée. Même obstacle
+que la course du panier en D-063. ⚠️ Et faire passer une commande à `paid` exige d'insérer
+le paiement `succeeded` dans la MÊME transaction avec `SET CONSTRAINTS ALL DEFERRED` : les
+CHECK jouent dans les deux sens, ce qui rend une commande à demi payée **irreprésentable**
+— et c'est précisément pourquoi un retour navigateur forgé est structurellement inoffensif.
+
+⚠️ **`main` A DIVERGÉ MAIS NE PORTE AUCUN CODE.** `git diff p0...main` est VIDE. Son unique
+commit propre (`11130f4`, 2026-07-15) est un merge dont le second parent EST la merge-base.
+`main` est 213 commits en retard et n'a rien à récupérer. **`p0-foundations-laravel13` est
+la branche canonique** — c'est désormais écrit dans `HANDOFF.md`.
+
+HORS PÉRIMÈTRE : aucun compte client, aucun coupon, aucune affiliation, aucun Schema.org,
+aucun nouveau fournisseur. ⚠️ **Pas de suivi de commande hors session** : aucun lien e-mail
+ne rouvre une commande plus tard. Choix de scope MVP assumé — une capacité durable exigerait
+son propre secret haché, comme la reprise de panier P6-C, et donc son propre gate.
+
+TESTS : `StorefrontGuestCheckoutTest` (formulaire, rien accepté du client hors e-mail,
+refus pricing générique, **retour navigateur forgé ne mutant rien**, `no-store`,
+persistance de session inter-requêtes, 404 identiques, `order_number` hors des routes) et
+`StorefrontGuestDeliveryTest` (commande invitée sans compte, grants à `user_id` NULL,
+grant usurpant un compte refusé, adressage e-mail).
+
+IMPACT : DigiTrove peut vendre un produit digital de bout en bout à un acheteur invité.
+
 ### D-063 : Panier invité Storefront ✅
 
 CONTEXTE : `carts` et `cart_items` existent depuis P3, et P6-C leur a ajouté

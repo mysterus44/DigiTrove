@@ -7,6 +7,7 @@ use App\Http\Controllers\DownloadFileController;
 use App\Http\Controllers\DownloadLandingController;
 use App\Http\Controllers\Storefront\CartController;
 use App\Http\Controllers\Storefront\CatalogController;
+use App\Http\Controllers\Storefront\CheckoutController;
 use App\Http\Controllers\Storefront\ProductController;
 use App\Http\Middleware\EnsureAnalyticsSameOrigin;
 use App\Http\Middleware\RequireCurrentAnalyticsConsent;
@@ -22,6 +23,15 @@ Route::get('/products/{product:slug}', [ProductController::class, 'show'])->name
 Route::get('/cart', [CartController::class, 'show'])->name('cart.show');
 Route::post('/cart/items/{slug}', [CartController::class, 'store'])->name('cart.items.store');
 Route::delete('/cart/items/{slug}', [CartController::class, 'destroy'])->name('cart.items.destroy');
+
+// Guest checkout. `/checkout/return` is the STATIC provider return URL and carries no
+// parameter, so it resolves the order from the session and forwards. Neither it nor the
+// status page runs any confirmation logic: only the signed webhook can move an order to
+// paid (D-034). `order_number` never appears in a path — it is human-readable by design.
+Route::get('/checkout', [CheckoutController::class, 'show'])->name('checkout.show');
+Route::post('/checkout', [CheckoutController::class, 'store'])->name('checkout.store');
+Route::get('/checkout/return', [CheckoutController::class, 'providerReturn'])->name('checkout.return');
+Route::get('/checkout/{order}/status', [CheckoutController::class, 'status'])->name('checkout.status');
 
 Route::get('/analytics/consent', [AnalyticsConsentController::class, 'show'])
     ->name('analytics.consent.show');

@@ -27,6 +27,10 @@ function guestCartProduct(array $attributes = []): Product
         'product_id' => $product->id,
         'currency' => 'XOF',
         'price_minor' => 15_000,
+        // Pinned: the factory randomises this, and the CHECK demands it be ABOVE the
+        // price. A random draw below 15 000 fails the constraint intermittently — which
+        // is what looked like an order-dependent flake.
+        'compare_at_price_minor' => null,
         'is_active' => true,
     ]);
 
@@ -91,7 +95,7 @@ it('refuses to add anything the catalogue does not publish', function (array $at
 
     if ($withPrice) {
         ProductPrice::factory()->create([
-            'product_id' => $product->id, 'currency' => 'XOF', 'price_minor' => 9_000, 'is_active' => true,
+            'product_id' => $product->id, 'currency' => 'XOF', 'price_minor' => 9_000, 'compare_at_price_minor' => null, 'is_active' => true,
         ]);
     }
 
