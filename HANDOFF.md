@@ -6,9 +6,149 @@
 
 ## 📍 ÉTAT ACTUEL
 
-- **Dernier agent** : Fable
-- **Date** : 2026-08-11
-- **Branche git active** : **`p6-d1-affiliate-policy-governance`**, base D-058 `ec0191f`.
+- **Dernier agent** : Claude Code
+- **Date** : 2026-08-15
+- **Branche git active** : **`codex/storefront-checkout`**, créée depuis le merge du panier
+  invité **`01896f585390f266c66f51f2371399e21d41f387`**.
+
+### ⚠️ PRÉVISUALISATION LOCALE : `php -S`, PAS `php artisan serve`
+
+Mesuré, pas supposé. Dans ce contexte conteneurisé, `php artisan serve` **se bloque
+silencieusement** avec une session Redis : aucune requête n'est journalisée, la connexion
+expire au bout de 30 s, et rien dans les logs n'indique la cause. Postgres, Redis (`PONG`)
+et phpredis répondent tous normalement — la piste est donc trompeuse.
+
+La forme qui fonctionne est celle du serveur intégré de PHP :
+
+```
+cd public && php -S 0.0.0.0:<port> ../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php
+```
+
+⚠️ Ce piège a coûté quatre tentatives de diagnostic et deux fausses hypothèses (décalage
+de port Redis, cache de configuration figé). Il a aussi produit une conclusion erronée —
+« `SessionStoreGuard` a un coût opérationnel » — qui était **fausse** : les sessions Redis
+fonctionnent parfaitement, le garde n'a jamais été en cause.
+
+### ⚠️ BRANCHE CANONIQUE : `p0-foundations-laravel13`, PAS `main`
+
+Vérifié par mesure, pas par convention : `git diff p0-foundations-laravel13...main` est
+**VIDE**. `main` est **213 commits en retard**, figé au 2026-07-15, et son unique commit
+propre (`11130f4`) est un merge dont le second parent EST la merge-base — **aucun code
+n'existe uniquement sur `main`**. Toute PR cible `p0-foundations-laravel13`. Ne rebranchez
+jamais depuis `main` : vous perdriez 213 commits sans qu'aucun conflit ne vous prévienne.
+
+### 🚧 Storefront MVP - CHECKOUT INVITÉ EN REVUE (D-064)
+
+Le panier invité **D-063 est MERGÉ** (PR #44, merge `01896f5`).
+
+Le checkout invité **orchestre** sans modifier aucune autorité : `OrderService::checkout()`
+et `PaymentInitiationService::initiate()` acceptaient déjà `Visitor` et `?string
+$guestEmail`. **Aucune migration**, 46 inchangées.
+
+Routes : `GET /checkout`, `POST /checkout`, `GET /checkout/return` (**sans paramètre** —
+`CINETPAY_RETURN_URL` est une config statique, elle ne peut pas porter un `public_id`), et
+`GET /checkout/{order}/status`. Le `public_id` est comparé à celui de la session ; toute
+non-correspondance rend un **404 identique octet pour octet**. `order_number` est affiché,
+jamais routé.
+
+⚠️ **Le retour navigateur ne confirme rien** : seuls le webhook signé et le contre-appel
+fournisseur produisent `paid` (D-034). Prouvé par trois jeux de paramètres forgés laissant
+la ligne `orders` identique octet pour octet.
+
+⚠️ **Défaut corrigé** : `PaymentInitiationService` injecté au constructeur faisait échouer
+l'AFFICHAGE du formulaire quand `PAYMENT_DRIVER` est vide. Résolution paresseuse.
+
+⚠️ **Cause racine du « flake » des gates précédents — résolue** : `ProductPriceFactory`
+tire un `compare_at_price_minor` aléatoire que le CHECK exige supérieur au prix. Les
+fixtures storefront l'épinglent désormais. Trois exécutions identiques le confirment.
+
+⚠️ **Livraison invitée prouvée** : grants à `user_id` NULL, grant usurpant un compte refusé
+en `23514`, e-mail adressé depuis `orders.customer_email`.
+
+⚠️ **Hors périmètre assumé** : pas de suivi de commande hors session — aucun lien e-mail ne
+rouvre une commande plus tard.
+
+### 🚧 Storefront MVP - PANIER INVITÉ EN REVUE (D-063)
+
+Le catalogue **D-062 est MERGÉ** via [PR #43](https://github.com/mysterus44/DigiTrove/pull/43),
+head `e461298`, merge `73d4f407`, **CI #52 SUCCESS**.
+
+Le panier invité est implémenté **sans migration** (46 inchangées). Trois faits du schéma
+ont contraint l'architecture plus que les intentions : `carts.secret_hash` est `NOT NULL`,
+`UNIQUE` et contraint à 64 hex — **un panier sans secret SHA-256 ne peut pas exister** ;
+aucun TTL panier autoritatif n'existait (les 7 jours de `CartFactory` sont une fixture) ;
+et `config/session.php` a pour défaut `database` alors qu'**aucune table `sessions`
+n'existe**.
+
+D'où : TTL **14 jours configurable** (`CART_TTL_DAYS`) posé une seule fois à la création ·
+panier `converted`/`abandoned`/`expired` **remplacé, jamais réactivé ni cloné** ·
+`SessionStoreGuard` fail-closed résolvant le **handler** (Redis) et non le nom, sans créer
+de table `sessions` · secret CSPRNG 256 bits → SHA-256 seul, `public_id` dans **aucune
+route** · produit retiré ⇒ ligne muette exclue du total, **zéro écriture sur `GET`** ·
+quantité fixée à 1, ajout idempotent.
+
+⚠️ **Défaut réel trouvé en tentant de prouver la concurrence** : `firstOrCreate` laissait
+le perdant d'une course recevoir un 500. Le service tolère désormais un `23505` **confirmé
+sur `cart_items_cart_product_unique`** via `PostgresConstraintViolation`.
+
+⚠️ **Limite de preuve assumée** : la course réelle à deux connexions n'est PAS prouvée —
+`RefreshesDatabaseAsMigrator` enveloppe le test dans une transaction, la seconde connexion
+expire en `57014` au lieu de voir `23505`. Le verrou `Cache::lock` ne prouve rien non plus
+en test (`CACHE_STORE=array`) et sa clé est le visiteur. **L'index unique est la garantie
+structurelle, pas le verrou.**
+
+⚠️ **`PricingService` n'est pas appelé à l'affichage** : fail-closed par conception, il
+ferait un 500 dès qu'un produit est dépublié. Réservé au checkout.
+
+Preuve mesurée : le trigger P6-C se déclenche bien pour une écriture `digitrove_runtime`
+**sans EXECUTE** sur `touch_cart_last_activity()`, et reste inerte sur un panier non actif.
+
+Validation : panier **29 tests / 100 assertions**, suite complète **1616 tests / 12388
+assertions**, 0 échec ; Pint ; diff-check propre ; 46 migrations.
+
+### ✅ Storefront MVP - PRÉREQUIS MERGÉS
+
+La PR [#42](https://github.com/mysterus44/DigiTrove/pull/42) a mergé les prérequis
+Storefront : head `58a4b3531c7b224869cfa04e8127a239deb7f928`, merge
+`2c5da0241d99232abd715d34399bfbd8cb78ebb9`. D-030 GLOBAL est fermé par l'autorité
+partagée `MailTransportGuard`, et la récupération concurrente d'idempotence du paiement
+est corrigée et testée. La branche catalogue part de ce merge, pas du WIP d'affiliation.
+
+### 🚧 Storefront MVP - CATALOGUE DYNAMIQUE PRÊT POUR REVUE
+
+Le gate D-062 réutilise le schéma P2 sans migration. Les ressources Filament Product,
+Category et ProductFile ont été construites : admin actif uniquement, prix XOF entiers,
+couvertures marketing publiques et livrables privés avec SHA-256 calculé côté serveur.
+
+`catalog:import-legacy` lit une source structurée issue de SITE-00. Premier passage réel :
+**4 catégories, 5 produits, 5 prix XOF et 5 pivots créés**, tous en `draft` sans
+`published_at`. Rejeu : **0 création**, 4 catégories et 5 produits ignorés. Les **3 avis**
+sont explicitement ignorés car aucune table d'avis n'existe ; aucun schéma n'a été inventé.
+
+Routes publiques en lecture seule : `/`, `/products`, `/products/{product:slug}`. Le scope
+public exige produit publié, date non future, non supprimé et prix XOF actif. Brouillons,
+archives, futurs, soft-deleted et produits sans prix XOF actif restent invisibles/404.
+`storage_path` et `checksum_sha256` ne sont jamais rendus ; descriptions et métadonnées
+sont échappées. Aucun Schema.org, panier, checkout, coupon ou paiement n'est ajouté.
+
+Validation ciblée : **19 tests / 124 assertions** ; 46 migrations inchangées ; build Vite
+PASS ; **inspection manuelle** du rendu desktop/mobile sans overflow — aucun test
+responsive automatisé n'existe ; Pint **536 fichiers** ; diff-check
+propre. Suite exhaustive via Pest avec 1 Gio : **1586 tests / 12281 assertions**, 0 échec ;
+`artisan test` seul hérite du plafond mémoire PHP de 128 Mio sur ce workspace.
+
+### ⏸️ P6-D1.1 — PAUSE PRODUIT, WIP PRÉSERVÉ
+
+KingKouda a priorisé le **Storefront MVP invité** avant la poursuite de l'affiliation :
+sans storefront, aucune vente ni touche réelle ne peut alimenter D2/D3. **D-059 reste
+intégralement valide** ; son implémentation est reportée, pas annulée.
+
+Le WIP P6-D1.1 a été figé **sans modification de contenu** puis poussé sur
+`p6-d1-1-affiliate-lifecycle-codes` au checkpoint
+**`f15d192566c4c968fd00a9eb03bd5159e6cc52ba`**. Cette branche contient le brouillon de
+migration `000031` et ses tests. Le checkpoint de pause repartait de `4407fca` ; après la
+PR #42, la branche catalogue repart du merge `2c5da024`. La stable et le Storefront restent
+à **46 migrations et ne contiennent aucune `000031`**.
 
 ### ✅ P6-D1 — Autorité d'affiliation + gouvernance des politiques : MERGÉ
 
@@ -847,11 +987,21 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
-## 🚧 P6-D1.1 — Cycle de vie affilié + codes (GATE SUIVANT)
+## ⏳ Storefront MVP - rapport catalogue puis panier invité
 
-**Statut** : **ARCHITECTURE GELÉE PAR D-059**, arbitrage KingKouda **Q1 = C · Q2 = A ·
-Q3 = C**. **NON COMMENCÉ**, aucune migration `000031`, aucun code écrit. P6-D1 est **MERGÉ**
-— PR #41, head `d2ecfb44`, merge `aeac8a5d`, **CI SUCCESS** (`000030`, **46 migrations**).
+Le catalogue dynamique D-062 est implémenté sur `codex/storefront-catalogue`. Rapporter à
+KingKouda la construction des trois ressources Filament, l'import réel 5 produits / 4
+catégories en brouillon et les validations. **Attendre ensuite son prompt panier invité
+(tâche 5)** : aucune route panier, logique de checkout ou exposition coupon ne doit être
+anticipée. P6-D1.1 reste en pause sur son checkpoint distant `f15d192`.
+
+## ⏸️ Référence P6-D1.1 — Cycle de vie affilié + codes
+
+**Statut** : **ARCHITECTURE GELÉE PAR D-059 ET IMPLÉMENTATION EN PAUSE**, arbitrage
+KingKouda **Q1 = C · Q2 = A · Q3 = C**. Le WIP non livré est préservé uniquement sur
+`p6-d1-1-affiliate-lifecycle-codes` à `f15d192`. La stable n'a aucune migration `000031`.
+P6-D1 est **MERGÉ** — PR #41, head `d2ecfb44`, merge `aeac8a5d`, **CI SUCCESS**
+(`000030`, **46 migrations**).
 
 ### ⚠️ LA DÉCISION STRUCTURANTE : SNAPSHOT + LEDGER
 
@@ -1031,6 +1181,42 @@ Quatre tables (`crm_segments`, `crm_segment_versions`, `crm_segment_generations`
 ### Rappel D-049 (architecture P6-A2)
 
 Architecture **gelée dans D-049** : définitions typées allowlistées (aucun SQL/colonne/opérateur/JSONPath libre), versions immuables, générations matérialisées publiées **atomiquement**, critères commerce **currency-scoped** (aucun LTV global, aucun FX, aucun float), consentement marketing **séparé** de l'appartenance au segment. Migration `000025` (41 migrations). **P6-B0 (CRM Admin Views) NON COMMENCÉ.**
+
+### 2026-08-14 - Codex (catalogue dynamique Storefront)
+- Fait : ressources Filament Product/Category/ProductFile créées, policy admin actif,
+  prix XOF entiers, upload privé et SHA-256 serveur ; aucune migration ni service ajouté.
+- Fait : import SITE-00 dédié et idempotent. Premier passage réel : 4 catégories, 5
+  produits, 5 prix XOF et 5 pivots, tous en draft ; rejeu sans duplication ; 3 avis
+  signalés non persistés faute de schéma.
+- Fait : accueil, catalogue paginé et fiche produit alimentés par le scope public strict ;
+  contrôles desktop/mobile, XSS et absence de métadonnées privées.
+- Validation : tests catalogue 18/120 ; suite exhaustive 1586/12281 ; build Vite ;
+  Pint 536 ; diff-check ; 46 migrations inchangées.
+- Décision : D-062.
+- Laisse à : rapport humain, puis prompt panier invité. P6-D1.1 reste en pause.
+
+### 2026-08-13 — Codex (prérequis Storefront MVP fermés)
+- Fait : D-030 GLOBAL fermé par l'autorité partagée `MailTransportGuard` ; P4-C et
+  P6-C refusent désormais les transports résolus dangereux, inconnus, incomplets ou
+  imbriqués. SMTP réel documenté, secrets exclusivement dans `.env`, aucun réseau CI.
+- Corrigé : `$now` est propagé jusqu'à la récupération concurrente de
+  `PaymentInitiationService`; collision réelle à deux processus classée précisément en
+  `idempotency_conflict`. Le test prouve que le perdant est bloqué jusqu'au commit gagnant.
+- Validation : garde mail **33/94** ; P3-D3 **55/257** ; suite complète
+  **1571/12167** ; Pint **510** ; `git diff --check` propre ; **46 migrations**, aucune
+  `000031` sur cette branche.
+- Laisse à : rapport humain puis prompt catalogue/provisionnement Filament. Aucun code
+  catalogue, panier ou checkout HTTP commencé.
+
+### 2026-08-13 — Codex (pause P6-D1.1 et checkpoint avant Storefront MVP)
+- Fait : WIP P6-D1.1 existant sauvegardé **sans modification de contenu** sur
+  `p6-d1-1-affiliate-lifecycle-codes`, commit et push
+  `f15d192566c4c968fd00a9eb03bd5159e6cc52ba`.
+- Fait : retour à la stable `4407fca`, création de
+  `codex/storefront-mvp-prerequisites`. La stable reste à 46 migrations sans `000031` ;
+  le brouillon `000031` existe uniquement sur la branche gelée.
+- Décision : **D-060**, P6-D1.1 reporté après le Storefront MVP ; D-059 inchangée.
+- Laisse à : fermeture D-030 GLOBAL, puis correction concurrente paiement, séquentiellement.
 
 ### 2026-08-11 — Fable (D-059 : architecture P6-D1.1 gelée — AUCUN CODE)
 - Fait : **préflight P6-D1.1 en lecture seule** contre le schéma réel (`pg_catalog`,

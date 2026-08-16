@@ -10,6 +10,24 @@ would be written to `storage/logs`.
 All examples below are **commented and inactive**. Put real secrets in `.env`
 only; never commit them.
 
+Both P4-C secure delivery and P6-C cart reminders use the same fail-closed guard.
+It resolves the configured transport rather than trusting the mailer name, rejects
+`log`, `array`, `null`, unknown or incomplete transports in every environment, and
+recursively audits every `failover` or `roundrobin` leg. A sender address is also
+mandatory. The repository therefore remains dormant while `MAIL_HOST` is blank;
+setting `MAIL_MAILER=smtp` alone never marks outbound mail as ready.
+
+Production readiness is configured only in the untracked deployment `.env`:
+
+1. choose a reviewed provider and verified sending domain;
+2. set its real SMTP host, port, username and password;
+3. set a verified `MAIL_FROM_ADDRESS`;
+4. clear/configure the Laravel configuration cache after deployment;
+5. run a provider sandbox delivery before enabling a sending feature.
+
+Tests continue to use `Mail::fake()` or configuration-only guards and never open a
+provider connection.
+
 ## SMTP (generic)
 
 ```dotenv

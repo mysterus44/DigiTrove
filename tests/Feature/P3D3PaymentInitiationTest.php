@@ -19,6 +19,7 @@ use App\Services\Payments\PaymentInitiationService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 use Tests\Concerns\InteractsWithPaymentsDatabase;
 
 uses(InteractsWithPaymentsDatabase::class);
@@ -925,6 +926,75 @@ function p3d3RuntimePdo(): PDO
     );
 }
 
+function p3d3InitiationProcess(int $userId, string $orderPublicId, string $key, string $applicationName): Process
+{
+    $script = <<<'PHP'
+        require getcwd().'/vendor/autoload.php';
+        $app = require getcwd().'/bootstrap/app.php';
+        $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+        // This process is deliberately held behind an advisory lock while its
+        // competitor boots and commits. Keep the database timeout below the
+        // process timeout, but large enough that slow CI I/O cannot turn the
+        // intended 23505 race into an unrelated 55P03 refusal.
+        Illuminate\Support\Facades\DB::statement("SET lock_timeout = '90s'");
+        Illuminate\Support\Facades\DB::selectOne(
+            "SELECT set_config('application_name', ?, false)",
+            [$argv[4]],
+        );
+
+        $provider = new class implements App\Contracts\Payments\PaymentProvider
+        {
+            public int $calls = 0;
+
+            public function name(): string
+            {
+                return 'powerpay-sandbox';
+            }
+
+            public function initiate(App\Contracts\Payments\ProviderInitiationRequest $request): App\Contracts\Payments\ProviderInitiationResult
+            {
+                $this->calls++;
+
+                return new App\Contracts\Payments\ProviderInitiationResult(
+                    providerPaymentReference: 'RACE-'.substr($request->paymentPublicId, 0, 12),
+                );
+            }
+        };
+
+        try {
+            $result = (new App\Services\Payments\PaymentInitiationService($provider))->initiate(
+                App\Models\User::query()->findOrFail((int) $argv[1]),
+                $argv[2],
+                $argv[3],
+                Carbon\CarbonImmutable::now(),
+            );
+
+            echo json_encode([
+                'outcome' => 'created',
+                'payment_public_id' => $result->paymentPublicId,
+                'provider_calls' => $provider->calls,
+            ], JSON_THROW_ON_ERROR);
+        } catch (App\Services\Payments\PaymentInitiationException $exception) {
+            echo json_encode([
+                'outcome' => 'refused',
+                'reason' => $exception->reason->value,
+                'provider_calls' => $provider->calls,
+            ], JSON_THROW_ON_ERROR);
+        } catch (Throwable $exception) {
+            fwrite(STDERR, $exception::class.':'.$exception->getMessage());
+            exit(2);
+        }
+        PHP;
+
+    return new Process(
+        [PHP_BINARY, '-r', $script, (string) $userId, $orderPublicId, $key, $applicationName],
+        base_path(),
+        null,
+        null,
+        120,
+    );
+}
+
 // E0 — the payment is committed and visible to an independent connection before
 // the provider ever runs.
 it('commits the payment before the provider call and exposes it to an independent connection', function () {
@@ -1044,6 +1114,113 @@ it('refuses the same digest on a second order at the service level and at the in
         ->and($conflict->getCode())->toBe('23505')
         ->and($conflict->getMessage())->toContain('payments_idempotency_key_hash_unique')
         ->and(Payment::count())->toBe(1);
+});
+
+// C3b — force the exact lookup/INSERT race: A has already observed no digest and
+// waits inside its INSERT, B commits that digest on another order, then A resumes
+// into the 23505 recovery path. This is the branch that must retain the injected
+// instant and translate the collision instead of falling through IntegrityFailure.
+it('recovers an actual concurrent digest insert with the precise conflict reason', function () {
+    $user = User::factory()->create();
+    $orderA = p3d3Order(user: $user);
+    $orderB = p3d3Order(user: $user);
+    $key = p3d3Key('C3b');
+    $digest = hash('sha256', $key);
+    $advisoryKey = 3_033_235_005;
+
+    $migrator = DB::connection('pgsql_migration');
+    $migrator->unprepared(<<<SQL
+        CREATE OR REPLACE FUNCTION p3d3_pause_first_digest_insert() RETURNS trigger
+        LANGUAGE plpgsql AS \$\$
+        BEGIN
+            IF NEW.order_id = {$orderA->id} THEN
+                PERFORM pg_advisory_xact_lock({$advisoryKey});
+            END IF;
+            RETURN NEW;
+        END;
+        \$\$;
+        CREATE TRIGGER p3d3_pause_first_digest_insert_trigger
+        BEFORE INSERT ON payments
+        FOR EACH ROW EXECUTE FUNCTION p3d3_pause_first_digest_insert();
+        SQL);
+
+    $locker = p3d3RuntimePdo();
+    $locker->query("SELECT pg_advisory_lock({$advisoryKey})");
+    $first = p3d3InitiationProcess($user->id, (string) $orderA->public_id, $key, 'p3d3-digest-race-first');
+    $second = p3d3InitiationProcess($user->id, (string) $orderB->public_id, $key, 'p3d3-digest-race-second');
+    $released = false;
+
+    try {
+        $first->start();
+
+        $waiterObserved = false;
+        for ($attempt = 0; $attempt < 400; $attempt++) {
+            $waiting = (int) $migrator->selectOne(
+                <<<'SQL'
+                    SELECT COUNT(*) AS aggregate
+                    FROM pg_stat_activity
+                    WHERE application_name = 'p3d3-digest-race-first'
+                      AND cardinality(pg_blocking_pids(pid)) > 0
+                    SQL
+            )->aggregate;
+
+            if ($waiting > 0) {
+                $waiterObserved = true;
+                break;
+            }
+
+            if (! $first->isRunning()) {
+                break;
+            }
+
+            usleep(50_000);
+        }
+
+        expect($waiterObserved)->toBeTrue(
+            'The first service call never reached the blocked INSERT. '
+            .$first->getErrorOutput().$first->getOutput()
+        );
+
+        $second->start();
+        $second->wait();
+        expect($second->isSuccessful())->toBeTrue($second->getErrorOutput());
+
+        $winner = json_decode($second->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        expect($winner['outcome'])->toBe('created')
+            ->and($winner['provider_calls'])->toBe(1)
+            ->and($first->isRunning())->toBeTrue(
+                'The blocked call exited before the advisory lock was released: '
+                .$first->getErrorOutput().$first->getOutput()
+            );
+
+        $locker->query("SELECT pg_advisory_unlock({$advisoryKey})");
+        $released = true;
+        $first->wait();
+        expect($first->isSuccessful())->toBeTrue($first->getErrorOutput());
+
+        $recovered = json_decode($first->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        expect($recovered['outcome'])->toBe('refused')
+            ->and($recovered['reason'])->toBe(Reason::IdempotencyConflict->value)
+            ->and($recovered['provider_calls'])->toBe(0)
+            ->and(Payment::query()->where('idempotency_key_hash', $digest)->count())->toBe(1)
+            ->and(Payment::query()->where('idempotency_key_hash', $digest)->sole()->order_id)->toBe($orderB->id);
+    } finally {
+        if (! $released) {
+            try {
+                $locker->query("SELECT pg_advisory_unlock({$advisoryKey})");
+            } catch (Throwable) {
+                // The process cleanup below remains mandatory even if the lock session died.
+            }
+        }
+
+        $first->stop(0.1);
+        $second->stop(0.1);
+        $locker = null;
+        $migrator->unprepared(
+            'DROP TRIGGER IF EXISTS p3d3_pause_first_digest_insert_trigger ON payments; '
+            .'DROP FUNCTION IF EXISTS p3d3_pause_first_digest_insert();'
+        );
+    }
 });
 
 // C4 — a duplicate provider reference is refused by the real finalisation path.

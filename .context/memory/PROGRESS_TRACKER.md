@@ -9,14 +9,15 @@
 P0 FONDATIONS       : ██████████  100%
 P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
+STOREFRONT MVP      : ████░░░░░░  Catalogue dynamique D-062 prêt pour revue ; panier/checkout non commencés
 P1 IDENTITÉ         : ██████████  100%
-P2 CATALOGUE        : ██████████  100% (mergé PR #3 → aff4d05)
+P2 CATALOGUE        : ██████████  Schéma mergé PR #3 ; admin/import/lecture publique livrés sur `codex/storefront-catalogue`
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
-P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**
+P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**. Le prérequis Storefront corrige la variable `$now` hors portée dans la récupération concurrente d'idempotence et ajoute une collision réelle à deux processus (P3-D3 : **55/257**).
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
-P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle
+P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle. D-061 aligne son garde mail sur l'autorité stricte P6-C : D-030 GLOBAL fermé sur la branche de prérequis Storefront.
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
-P6 CRM & MARKETING  : █████████░  P6-A0 → P6-B1 TOUS TERMINÉS ET MERGÉS (D-043 → D-054 ; P6-B0 = PR #37 merge 2df7e6f, P6-B1 = PR #38 merge 474f92c, CI SUCCESS ; 43 migrations, dernière 000027) ; P6-C Paniers/Relances = PROCHAIN GATE, architecture gelée D-055, NON COMMENCÉ.
+P6 CRM & MARKETING  : █████████░  P6-A0→P6-D1 mergés ; P6-D1.1 gelé par D-059 puis MIS EN PAUSE par D-060, WIP préservé à `f15d192`. Les prérequis Storefront sont mergés via PR #42 et le catalogue dynamique D-062 est prêt pour revue. Reprise affiliation différée.
 P7 BLOG & SEO       : ░░░░░░░░░░  0%
 ```
 
@@ -225,10 +226,12 @@ Statut : ✅ implémenté et **mergé** dans `p0-foundations-laravel13` via PR #
 | Prix fixes par devise via `product_prices` | ✅ DECIDED — D-018 |
 | Bundles avec prix commercial propre via `product_prices` | ✅ DECIDED — D-018 |
 | product_price_history | ⏸️ PAUSED — reporté hors P2 |
-| Références fichiers sur disque **privé** | ✅ DONE — aucune URL publique, aucun upload réel |
+| Références fichiers sur disque **privé** | ✅ DONE — upload Filament privé, SHA-256 serveur, aucune métadonnée publique |
 | checksum_sha256 contraint | ✅ DONE |
-| Reviews + modération + verified_purchase | ⬜ TODO — probablement hors première livraison P2 |
-| Filament ProductResource | ⏸️ PAUSED — hors P2 |
+| Reviews + modération + verified_purchase | ⏸️ PAUSED — aucun schéma ; 3 avis legacy non persistés et signalés par l'import |
+| Filament Product/Category/ProductFile | ✅ DONE — ressources admin actif uniquement sur la branche Storefront |
+| Import legacy audité | ✅ DONE — 5 produits, 4 catégories et 5 prix XOF en draft ; rejeu idempotent |
+| Lecture publique dynamique | ✅ DONE — accueil, catalogue paginé, fiche publiée uniquement |
 | Tests catalogue et garde-fous sécurité | ✅ DONE |
 
 Décisions P2 validées :
@@ -255,6 +258,67 @@ Vérifications P2 passées :
   29 tests, 173 assertions
 - `./vendor/bin/pint --test` via `digitrove-php:dev` : PASS, 55 fichiers
 - `git diff --check` : PASS
+
+### Storefront catalogue dynamique - D-062 (MERGÉ, PR #43, merge `73d4f407`, CI #52)
+
+- Base propre : prérequis Storefront mergés via PR #42, merge `2c5da024`.
+- Schéma : **aucune migration**, 46 migrations existantes inchangées.
+- Admin : trois ressources Filament, policy admin actif/non supprimé, XOF entier,
+  couverture publique et livrable privé avec digest SHA-256 calculé côté serveur.
+- Import réel : premier passage 4 catégories / 5 produits / 5 prix / 5 pivots, tous
+  `draft` ; second passage 0 création. Trois avis ignorés explicitement faute de table.
+- Public : `/`, `/products`, `/products/{product:slug}` ; scope fail-closed sur statut,
+  date, soft-delete et prix XOF actif ; aucune donnée privée de `product_files` exposée.
+- Validation : catalogue **19 tests / 124 assertions**, build Vite, **inspection manuelle**
+  du responsive desktop/mobile (aucun test automatisé), suite exhaustive, Pint **536
+  fichiers**, diff-check propre.
+- Hors gate : panier, checkout, coupon public, Schema.org, P6-D1.1, P7.
+
+### Storefront panier invité - D-063 (MERGÉ, PR #44, merge `01896f5`)
+
+- Base propre : catalogue mergé, `73d4f407`. **Aucune migration**, 46 inchangées.
+- Schéma imposé : `carts.secret_hash` NOT NULL/UNIQUE/64 hex ⇒ secret CSPRNG obligatoire,
+  SHA-256 seul persisté, `public_id` dans aucune route.
+- TTL **14 jours configurable** (`config/cart.php`, `CART_TTL_DAYS`), posé une fois.
+- Non-résurrection : `converted`/`abandoned`/`expired`/périmé ⇒ nouveau panier.
+- `SessionStoreGuard` fail-closed sur le **handler** Redis ; aucune table `sessions` créée.
+- Produit retiré ⇒ ligne muette, exclue du total, **aucune écriture sur `GET`**.
+- ⚠️ Défaut corrigé : `firstOrCreate` ⇒ 500 sur course ; `23505` sur
+  `cart_items_cart_product_unique` désormais toléré via `PostgresConstraintViolation`.
+- ⚠️ Non prouvé : course réelle à deux connexions (harnais transactionnel, `57014`).
+- Validation : panier **29 / 100**, suite complète **1616 / 12388**, 0 échec, Pint.
+- Hors gate : checkout, paiement, coupon public, compte client, affiliation, P7.
+
+### Storefront checkout invité - D-064 (en revue)
+
+- Base : panier mergé `01896f5`. **Aucune migration**, 46 inchangées.
+- ⚠️ Branche canonique : `p0-foundations-laravel13`. `main` est 213 commits en retard et
+  ne porte **aucun code exclusif** (`git diff p0...main` vide).
+- Orchestration pure : `OrderService`/`PaymentInitiationService` acceptaient déjà
+  `Visitor` + `guestEmail`. Aucune autorité P3-D/P4-C modifiée.
+- Routes : `/checkout`, `/checkout/return` (sans paramètre, config statique),
+  `/checkout/{order}/status`. `order_number` affiché, jamais routé.
+- Le retour navigateur ne confirme rien — prouvé par paramètres forgés.
+- ⚠️ Défaut corrigé : dépendance paiement rendue paresseuse (l'affichage du formulaire
+  ne doit pas exiger une passerelle).
+- ⚠️ Cause racine du « flake » résolue : `compare_at_price_minor` aléatoire vs CHECK.
+- Livraison invitée prouvée : `user_id` NULL, usurpation refusée en `23514`.
+- Hors gate : compte client, coupon, affiliation, suivi hors session, P7.
+
+### Storefront polish - D-065 (en revue)
+
+- ⚠️ **Leçon** : les tests fonctionnels ne prouvent RIEN sur le rendu. Neuf classes CSS
+  posées sur trois gates, aucune définie — panier et checkout n'étaient pas stylés, et
+  aucun test ne l'a vu (`assertSee` vérifie du contenu, pas du rendu).
+- ⚠️ `main > section` ne protège que les enfants DIRECTS : blocs non enveloppés = débordement
+  pleine largeur. Invisible à la lecture, visible à la capture.
+- CSS panier/checkout sur les jetons existants, `.button*` réutilisés.
+- A11y mesurée sur l'arbre réel : aide sortie du `<label>` vers `aria-describedby`,
+  prix barré en `<s>` + libellé masqué, `.sr-only`, `focus-visible` explicite.
+- 404 aux couleurs du storefront, contenu identique pour inexistant et non-possédé.
+- ⚠️ `php artisan serve` bloque avec session Redis en conteneur ; `php -S` fonctionne
+  (consigné dans HANDOFF).
+- Hors gate : migration, autorités, coupon, compte client, affiliation, P7.
 
 Vérifications post-merge P2 sur `p0-foundations-laravel13` (`aff4d05`) :
 - Merge GitHub : `aff4d05 Merge pull request #3 from mysterus44/p2-catalog`
@@ -553,8 +617,8 @@ commencés.
 | Paniers/relances P6-C | ✅ **MERGÉ** (PR #39, head `b6b63f9`, merge `a5de60a`, CI SUCCESS ; suite complète **1461 / 9290**) — D-055 → D-056, migration **000028**, **44 migrations**, aucune `000029`). **Infrastructure backend DORMANTE** : aucun flux panier applicatif n'existe, flags et schedulers **OFF par défaut**, aucune cadence marketing livrée (un réglage absent **refuse**). `carts.last_activity_at` + trigger sur `cart_items` (car `updated_at` est un signal faux) ; ledger `cart_reminder_attempts` à identité immuable `(cart, step)` et transitions monotones, **zéro PII** ; revalidation consentement/conversion/achat **à l'envoi** ; achat couvrant **strict** sur `paid\|partially_refunded\|refunded` ; reprise par **fragment → POST** (patron P4-C réutilisé, CSP à nonce, `history.replaceState` avant usage) avec continuation en **session opaque** ; capability CSPRNG hashée, **TTL imposé par l'autorité**. ACL Commerce minimales dans `000028`, révoquées exactement au `down()`. Services en **`app/Services/Cart/`** (le contrat P6-A0 interdit `DB::table(` sous `Services/Crm`). **D-030 : LOCAL closed, GLOBAL open ; P4-C non modifié.** P6-C **82 / 576** ; campagne + régressions **1008 / 6485** ; rollback **44→43→44**. *(Contexte d'audit initial ci-dessous.)* ⚠️ Audit réel : `carts` n'a **aucune colonne e-mail** (panier invité **inadressable** ⇒ V1 limitée aux paniers liés à un compte actif vérifié, **aucun e-mail deviné**) ; `carts.abandoned_at` et le statut `'abandoned'` existaient mais **aucun code ne les écrivait**. ⚠️ Audit réel : `carts` n'a **aucune colonne e-mail** (panier invité **inadressable** ⇒ V1 limitée aux paniers liés à un compte actif vérifié, **aucun e-mail deviné**) ; `carts.abandoned_at` et le statut `'abandoned'` existent mais **aucun code ne les écrit** (aucune transition d'abandon aujourd'hui). Consentement `promotional` et arrêt après achat **revérifiés à l'envoi** ; reprise via `carts.secret_hash` (secret brut jamais persisté) ; Analytics **non autoritatif**. Bloquant : dette D-030 `MAIL_MAILER=log`. |
 | Affiliation P6-D1 | ✅ **MERGÉ** (PR #41, head `d2ecfb44`, merge `aeac8a5d`, **CI SUCCESS** ; P6-D1 **42 / 307**, régressions **848 / 7776**, suite complète **1566 / 12145**, Pint **510**) — D-058, migration **000030**, **46 migrations**, aucune `000031`. **La dette superuser est fermée** : rôle `digitrove_affiliate_executor` **NOLOGIN/NOINHERIT/non-superuser** créé par le script de provisioning (jamais supprimé au `down()` — cluster-global), propriétaire des **9 tables et 9 séquences** ; **5 autorités `SECURITY DEFINER`** lui appartiennent ; runtime **EXECUTE-only**, **zéro DML direct** ; `PUBLIC` sans `EXECUTE`. Gouvernance : brouillon → modification → **publication immédiate** → politique en vigueur → historique borné ; Filament **admin seul**. `status='active'` **≡ en vigueur maintenant**, intervalle **`[from, until)`** avec **la même valeur `now()`** aux deux bornes (ni trou ni chevauchement), **aucune publication programmée**. Précision élargie à **`timestamptz(6)`** : en `(0)` une succession rapide était **non représentable** et violait le CHECK de période. ⚠️ **ROLLBACK LOSSLESS-ONLY** : le retour vers `(0)` n'est autorisé **que si aucune valeur ne change** ; sinon le `down()` **refuse avant toute mutation**. **Après une publication réelle, ce refus est le cas normalement attendu** (`now()` garde les microsecondes) — c'est voulu, pas un bug. Validation : P6-D1 **42 / 307**, suite complète **1566 / 12145**, Pint **510**. |
 | Affiliation P6-D1 *(plan d'origine)* | 📐 **ARCHITECTURE GELÉE (D-058).** Périmètre arbitré par KingKouda : **frontière d'autorité PostgreSQL + gouvernance des politiques versionnées UNIQUEMENT**. ⚠️ **Dette critique découverte au préflight** : les 9 tables `affiliate_*` appartiennent à **`digitrove`, rôle migrateur superuser** (alors que les surfaces CRM appartiennent à `digitrove_crm_executor`, qui possède **59** des 64 fonctions `SECURITY DEFINER` du dépôt) — une autorité créée en l'état **s'exécuterait en superuser**, la vulnérabilité fermée par D-029.6/P4-B0. Correction en `000030`, **jamais** par réécriture de `000029`. Rôle `digitrove_affiliate_executor` NOLOGIN/NOINHERIT créé par le **script de provisioning** (précédent P4-B0 : les rôles sont cluster-globaux), **jamais supprimé au `down()`**. **Publication atomique** : fermer le prédécesseur et publier le successeur = **une seule transition**, avec **`now()`** et non `clock_timestamp()` pour que `effective_until` et `effective_from` soient **identiques** (intervalle semi-ouvert ⇒ ni trou ni chevauchement). **`status='active'` ≡ « en vigueur maintenant »** : la **publication différée n'est PAS livrée** (elle exigerait `btree_gist`, jamais installée), mais reste ajoutable plus tard **sans rouvrir la frontière**. Cinq autorités bornées, **aucun CRUD générique**. |
-| Affiliation P6-D1.1 | 📐 **ARCHITECTURE GELÉE (D-059), PLAN SEULEMENT, AUCUN CODE**, aucune migration `000031`. Arbitrage KingKouda **Q1 = C · Q2 = A · Q3 = C**. **Décision structurante : SNAPSHOT + LEDGER** — `affiliates` porte l'**état courant**, un ledger **append-only `affiliate_lifecycle_events`** porte **toutes** les transitions. Trois faits mesurés l'imposent : `user_id` **UNIQUE** (donc re-candidature = transition, jamais seconde ligne) · les **CHECK d'horodatage sont unidirectionnels** (un `rejected_at` survit sur une ligne redevenue `pending`) · les horodatages sont des **marqueurs cumulatifs à une seule case**, donc **le snapshot ne peut physiquement pas porter l'historique**. Machine à états : `rejected → pending` **autorisée**, **`closed` TERMINAL**. ⚠️ **Ne pas durcir le CHECK en `status = X ⟺ X_at IS NOT NULL`** — cela rendrait la re-candidature impossible. **Codes** : **un seul actif par affilié** (index partiel à créer — le schéma ne l'impose pas), **génération serveur CSPRNG**, aucun vanity code, **non-réutilisation déjà garantie** par l'unicité **globale**, réactivation ⇒ **nouveau code**, **aucune autorité `issue_code`** (effet interne de approve/reactivate/rotate). **Surface** : backend + admin seuls — le dépôt n'a **aucune zone client authentifiée**. ⚠️ `000031` exige un garde **`up()` refusant avant mutation** si plusieurs codes actifs existent, et un `down()` **LOSSLESS-ONLY** (ledger peuplé ⇒ refus). |
-| Prochain gate | ✅ P6-B0 (#37), P6-B1 (#38), P6-C (#39), **P6-D0** (#40, merge `dcdc966`) et **P6-D1** (#41, merge `aeac8a5d`) **MERGÉS**. **PROCHAIN GATE : P6-D1.1 — cycle de vie affilié + codes**, architecture **gelée par D-059**, NON COMMENCÉ, aucune migration `000031`. Le schéma P6-D est complet ; D-057 fige les frontières D1→D5 et **interdit d'anticiper une autorité**. ⚠️ Dettes ouvertes : **D-030 GLOBAL** (P4-C `assertMailerSafe()` plus faible sur cinq points, à durcir dans son propre gate) ; **absence de flux panier applicatif** (P6-C dormant) ; **absence de storefront** (P6-D0 dormant — aucun clic réel à attribuer) ; **`AGENTS.md` gate P6-D0 non exposé côté payout** (aucune donnée Mobile Money : un gate dédié reste requis avant tout versement réel). |
+| Affiliation P6-D1.1 | ⏸️ **ARCHITECTURE D-059 INCHANGÉE, IMPLÉMENTATION EN PAUSE PAR D-060.** WIP non livré préservé sur `p6-d1-1-affiliate-lifecycle-codes` à `f15d192`, avec brouillon `000031`. La stable `4407fca` reste à **46 migrations, sans `000031`**. Reprise uniquement après le Storefront MVP. |
+| Prochain gate | ⏳ **Storefront MVP - panier invité, après rapport et prompt humain.** Catalogue D-062 prêt pour revue sur `codex/storefront-catalogue` ; aucun panier/checkout anticipé. P6-D1.1 est préservé, pas abandonné. |
 
 ## P7 — BLOG & SEO
 | Tâche | Statut |

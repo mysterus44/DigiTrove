@@ -7,9 +7,13 @@ use App\Contracts\Payments\PaymentProvider;
 use App\Events\OrderPaid;
 use App\Listeners\QueueCrmOrderAttribution;
 use App\Listeners\QueueSecureDelivery;
+use App\Models\Category;
+use App\Models\Product;
+use App\Models\ProductFile;
 use App\Payments\PaymentProviderFactory;
 use App\Policies\AffiliatePolicyGovernancePolicy;
 use App\Policies\AnalyticsPolicy;
+use App\Policies\CatalogPolicy;
 use App\Policies\CrmPolicy;
 use App\Support\AnalyticsConfig;
 use App\Support\DeliveryConfig;
@@ -56,6 +60,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Gate::policy(Product::class, CatalogPolicy::class);
+        Gate::policy(Category::class, CatalogPolicy::class);
+        Gate::policy(ProductFile::class, CatalogPolicy::class);
         Gate::define('viewGlobalAnalytics', [AnalyticsPolicy::class, 'viewGlobalAnalytics']);
         Gate::define('manageCustomerRelationships', [CrmPolicy::class, 'manageCustomerRelationships']);
         Gate::define('manageAffiliateProgramme', [AffiliatePolicyGovernancePolicy::class, 'manageAffiliateProgramme']);

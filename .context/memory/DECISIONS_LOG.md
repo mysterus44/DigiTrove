@@ -4223,6 +4223,354 @@ ALTERNATIVES REJETÉES :
 
 IMPACT : **P6-D1 = plan seulement, aucun code écrit dans ce gel.** L'implémentation utilisera **une** migration `000030` (**46 migrations**), créera le rôle via le script de provisioning, transférera la propriété des neuf tables et de leurs séquences, posera cinq autorités bornées et l'ACL `EXECUTE`-only, livrera une couche Laravel mince et un écran Filament de gouvernance, et rescopera **quatre** familles de contrats historiques par inventaire exact. **Aucune candidature, aucun code affilié, aucune touche, aucune attribution, aucune commission, aucun payout.**
 
+### D-060 : Re-séquencement Storefront MVP avant P6-D1.1 ✅
+
+CONTEXTE : P6-D1.1 dispose d'une architecture validée dans D-059, mais DigiTrove ne
+possède encore aucun storefront transactionnel. Sans catalogue dynamique, panier public
+et checkout, aucune vente réelle ni touche affiliée ne peut alimenter les gates D2/D3.
+KingKouda priorise donc le chemin de revenu minimal avant la poursuite de l'affiliation.
+
+CHOIX :
+1. **P6-D1.1 est mis en pause, pas annulé.** D-059, sa machine à états, son ledger et ses
+   invariants restent intégralement autoritatifs pour la reprise future.
+2. Le WIP est préservé sur `p6-d1-1-affiliate-lifecycle-codes` au checkpoint
+   `f15d192566c4c968fd00a9eb03bd5159e6cc52ba`. Cette branche contient un brouillon
+   `000031` non livré. La stable `4407fca` reste à 46 migrations, sans `000031`.
+3. Le sprint actif devient **Storefront MVP invité** : XOF sans sélecteur, quantité 1,
+   coupons non exposés, aucun login/register/espace client. Le schéma multi-devises et le
+   moteur coupons restent intacts pour les évolutions futures.
+4. Avant le catalogue, deux prérequis sont séquentiels : fermeture **D-030 GLOBAL** pour
+   qu'aucun lien de livraison ne tombe dans un transport mail de journalisation, puis
+   correction de la récupération concurrente de `PaymentInitiationService`.
+5. Aucun travail P6-D1.1 ne doit être mélangé à la branche Storefront. Sa reprise exigera
+   une décision explicite après livraison et validation du parcours de vente.
+
+ALTERNATIVES REJETÉES : continuer D1.1 avant toute vente réelle ; supprimer ou réinitialiser
+le WIP ; mélanger son brouillon `000031` aux prérequis Storefront ; lancer plusieurs agents
+en parallèle sur le même worktree.
+
+IMPACT : branche active `codex/storefront-mvp-prerequisites` depuis `4407fca` ; aucune
+migration Storefront créée par cette décision. Prochaine séquence : D-030 GLOBAL, bug
+concurrent paiement, puis catalogue dynamique avec provisionnement produit à valider.
+
+### D-061 : Autorité mail partagée — D-030 GLOBAL fermé ✅
+
+CONTEXTE : D-056 avait fermé localement le risque mail de P6-C avec
+`MailTransportGuard`, mais démontré que P4-C conservait cinq contournements dans
+`DeliveryConfig::assertMailerSafe()` : contrôle du nom au lieu du transport résolu,
+`array` toléré en test/local, transport inconnu accepté, SMTP incomplet accepté, et
+composition `failover`/`roundrobin` inspectée sur un seul niveau. P4-C peut envoyer des
+capabilities de téléchargement brutes ; un fallback `log` les exposerait dans les logs.
+
+CHOIX :
+1. **Une autorité unique.** `DeliveryConfig::assertPipelineReady()` délègue désormais à
+   `MailTransportGuard::assertSafe()`. L'ancien garde privé plus faible est supprimé ;
+   aucune seconde implémentation de la politique mail ne subsiste.
+2. **Fail-closed dans tous les environnements.** Le transport réellement résolu est
+   contrôlé. `log`, `array`, `null`, un transport absent/inconnu ou incomplet sont refusés,
+   y compris en `local`/`testing`. Toute branche d'une composition imbriquée est auditée,
+   avec profondeur bornée contre les cycles. Un expéditeur configuré est obligatoire.
+3. **SMTP réel, secrets hors dépôt.** `.env.example` sélectionne `smtp` mais laisse
+   volontairement `MAIL_HOST`, username et password vides : ce template ne peut donc pas
+   activer un envoi. L'opérateur configure hôte, identité, secret et expéditeur uniquement
+   dans le `.env` non suivi, puis valide le domaine et un envoi sandbox. Aucun credential,
+   endpoint propriétaire ni appel fournisseur n'est ajouté au dépôt.
+4. **Tests sans réseau.** Le chemin P4-C prouve lui-même les cinq classes de refus et un
+   SMTP complet accepté ; les contrats P6-C restent l'autorité exhaustive. Les tests
+   utilisent uniquement la configuration Laravel et `Mail::fake()` : aucun réseau CI.
+
+VALIDATION CIBLÉE : `P4C0QueueMailSecretSafetyTest` + `P6CMailTransportSafetyTest` =
+**33 tests / 94 assertions**, 0 échec ; `git diff --check` propre.
+
+VALIDATION GLOBALE DU GATE : P3-D3 **55 tests / 257 assertions** ; suite complète
+**1571 tests / 12167 assertions** ; Pint **510 fichiers** ; `git diff --check` propre.
+La course d'idempotence conserve un budget de verrou explicitement inférieur au timeout du
+processus et prouve que l'appel perdant est encore bloqué au commit du gagnant ; une lenteur
+CI ne peut donc plus être confondue avec la collision `23505` visée.
+
+IMPACT : **D-030 GLOBAL = CLOSED** sur la branche de prérequis Storefront. Les deux seuls
+chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la même frontière.
+Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
+vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
+
+### D-065 : Polish Storefront — contrôle visuel réel, états d'erreur, accessibilité ✅
+
+CONTEXTE : les gates D-062 à D-064 ont produit un parcours d'achat invité complet et
+testé, mais **jamais regardé**. Le seul contrôle responsive du sprint était une inspection
+manuelle non tracée. Aucune migration, aucune autorité P3-D/P4-C touchée.
+
+⚠️ **LA LEÇON DE CE GATE : LES TESTS FONCTIONNELS NE PROUVENT RIEN SUR LE RENDU.**
+Neuf classes CSS — `cart-lines`, `cart-line`, `cart-total`, `cart-empty`,
+`checkout-summary`, `checkout-form`, `checkout-status`, `form-error`, `detail-add` — ont
+été posées dans les vues sur **trois gates successifs** sans qu'aucune ne soit définie dans
+`app.css`. Panier et checkout n'étaient donc **pas stylés du tout** : liste à puces brute,
+bouton par défaut du navigateur, liens nus. **Aucun test ne l'a vu**, parce qu'ils
+vérifient du contenu (`assertSee`), jamais du rendu. Ce n'est pas une négligence isolée :
+c'est un angle mort structurel de toute la suite jusqu'ici, et il faut le savoir avant de
+conclure qu'une page « marche » parce qu'elle est verte.
+
+⚠️ **SECOND DÉFAUT, INVISIBLE À LA LECTURE.** Après avoir écrit le CSS, la capture a
+montré des blocs **débordant sur toute la largeur**, bouton coupé au bord. La cause est
+dans la feuille existante : `main > section { width: min(1180px, calc(100% - 32px)) }` ne
+protège que les **enfants directs**. Les `<ul>`/`<p>`/`<div>` non enveloppés dans une
+`<section>` échappent à la largeur de page. Aucune lecture de classes ne pouvait le
+révéler — seule la capture.
+
+CORRECTIONS :
+1. **CSS panier/checkout** écrit sur les jetons EXISTANTS (`--panel`, `--line`,
+   `--panel-alt`, `--green-dark`) et réutilisant `.button`/`.button-primary`/`.button-muted`
+   plutôt que de redéfinir une échelle à côté.
+2. **`<section>` enveloppante** sur le corps du panier — la largeur de page en dépend.
+3. **Texte d'aide sorti du `<label>`** vers `aria-describedby` (+ `aria-invalid` en erreur).
+   Mesuré sur l'arbre d'accessibilité réel : le champ s'annonçait
+   « Adresse e-mail Vos liens de téléchargement y seront envoyés. Aucun compte n'est créé. »
+   Le nom accessible doit rester court ; l'aide est une description, pas un nom.
+4. **Prix barré en `<s>` + libellé masqué** « Ancien prix : », sur la fiche et la carte.
+   Il se lisait « 3 500 XOF 7 700 XOF » — le second pouvant passer pour le prix réel.
+5. **`.sr-only`** ajoutée (support du point 4).
+6. **`focus-visible` explicite** sur les éléments interactifs du parcours.
+7. **404 aux couleurs du storefront**. L'ancienne était la page blanche de Laravel : sûre
+   (aucune trace, aucune donnée de commande) mais sans marque ni sortie. Son contenu est
+   **identique** pour une commande inexistante et celle d'un autre acheteur — la page ne
+   doit jamais devenir un oracle d'existence (D-064).
+
+⚠️ **ASSERTION RECENTRÉE SUR LA GARANTIE.** Séparer le libellé « Total » du montant
+cassait `assertSee('Total : 15 000 XOF')`. L'assertion porte désormais sur le **montant**,
+plus un `assertDontSee` prouvant que la ligne indisponible reste exclue du total. Même
+principe que le rescope du contrat de routes P6-C : le test vise la garantie, pas la forme
+exacte du HTML.
+
+⚠️ **PIÈGE D'INFRASTRUCTURE CONSIGNÉ DANS `HANDOFF.md`** : `php artisan serve` se bloque
+silencieusement avec une session Redis en conteneur ; `php -S … server.php` fonctionne.
+Quatre tentatives et deux fausses hypothèses (port Redis, cache de config) avant de trouver.
+Ce diagnostic a aussi produit une conclusion **erronée puis rétractée** — « `SessionStoreGuard`
+a un coût opérationnel » — qui ne tenait pas : les sessions Redis fonctionnent, le garde
+n'a jamais été en cause, et il reste **intact**.
+
+MÉTHODE : écrire, capturer, corriger, recapturer — trois passages sur le panier avant
+qu'il soit présentable. Plus lent qu'une feuille écrite d'un coup, et c'est précisément ce
+qui évite de reproduire l'erreur trouvée.
+
+HORS PÉRIMÈTRE : aucune migration, aucune autorité, aucun coupon, compte client,
+affiliation ou P7.
+
+### D-064 : Checkout invité Storefront ✅
+
+CONTEXTE : le panier invité (D-063) s'arrêtait avant toute commande. Le préflight a établi
+que les autorités P3-D acceptaient DÉJÀ un achat invité — `OrderService::checkout()` et
+`PaymentInitiationService::initiate()` prennent `User|Visitor` et `?string $guestEmail`, et
+`orders.customer_email` est `CITEXT NOT NULL`. Rien n'a dû être élargi : ce gate ORCHESTRE.
+
+CHOIX (arbitrages MAESTRO) :
+1. **Aucune migration.** 46 inchangées. Aucune autorité P3-D/P4-C modifiée.
+2. **`public_id` dans les URLs, `order_number` jamais.** Le numéro est lisible et dictable
+   par téléphone (Crockford base32) — exactement ce qu'il ne faut pas mettre dans un
+   chemin. Il est affiché, jamais routé.
+3. **Le `public_id` n'est PAS une autorisation.** Il est comparé à celui que la session a
+   posé au checkout ; toute non-correspondance rend un **404 identique octet pour octet**
+   à celui d'une commande inexistante, sinon la route deviendrait un oracle d'existence.
+4. **Le retour navigateur ne confirme RIEN.** Seuls le webhook signé et le contre-appel
+   fournisseur peuvent faire passer une commande à `paid` (D-034). La page de statut lit
+   l'état déjà en base et n'appelle aucune logique de confirmation.
+5. **`clientInstructions['payment_url']` seule clé lue**, validée comme URL. Absente ou
+   invalide ⇒ échec fermé, aucune redirection improvisée.
+6. **Refus `PricingService` ⇒ message générique + retour panier.** Il refuse le devis
+   ENTIER quand une ligne devient invendable — c'est correct ici, contrairement à
+   l'affichage panier. Nommer la ligne rapporterait l'état catalogue d'un produit qu'un
+   administrateur vient de retirer.
+7. **`Cache-Control: no-store`** sur le statut : un cache partagé pourrait servir l'état
+   d'un acheteur à un autre.
+
+⚠️ **`CINETPAY_RETURN_URL` est une valeur de config STATIQUE** — elle ne peut pas porter un
+`public_id` variable. D'où deux routes : `/checkout/return` **sans paramètre**, qui lit la
+session et redirige, et `/checkout/{order}/status`, canonique. Cette séparation rend la
+preuve de session PLUS forte que la vérification demandée : la route de retour ne peut
+littéralement pas fonctionner sans cookie valide.
+
+⚠️ **DÉFAUT DE CONCEPTION CORRIGÉ.** Injecter `PaymentInitiationService` au constructeur
+faisait échouer toute la surface checkout avec « No payment provider is configured »,
+y compris le simple AFFICHAGE du formulaire — le binding est fail-closed quand
+`PAYMENT_DRIVER` est vide. Un résumé de panier ne doit pas exiger une passerelle de
+paiement : la dépendance est résolue paresseusement dans `startPayment()`.
+
+⚠️ **CAUSE RACINE DU « FLAKE » DES GATES PRÉCÉDENTS — RÉSOLUE.** Ce n'était pas une
+dépendance d'ordre. `ProductPriceFactory` tire un `compare_at_price_minor` ALÉATOIRE, et le
+CHECK exige qu'il soit SUPÉRIEUR au prix ; les fixtures storefront fixaient
+`price_minor = 15 000` en laissant le prix barré au hasard, donc un tirage sous 15 000
+violait la contrainte de façon intermittente. Le prix barré est désormais épinglé dans les
+quatre fixtures. Trois exécutions consécutives identiques (48/190) confirment le
+déterminisme. ⚠️ **Une fixture partiellement aléatoire est un piège** : elle ne casse que
+parfois, et ressemble alors à un problème d'ordre.
+
+⚠️ **`.env.example` NETTOYÉ** : `PAYMENT_PROVIDER=cinetpay` et un bloc `CINETPAY_*`
+incomplet coexistaient avec le bloc `PAYMENT_DRIVER` réellement lu par `config/payments.php`.
+Deux clés pour la même intention, dont une pré-remplie. Le doublon est supprimé.
+
+⚠️ **LIVRAISON INVITÉE PROUVÉE, PAS DÉDUITE.** Une commande invitée réelle (aucune ligne
+`users`, `user_id` NULL) traverse `GrantIssuanceService` : les grants naissent à
+`user_id` NULL, et un grant revendiquant un compte sur cette commande est REFUSÉ en
+`23514`. La garantie est bidirectionnelle grâce au `IS NOT DISTINCT FROM` du trigger G3.
+L'e-mail part de `orders.customer_email` via un `Mailable` adressé à une chaîne — aucun
+`Notifiable`, donc aucun compte nécessaire.
+
+⚠️ **DEUX LIMITES DE HARNAIS ASSUMÉES.** `SecureDeliveryJob` refuse de tourner à un niveau
+de transaction autre que 0 et `RefreshesDatabaseAsMigrator` en impose un : le job n'est
+donc pas exercé de bout en bout, seule l'adresse de l'enveloppe est prouvée. Même obstacle
+que la course du panier en D-063. ⚠️ Et faire passer une commande à `paid` exige d'insérer
+le paiement `succeeded` dans la MÊME transaction avec `SET CONSTRAINTS ALL DEFERRED` : les
+CHECK jouent dans les deux sens, ce qui rend une commande à demi payée **irreprésentable**
+— et c'est précisément pourquoi un retour navigateur forgé est structurellement inoffensif.
+
+⚠️ **`main` A DIVERGÉ MAIS NE PORTE AUCUN CODE.** `git diff p0...main` est VIDE. Son unique
+commit propre (`11130f4`, 2026-07-15) est un merge dont le second parent EST la merge-base.
+`main` est 213 commits en retard et n'a rien à récupérer. **`p0-foundations-laravel13` est
+la branche canonique** — c'est désormais écrit dans `HANDOFF.md`.
+
+HORS PÉRIMÈTRE : aucun compte client, aucun coupon, aucune affiliation, aucun Schema.org,
+aucun nouveau fournisseur. ⚠️ **Pas de suivi de commande hors session** : aucun lien e-mail
+ne rouvre une commande plus tard. Choix de scope MVP assumé — une capacité durable exigerait
+son propre secret haché, comme la reprise de panier P6-C, et donc son propre gate.
+
+TESTS : `StorefrontGuestCheckoutTest` (formulaire, rien accepté du client hors e-mail,
+refus pricing générique, **retour navigateur forgé ne mutant rien**, `no-store`,
+persistance de session inter-requêtes, 404 identiques, `order_number` hors des routes) et
+`StorefrontGuestDeliveryTest` (commande invitée sans compte, grants à `user_id` NULL,
+grant usurpant un compte refusé, adressage e-mail).
+
+IMPACT : DigiTrove peut vendre un produit digital de bout en bout à un acheteur invité.
+
+### D-063 : Panier invité Storefront ✅
+
+CONTEXTE : `carts` et `cart_items` existent depuis P3, et P6-C leur a ajouté
+`last_activity_at` avec son trigger d'abandon, mais AUCUN flux applicatif ne les
+utilisait. Le préflight a établi trois faits qui contraignent l'architecture bien plus
+que les intentions initiales : `carts.secret_hash` est `NOT NULL`, `UNIQUE` et contraint
+à `^[0-9a-f]{64}$`, donc un panier sans secret SHA-256 ne peut PHYSIQUEMENT pas exister ;
+aucun TTL panier autoritatif n'existait, la seule valeur du dépôt étant les sept jours de
+`CartFactory`, une fixture et non une décision ; et `config/session.php` a pour défaut
+`database` alors qu'aucune table `sessions` n'existe ni n'est créée par une migration.
+
+CHOIX (arbitrages MAESTRO) :
+1. **Aucune migration.** Le schéma P3 et les ajouts P6-C suffisent. 46 migrations
+   inchangées.
+2. **TTL de 14 jours, configurable.** `config/cart.php` + `CART_TTL_DAYS`, même patron
+   que `CHECKOUT_PENDING_TTL_MINUTES`. `expires_at` est posé UNE FOIS à la création et
+   jamais recalculé : le prolonger à chaque visite rendrait l'expiration inatteignable
+   pour exactement les paniers qui en ont besoin. Valeur invalide ⇒ refus AVANT écriture.
+3. **Rien ne ressuscite.** Un panier `converted`, `abandoned`, `expired` ou dépassé
+   retrouvé en session est REMPLACÉ, jamais réactivé ni cloné. Réactiver contredirait
+   littéralement le commentaire du trigger P6-C, qui refuse de bouger `last_activity_at`
+   sur ces états précisément pour qu'un churn d'items ne rappelle pas un panier mort ;
+   cloner produirait un panier sans trace d'abandon exploitable par le ledger de relances.
+4. **Garde de session fail-closed**, même patron que `MailTransportGuard` (D-061). Le NOM
+   ne prouve rien : `SessionStoreGuard` résout le HANDLER et exige un
+   `CacheBasedSessionHandler` adossé à un `RedisStore`. Le driver `array` n'est admis que
+   si `app()->runningUnitTests()` est vrai — condition qu'aucune requête ne peut
+   influencer. AUCUNE table `sessions` n'est créée : le déploiement voulu est Redis.
+5. **Secret imposé par le schéma.** CSPRNG 256 bits en mémoire, SHA-256 seul persisté, la
+   valeur brute ne quitte jamais le service. Ce gate n'en fait PAS une capacité de reprise
+   par lien : `public_id` n'apparaît dans aucune route. L'appartenance est prouvée par le
+   `visitor_id` de session, jamais par une valeur venue du client.
+6. **Produit devenu indisponible.** Ligne générique « Article indisponible » : ni nom, ni
+   prix, ni MOTIF — dépublication, archivage, suppression et retrait de prix sont
+   indiscernables de l'extérieur. Exclue du total, et JAMAIS supprimée sur un `GET`.
+7. **Quantité fixée à 1**, aucun sélecteur, aucune route `PATCH`. Ajout idempotent.
+
+⚠️ DÉFAUT RÉEL TROUVÉ EN TENTANT DE PROUVER LA CONCURRENCE. `firstOrCreate` vérifie PUIS
+insère : le perdant d'une course arrive sur un INSERT dont la ligne existe déjà et
+recevait un 500. Le service tolère désormais un `23505` **confirmé sur la seule contrainte
+`cart_items_cart_product_unique`**, via `PostgresConstraintViolation` (SQLSTATE + nom
+exact, jamais par sous-chaîne) ; toute autre erreur BDD remonte. C'est la tentative
+honnête de preuve qui a révélé le bug, pas la relecture.
+
+⚠️ LIMITE DE PREUVE ASSUMÉE — À CONNAÎTRE AVANT LE CHECKOUT. La course RÉELLE à deux
+connexions n'est PAS prouvée. `RefreshesDatabaseAsMigrator` enveloppe chaque test dans une
+transaction : un `commit()` interne ne libère qu'un savepoint, la transaction externe garde
+le verrou, et la seconde connexion expire en **`57014`** au lieu de voir **`23505`**. La
+prouver exigerait le harnais non transactionnel utilisé en P6-D1.1. Ce qui EST prouvé :
+PostgreSQL rejette le doublon en `23505` sur la contrainte nommée, et la classification
+refuse un autre nom. ⚠️ Le verrou `Cache::lock` ne prouve rien non plus en test
+(`CACHE_STORE=array` ⇒ verrou par processus) et sa clé est le visiteur : il sérialise deux
+requêtes qui PARTAGENT DÉJÀ une session, pas deux qui ont couru avant qu'un visiteur
+existe. **L'index unique est la garantie structurelle, pas le verrou applicatif.**
+
+⚠️ `PricingService` N'EST PAS APPELÉ À L'AFFICHAGE. Son `quote()` est fail-closed sur le
+produit (P3-D1) et refuse le devis ENTIER si une ligne devient invendable — `/cart`
+deviendrait un 500 dès qu'un admin dépublie un produit. Le total d'affichage somme les
+`price_minor` XOF actifs, en entiers, quantité 1, sans coupon. `PricingService` reste
+l'autorité du checkout, là où refuser EST le bon comportement.
+
+⚠️ AUCUN SWEEP D'EXPIRATION. Le contrôle `now() > expires_at` à la lecture suffit pour ce
+gate ; c'est un choix assumé, pas un oubli.
+
+PREUVE MESURÉE (trigger P6-C sous privilèges runtime) : `session_user` = `current_user` =
+`digitrove_runtime`, `has_function_privilege(…, 'touch_cart_last_activity()', 'EXECUTE')`
+= **false**, et l'INSERT comme le DELETE déplacent bien `last_activity_at` ; sur un panier
+non actif il ne bouge pas. ⚠️ Le test a d'abord échoué pour une raison qui n'était PAS le
+trigger : `last_activity_at` est `timestamptz(0)`, donc un INSERT et un DELETE de la même
+seconde produisent la MÊME valeur stockée.
+
+HORS PÉRIMÈTRE : aucun coupon (`coupon_id` reste NULL), aucun checkout, aucun paiement,
+aucun compte client (`user_id` reste NULL), aucune reprise par lien, aucun Schema.org,
+aucune affiliation. Un panier invité reste structurellement inadressable par e-mail et
+n'est donc pas candidat aux relances P6-C.
+
+CONTRAT RESCOPÉ : `P6CCartResumeTest` exigeait EXACTEMENT les trois URI de reprise.
+Rescopé par ÉNUMÉRATION EXACTE — `cart`, `cart/items/{slug}` ×2 (POST et DELETE partagent
+l'URI), plus les trois URI P6-C. Aucun wildcard : toute autre URI panier échoue toujours.
+`P4B_ALLOWED_SERVICE_FILES` élargie de deux chemins nommés.
+
+TESTS : `StorefrontGuestCartTest` (lecture sans écriture, création, TTL configuré, refus
+d'un TTL invalide, éligibilité produit fail-closed, idempotence, retrait, isolation entre
+sessions, non-résurrection, produit retiré, garde de session, confidentialité) et
+`StorefrontGuestCartConcurrencyTest` (trigger sous privilèges runtime, horloge figée sur
+panier non actif, classification `23505`). Suite complète : **1616 tests / 12388
+assertions**, 0 échec.
+
+IMPACT : le panier invité est fonctionnel de bout en bout. Le checkout invité est le gate
+suivant et devra lire cette entrée avant de s'appuyer sur la concurrence du panier.
+
+### D-062 : Catalogue Storefront dynamique et provisionnement produit ✅
+
+CONTEXTE : le schéma P2 complet existait, mais aucune ressource Filament produit,
+catégorie ou fichier, aucun import de contenu réel et aucune lecture publique dynamique
+n'existaient. SITE-00 conservait cinq offres, quatre catégories et trois avis dans une vue
+statique. Le Storefront MVP doit rendre ce catalogue consultable avant d'ouvrir le panier,
+sans inventer de nouvelle structure de données ni publier automatiquement un contenu.
+
+CHOIX :
+1. **Réutiliser strictement P2, sans migration.** `products`, `product_prices`,
+   `product_files`, `categories` et leurs relations restent l'unique schéma. Aucun champ
+   d'avis n'est inventé : les trois avis legacy sont signalés comme ignorés par l'import et
+   restent du contenu historique non persistant.
+2. **Provisionnement administrateur uniquement.** Trois ressources Filament couvrent
+   Product, Category et ProductFile. Leur policy commune exige un admin actif et non
+   supprimé ; staff, customer, suspended et blocked sont refusés. Les prix sont saisis en
+   XOF entier. Les livrables sont écrits sur le disque privé et leur SHA-256 est calculé
+   côté serveur ; chemin et digest ne sont jamais rendus publiquement.
+3. **Import audité et idempotent.** Une source PHP structurée remplace la duplication de
+   tableaux dans `welcome.blade.php`. `catalog:import-legacy` crée 5 produits, 4 catégories,
+   5 prix XOF et 5 liaisons au premier passage, tous en `draft` avec `published_at = NULL`.
+   Un rejeu ignore les lignes existantes et ne publie rien. Les factories restent réservées
+   aux tests.
+4. **Lecture publique fail-closed.** Le scope `Product::published()` exige simultanément
+   `status = published`, une date `published_at` non future, l'absence de soft-delete et un
+   prix XOF actif. `/`, `/products` et `/products/{product:slug}` utilisent ce scope ; la
+   fiche d'un brouillon, d'une archive, d'un produit futur, supprimé ou sans prix XOF actif
+   répond 404.
+5. **Frontière MVP.** Prix XOF seulement, descriptions et métadonnées échappées, aucune
+   donnée structurée Schema.org, aucun panier, checkout, coupon, paiement ou téléchargement
+   public. La couverture marketing peut être publique ; le livrable reste privé.
+
+VALIDATION : import réel = **5 produits / 4 catégories / 5 prix, tous draft**, puis rejeu
+idempotent = **0 création** ; tests catalogue **18 / 120** ; `npm run build` et contrôle
+responsive desktop/mobile sans débordement ; Pint **536 fichiers** ; `git diff --check`
+propre ; suite exhaustive **1586 / 12281** ; **46 migrations inchangées**.
+
+IMPACT : le catalogue public dynamique et son administration sont prêts pour revue sur
+`codex/storefront-catalogue`. P6-D1.1 reste en pause à `f15d192`. Le prochain gate produit
+est le panier invité, dans un prompt séparé ; aucune logique panier n'est anticipée ici.
+
 ### D-048 : P6-A1.3 — Explicit Historical Commerce Rollup Backfill ✅ (MERGÉ)
 CONTEXTE : P6-A1.2 rafraîchit un rollup dès qu'une **nouvelle** attribution ou un **nouveau** refund `succeeded` survient, mais ne reconstruit pas l'historique antérieur. P6-A1.3 est l'**outil opérateur explicite** qui retrouve les couples historiques et les injecte dans le pipeline P6-A1.2. **Mergé sur la stable** via PR #35 (head `ba32582`, merge `106ffb0a`, CI #42 success). **P6-A2 (Typed Versioned CRM Segments) devient le gate actif ; P6-B0 non commencé.**
 

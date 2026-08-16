@@ -388,9 +388,23 @@ it('keeps digital files private and exposes only the reviewed delivery routes', 
         ->reject(fn (string $uri) => str_starts_with($uri, 'filament/'))
         ->all();
 
-    foreach ($uris as $uri) {
-        expect($uri)->not->toContain('checkout');
-    }
+    // CURRENT-STATE, by exact enumeration. This contract predates any storefront and read
+    // as "no checkout exists yet"; D-064 ships one, so it now names precisely which
+    // checkout URIs are allowed. `/checkout` appears twice because GET and POST share it.
+    // Anything else containing "checkout" — an API, a CRUD, a route carrying an order id
+    // or a secret — still fails here.
+    $checkoutUris = collect($uris)
+        ->filter(fn (string $uri): bool => str_contains($uri, 'checkout'))
+        ->sort()
+        ->values()
+        ->all();
+
+    expect($checkoutUris)->toBe([
+        'checkout',
+        'checkout',
+        'checkout/return',
+        'checkout/{order}/status',
+    ]);
 
     $downloadUris = collect($uris)
         ->filter(fn (string $uri): bool => str_contains($uri, 'download'))

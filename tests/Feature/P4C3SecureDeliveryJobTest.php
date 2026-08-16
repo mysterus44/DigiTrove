@@ -21,6 +21,20 @@ uses(InteractsWithPaymentsDatabase::class);
 |--------------------------------------------------------------------------
 */
 
+beforeEach(function (): void {
+    // Mail::fake() prevents every network call, while the production guard still
+    // evaluates a configuration that represents a genuinely deliverable transport.
+    config([
+        'mail.default' => 'smtp',
+        'mail.from.address' => 'no-reply@digitrove.test',
+        'mail.mailers.smtp' => [
+            'transport' => 'smtp',
+            'host' => 'smtp.example.test',
+            'port' => 587,
+        ],
+    ]);
+});
+
 function p4cJobOrder(): int
 {
     p4cConfig();

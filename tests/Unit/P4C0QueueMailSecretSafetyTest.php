@@ -25,13 +25,22 @@ uses(TestCase::class);
 */
 
 beforeEach(function (): void {
-    config(['delivery' => [
-        'enabled' => true,
-        'grant' => ['ttl_minutes' => 10080, 'max_downloads' => 5],
-        'job' => ['unique_seconds' => 3600],
-        'download_base_url' => 'https://dl.example.com/d',
-        'require_https' => true,
-    ]]);
+    config([
+        'delivery' => [
+            'enabled' => true,
+            'grant' => ['ttl_minutes' => 10080, 'max_downloads' => 5],
+            'job' => ['unique_seconds' => 3600],
+            'download_base_url' => 'https://dl.example.com/d',
+            'require_https' => true,
+        ],
+        'mail.default' => 'smtp',
+        'mail.from.address' => 'no-reply@digitrove.test',
+        'mail.mailers.smtp' => [
+            'transport' => 'smtp',
+            'host' => 'smtp.example.test',
+            'port' => 587,
+        ],
+    ]);
 });
 
 it('does not queue delivery when the pipeline is disabled', function (): void {
@@ -130,11 +139,51 @@ it('refuses a non-HTTPS download base URL outside local/testing', function (): v
     expect(fn () => DeliveryConfig::downloadBaseUrl())->toThrow(RuntimeException::class);
 });
 
-it('refuses a logging mail transport before dispatching or issuing credentials', function (): void {
-    config(['mail.default' => 'log']);
+it('accepts a complete real mail transport before dispatching or issuing credentials', function (): void {
+    expect(fn () => DeliveryConfig::assertPipelineReady())->not->toThrow(RuntimeException::class);
+});
+
+it('uses the resolved transport and refuses one that records or discards delivery mail', function (string $mailer, string $transport): void {
+    config([
+        'mail.default' => $mailer,
+        "mail.mailers.{$mailer}" => ['transport' => $transport],
+    ]);
 
     expect(fn () => DeliveryConfig::assertPipelineReady())
-        ->toThrow(RuntimeException::class, 'The delivery mail transport is unsafe.');
+        ->toThrow(RuntimeException::class, 'record or discard');
+})->with([
+    'misleading mailer name resolving to log' => ['smtp_alias', 'log'],
+    'array remains forbidden in testing' => ['array', 'array'],
+]);
+
+it('refuses unknown and incomplete transports on the delivery path', function (): void {
+    config([
+        'mail.default' => 'unknown',
+        'mail.mailers.unknown' => ['transport' => 'unreviewed'],
+    ]);
+
+    expect(fn () => DeliveryConfig::assertPipelineReady())
+        ->toThrow(RuntimeException::class, 'not a reviewed delivery transport');
+
+    config([
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp' => ['transport' => 'smtp', 'host' => ''],
+    ]);
+
+    expect(fn () => DeliveryConfig::assertPipelineReady())
+        ->toThrow(RuntimeException::class, 'missing [host]');
+});
+
+it('recurses through delivery mail compositions and refuses an unsafe nested leg', function (): void {
+    config([
+        'mail.default' => 'outer',
+        'mail.mailers.outer' => ['transport' => 'failover', 'mailers' => ['smtp', 'inner']],
+        'mail.mailers.inner' => ['transport' => 'roundrobin', 'mailers' => ['backup']],
+        'mail.mailers.backup' => ['transport' => 'log'],
+    ]);
+
+    expect(fn () => DeliveryConfig::assertPipelineReady())
+        ->toThrow(RuntimeException::class, 'record or discard');
 });
 
 it('refuses credentials, query strings and fragments in the configured base URL', function (string $url): void {
@@ -155,7 +204,9 @@ it('versions no mail-provider secret and keeps real delivery disabled by default
         ->and($example)->toContain('QUEUE_CONNECTION=redis')
         ->and($example)->toMatch('/(?m)^MAIL_PASSWORD=$/')
         ->and($example)->toMatch('/(?m)^MAIL_SCHEME=smtp$/')
+        ->and($example)->toMatch('/(?m)^MAIL_HOST=$/')
         ->and($example)->not->toMatch('/(?m)^MAIL_MAILER=log$/')
         ->and($setup)->toContain('never commit')
-        ->and($setup)->toContain('All examples below are **commented and inactive**');
+        ->and($setup)->toContain('All examples below are **commented and inactive**')
+        ->and($setup)->toContain('Both P4-C secure delivery and P6-C cart reminders use the same fail-closed guard');
 });

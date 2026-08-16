@@ -74,9 +74,15 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Cart/CartReminderDispatcher.php',
     'Cart/CartReminderEligibility.php',
     'Cart/CartReminderService.php',
+    // Storefront guest cart (tache 5). Elargi explicitement, un chemin a la fois.
+    'Cart/GuestCartService.php',
+    'Cart/GuestVisitorContext.php',
     // P3-D2 (D-031) — checkout transaction. Commerce only, no delivery.
     'Checkout/CheckoutException.php',
     'Checkout/CheckoutRefusalReason.php',
+    // Storefront guest checkout (tache 6). Elargi explicitement, un chemin a la fois.
+    'Checkout/GuestCheckoutOrchestrator.php',
+    'Checkout/GuestCheckoutSession.php',
     'Checkout/OrderService.php',
     // P6-A0 (D-043) — EXECUTE-only CRM identity and consent authorities.
     'Crm/Concerns/UsesCrmAuthority.php',

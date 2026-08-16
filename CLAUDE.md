@@ -39,6 +39,10 @@ sécurité tolérance zéro, interdictions, processus 8 étapes). Ne pas dupliqu
 
 - **P0 Fondations** ✅ terminé · **SITE-00** ✅ mergé · **P1 Identité** ✅ mergé
 - **P2 Catalogue** ✅ mergé (PR #3 → `aff4d05`)
+- **Storefront MVP - catalogue dynamique** 🚧 prêt pour revue sur
+  `codex/storefront-catalogue` (D-062) : ressources Filament Product/Category/ProductFile,
+  import SITE-00 idempotent de 5 produits et 4 catégories en draft, accueil/catalogue/fiche
+  publiés en XOF. Aucune migration, aucun panier, checkout, Schema.org ou avis persisté.
 - **P3 Commerce** ✅ schéma P3A/P3B/P3C mergé · P3C plan finalisé (D-028, 1A–5A) ·
   **P3C-B `payment_webhook_events` mergé** (PR #8 → `51c4847`) + **durcissement P3C-B.1**
   (PR #9 → `13932ac`, index de rejeu réservé aux signés) · **P3C-C `refunds` mergé**
@@ -731,9 +735,10 @@ en P6-D1**. **Après une publication réelle, ce refus est le cas NORMALEMENT AT
 l'historique exact plutôt que falsifier les horodatages qui expliquent les commissions.
 Ne jamais écrire `rollback 46 → 45 → 46 PASS` sans qualifier les données.
 
-**PROCHAIN GATE : P6-D1.1 — cycle de vie affilié + codes**, architecture **GELÉE PAR D-059**
-(arbitrage KingKouda **Q1 = C · Q2 = A · Q3 = C**), **NON COMMENCÉ**, aucune migration
-`000031`, aucun code écrit.
+**P6-D1.1 RESTE EN PAUSE PAR D-060.** Son architecture D-059 et son checkpoint distant
+`f15d192` sont préservés. Le gate actif est le **Storefront MVP** : catalogue D-062 prêt
+pour revue, puis panier invité uniquement après un nouveau prompt humain. Aucune migration
+`000031`, aucun code panier ou checkout n'est ajouté par le catalogue.
 
 ⚠️ **Décision structurante : SNAPSHOT + LEDGER.** `affiliates` porte l'**état courant** ;
 un ledger **append-only `affiliate_lifecycle_events`** porte **toutes** les transitions.

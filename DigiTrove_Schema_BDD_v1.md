@@ -1132,6 +1132,23 @@ CREATE INDEX ON product_bundles (child_product_id);
 -- taux de change, promotions avancées, checkout, commandes, paiements,
 -- download_grants et toute livraison active.
 
+### Couche applicative catalogue Storefront (D-062, pré-merge)
+
+Le catalogue dynamique réutilise exactement ce schéma P2 : **aucune migration et aucune
+colonne ajoutée**. Trois ressources Filament administrent Product, Category et ProductFile
+pour un admin actif uniquement. Un prix XOF entier actif est géré par produit ; les
+livrables sont téléversés sur le disque privé et leur SHA-256 est calculé côté serveur.
+
+La commande `catalog:import-legacy` consomme une source PHP structurée issue du contenu
+SITE-00. Elle est transactionnelle et idempotente : premier passage réel = 4 catégories,
+5 produits, 5 prix XOF et 5 pivots, tous en `draft` avec `published_at = NULL` ; rejeu =
+0 création. Les 3 avis sont signalés mais non persistés, car aucune table d'avis n'existe.
+
+Le scope public exige `status = published`, `published_at <= now()`, produit non supprimé
+et prix XOF actif. Il alimente `/`, `/products` et `/products/{product:slug}` ; toute autre
+fiche répond 404. `product_files.storage_path` et `checksum_sha256` ne sont jamais rendus.
+Cette couche n'ajoute ni panier, checkout, coupon public, Schema.org, paiement ou livraison.
+
 -- Licences (logiciels). Optionnel selon ton catalogue.
 -- Note migration : cette table se crée après `order_items`, car elle y référence.
 CREATE TABLE licenses (
