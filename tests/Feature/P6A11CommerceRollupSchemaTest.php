@@ -38,13 +38,15 @@ it('installs only the P6-A1.1 table with closed physical constraints', function 
         'visitor_id'
     );
 
-    // Exactly 46 migrations, the last being 000030 (P6-D1 affiliate policy governance).
+    // CURRENT-STATE : 47 migrations, la derniere etant 000031 (P6-D1.1, cycle de vie
+    // affilie et codes). Nommee et non comptee : une 48e migration, ou une derniere
+    // differente, doit toujours faire echouer ce contrat.
     $migrations = DB::table('migrations')->orderBy('id')->get();
-    expect($migrations)->toHaveCount(46)
-        ->and($migrations->last()->migration)->toBe('2026_07_14_000030_create_affiliate_policy_governance_authorities');
+    expect($migrations)->toHaveCount(47)
+        ->and($migrations->last()->migration)->toBe('2026_07_14_000031_create_affiliate_lifecycle_and_code_authorities');
 
-    // No migration 000031 exists: P6-D1 stops at the governance boundary.
-    expect(glob(database_path('migrations').'/2026_07_14_000031*.php') ?: [])->toBe([]);
+    // Aucune migration 000032 : P6-D1.1 est la frontiere courante.
+    expect(glob(database_path('migrations').'/2026_07_14_000032*.php') ?: [])->toBe([]);
 });
 
 it('verifies exact restrictive foreign keys checks and primary key', function () {

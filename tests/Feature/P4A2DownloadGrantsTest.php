@@ -122,7 +122,7 @@ function createP4A2BundlePurchase(bool $withSnapshot = true): array
 
 it('applies migration 000010 with the exact schema, four functions and five triggers', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000010_create_download_grants_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(46)
+        ->and(DB::table('migrations')->count())->toBe(47)
         ->and(Schema::hasTable('download_grants'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')

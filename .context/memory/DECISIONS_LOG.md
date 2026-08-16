@@ -4293,6 +4293,55 @@ chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la mêm
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
 vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
 
+### D-066 : P6-D1.1 réactivé et livré — cycle de vie affilié + codes ✅
+
+CONTEXTE : D-060 avait mis P6-D1.1 en pause au profit du Storefront MVP, pour une raison
+business explicite — l'attribution affiliée valait-elle quelque chose sans commandes
+réelles ? Quatre gates plus tard (D-062 à D-065), le Storefront vend de bout en bout. Un
+préflight de réactivation a mesuré l'état avant toute reprise, plutôt que de foncer.
+
+CONSTAT 1 — **LE WIP ÉTAIT UNE IMPLÉMENTATION FINIE, PAS UNE ÉBAUCHE.** `f15d192`
+(« checkpoint paused P6-D1.1 work ») portait 21 fichiers et +3827 lignes : migration
+`000031` (917 l., ledger append-only + 10 autorités + ACL), page Filament (432 l.) et sa
+vue, service et 4 DTO (333 l.), **cinq suites de tests D1.1** (1874 l. — lifecycle,
+concurrence, rollback, service, page) et quatre contrats rescopés. Tout ce que D-059
+décrivait était à la fois codé ET testé ; il ne restait rien d'écrit-mais-non-prouvé.
+
+CONSTAT 2 — **LA DÉRIVE ÉTAIT FAIBLE, PAS DE PLUSIEURS CENTAINES DE COMMITS.**
+`git rev-list --left-right --count` : **1 / 16**. Le gel datait du 11 août, juste avant
+les gates Storefront. ⚠️ La fusion a été vérifiée par `git merge-tree --write-tree`
+**AVANT toute mutation** — arbre propre, aucun conflit — puis réalisée par **merge**,
+jamais rebase, conformément à la convention du dépôt. Le seul risque nommé,
+`P4B_ALLOWED_SERVICE_FILES` modifiée des deux côtés, ne s'est pas matérialisé : les entrées
+affiliation et Storefront tombent à des positions alphabétiques distinctes.
+
+CONSTAT 3 — **LE STOREFRONT NE DÉPLACE PAS LE PÉRIMÈTRE DE D1.1.** Mesuré, pas supposé :
+**aucune classe `app/` du WIP** ne référence `OrderPaid`, `OrderService`,
+`PaymentInitiation`, `affiliate_touches`, `affiliate_attributions` ni
+`affiliate_commissions`. L'unique occurrence est un COMMENTAIRE citant `OrderService` pour
+la leçon D-030.2.1. C'est structurel : D-059 avait délibérément séparé **cycle de vie +
+codes** (D1.1, administration seule) de **l'attribution** (P6-D2).
+
+⚠️ **LA QUESTION BUSINESS DE D-060 SE POSE EN P6-D2, PAS ICI.** D1.1 gouverne qui est
+affilié et quel code il détient ; il ne consomme aucune commande. Le Storefront ne change
+donc rien à ce gate — il rend le SUIVANT enfin réaliste, puisqu'il existe désormais de
+vraies commandes à attribuer. **La pause D-060 est levée.**
+
+⚠️ **UN PREMIER RUN A RENDU 32 ÉCHECS QUI N'EN ÉTAIENT PAS.** `digitrove_testing` était à
+moitié migrée — `relation "migrations" does not exist` ET `relation "carts" already
+exists` simultanément — laissée ainsi par un run tué à 10 minutes et par les conteneurs de
+prévisualisation de D-065 qui pointaient dessus. **ENVIRONMENT FAILURE**, jamais un défaut
+du WIP. Base reconstruite, campagne verte. Même discipline que le flake de fixture de
+D-064 : un chiffre faux dans un rapport oriente tout le reste dans la mauvaise direction.
+
+⚠️ **LA BRANCHE GARDE SON NOM ET SON HISTORIQUE.** `p6-d1-1-affiliate-lifecycle-codes`
+contient toujours le commit « checkpoint paused ». Le renommer masquerait une information
+vraie : ce gate a réellement été gelé puis repris, et l'historique doit le dire.
+
+HORS PÉRIMÈTRE, INCHANGÉ DEPUIS D-059 : aucune surface publique, aucune capture de clic,
+aucun objet financier, aucune attribution. `P6-D2` reste le gate des touches et du
+rattachement de commande ; `P6-D3` celui des commissions ; `P6-D4` celui des payouts.
+
 ### D-065 : Polish Storefront — contrôle visuel réel, états d'erreur, accessibilité ✅
 
 CONTEXTE : les gates D-062 à D-064 ont produit un parcours d'achat invité complet et

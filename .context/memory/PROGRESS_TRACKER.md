@@ -320,6 +320,19 @@ Vérifications P2 passées :
   (consigné dans HANDOFF).
 - Hors gate : migration, autorités, coupon, compte client, affiliation, P7.
 
+### P6-D1.1 réactivé - D-066 (en revue)
+
+- ⚠️ **Pause D-060 levée.** Le WIP `f15d192` était une implémentation FINIE : 21 fichiers,
+  +3827 lignes, migration `000031`, page Filament, service + 4 DTO, 5 suites de tests.
+- Dérive `1 / 16` commits. Fusion vérifiée par `merge-tree` avant mutation, puis **merge**
+  (jamais rebase). 47 migrations.
+- ⚠️ Le Storefront ne déplace pas le périmètre : aucune classe du WIP ne référence
+  `OrderPaid`/`OrderService`/attribution. La question business de D-060 relève de **P6-D2**.
+- ⚠️ 32 échecs d'un premier run = **panne d'environnement** (`digitrove_testing` à moitié
+  migrée), jamais un défaut du WIP. Base reconstruite.
+- Validation : affiliation **183 / 3538 / 0 échec**.
+- Hors gate, inchangé : surface publique, capture de clic, attribution, commissions, payouts.
+
 Vérifications post-merge P2 sur `p0-foundations-laravel13` (`aff4d05`) :
 - Merge GitHub : `aff4d05 Merge pull request #3 from mysterus44/p2-catalog`
   (commits `d43751d` + `fbaa33a`, base `9a11791`)
