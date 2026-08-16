@@ -9,6 +9,11 @@ use RuntimeException;
 /**
  * P6-D1 (D-058). The only affiliate configuration that exists, and it is fail-closed:
  * an unset or malformed flag refuses rather than defaulting to "on".
+ *
+ * The flag governs the whole affiliate surface, not policies alone: P6-D1.1 lifecycle and
+ * code authorities close on the same switch. A second toggle would let one half of the
+ * programme run while the other was shut, which is not a state anyone should be able to
+ * reach by editing configuration.
  */
 final class AffiliateConfig
 {
@@ -34,7 +39,7 @@ final class AffiliateConfig
     public static function assertGovernanceEnabled(): void
     {
         if (! self::governanceEnabled()) {
-            throw new RuntimeException('Affiliate policy governance is disabled.');
+            throw new RuntimeException('Affiliate governance is disabled.');
         }
     }
 }

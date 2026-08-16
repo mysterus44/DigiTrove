@@ -35,10 +35,15 @@ const P4B_ALLOWED_SERVICE_FILES = [
     // policy authorities. They hold NO privilege on the affiliate tables; the runtime's
     // only door is the five bounded functions. Listed FIRST because PHP sort() orders
     // 'Affiliate/…' before 'Analytics/…'; confirm the order with `php artisan test`.
+    'Affiliate/AffiliateDetail.php',
+    'Affiliate/AffiliateLifecycleService.php',
     'Affiliate/AffiliateOperationException.php',
     'Affiliate/AffiliatePolicy.php',
     'Affiliate/AffiliatePolicyService.php',
     'Affiliate/AffiliateRefusalReason.php',
+    'Affiliate/AffiliateReviewDecision.php',
+    'Affiliate/AffiliateSummary.php',
+    'Affiliate/AffiliateTransition.php',
     'Affiliate/Concerns/UsesAffiliateAuthority.php',
     // P5-A2 (D-039) — EXECUTE-only rollup and partition operation clients.
     'Analytics/AuthoritativeRollupService.php',
@@ -481,7 +486,7 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(46)
+        ->and(DB::table('migrations')->count())->toBe(47)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')

@@ -47,8 +47,12 @@ it('cascades nothing: every affiliate foreign key restricts or nulls', function 
 
     sort($nullable);
 
+    // CURRENT-STATE. D-059 adds the ledger's ACTOR — an administrator who may one day be
+    // erased. The transition itself survives with a null actor rather than the history
+    // being deleted, and no amount is reachable from it.
     expect($nullable)->toBe([
         'affiliate_commission_entries_created_by_user_id_foreign',
+        'affiliate_lifecycle_events_actor_user_id_foreign',
         'affiliate_payouts_approved_by_user_id_foreign',
         'affiliate_payouts_requested_by_user_id_foreign',
         'affiliate_touches_user_id_foreign',

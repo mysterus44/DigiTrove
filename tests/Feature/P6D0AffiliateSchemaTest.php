@@ -19,16 +19,17 @@ function p6d0Tables(): array
     ];
 }
 
-// À VALIDER (P6-D1, D-058): the P6-D1 boundary (000030) has landed, so the frontier moved
-// from 45 to 46. Teeth preserved: 000029 and 000030 must each be present exactly once, and
-// no 000031 may appear early.
-it('sits behind the P6-D1 boundary: 46 migrations, 000029 and 000030 present, no 000031', function () {
+// À VALIDER (P6-D1, D-058): the P6-D1.1 boundary (000031) has landed, so the frontier moved
+// from 46 to 47. Teeth preserved: 000029, 000030 and 000031 must each be present exactly
+// once, and no 000032 may appear early.
+it('sits behind the P6-D1.1 boundary: 47 migrations, 000029 to 000031 present, no 000032', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(46)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(47)
         ->and(glob($root.'/database/migrations/2026_07_14_000029*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000030*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000031*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
+        ->and(glob($root.'/database/migrations/2026_07_14_000032*.php') ?: [])->toBe([]);
 });
 
 it('creates the nine affiliate tables and nothing else', function () {
@@ -122,8 +123,11 @@ it('provisions exactly the affiliate executor role, the three D0 guards and the 
 
     expect($roles)->toBe(['digitrove_affiliate_executor']);
 
-    // Three structural INTEGRITY guards (D0) plus the five bounded operational authorities
-    // (D1). Nothing else may carry an affiliate name.
+    // CURRENT-STATE, by exact name. Three structural INTEGRITY guards (D0), five bounded
+    // policy authorities (D1), then D-059's lifecycle set: a fourth integrity guard, two
+    // internal helpers the runtime may never execute, and ten bounded authorities.
+    // Nothing else may carry an affiliate name — a ghost overload surviving a
+    // `migrate:fresh` shows up here, which is how one was caught during D1.1.
     $functions = array_map(
         static fn (object $r): string => (string) $r->proname,
         Fx::owner()->select(<<<'SQL'
@@ -133,14 +137,47 @@ it('provisions exactly the affiliate executor role, the three D0 guards and the 
     );
 
     expect($functions)->toBe([
+        'assert_affiliate_actor_is_admin',
+        'close_affiliate',
         'create_affiliate_program_policy_draft',
         'current_affiliate_program_policy',
         'enforce_affiliate_ledger_append_only',
+        'enforce_affiliate_lifecycle_append_only',
         'enforce_affiliate_policy_immutability',
         'enforce_affiliate_touch_subject',
+        'generate_affiliate_code',
+        'get_affiliate',
+        'list_affiliate_codes',
+        'list_affiliate_lifecycle_events',
         'list_affiliate_program_policies',
+        'list_affiliates',
         'publish_affiliate_program_policy',
+        'reactivate_affiliate',
+        'review_affiliate_application',
+        'rotate_affiliate_code',
+        'submit_affiliate_application',
+        'suspend_affiliate',
         'update_affiliate_program_policy_draft',
+    ]);
+
+    // Signatures, not merely names: exactly one rotation entry point, taking the
+    // compare-and-swap token. A two-argument overload would silently accept a rotation
+    // with no expected code and defeat the whole mechanism.
+    $signatures = array_map(
+        static fn (object $r): string => (string) $r->signature,
+        Fx::owner()->select(<<<'SQL'
+            SELECT p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS signature
+            FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public' AND p.proname IN ('rotate_affiliate_code', 'get_affiliate')
+            ORDER BY 1
+            SQL),
+    );
+
+    // Parameter NAMES are pinned too, since PostgreSQL reports them here: renaming
+    // `p_expected_code_id` would be a silent change to the compare-and-swap contract.
+    expect($signatures)->toBe([
+        'get_affiliate(p_affiliate_id bigint)',
+        'rotate_affiliate_code(p_affiliate_id bigint, p_expected_code_id bigint, p_actor_user_id bigint)',
     ]);
 });
 

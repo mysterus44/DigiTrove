@@ -133,6 +133,9 @@ it('does not create P6 marketing or affiliation tables', function () {
         'affiliate_codes',
         'affiliate_commission_entries',
         'affiliate_commissions',
+        // CURRENT-STATE : D-066 ajoute le ledger append-only du cycle de vie affilie.
+        // Nomme, jamais compte : une onzieme table non listee doit toujours echouer ici.
+        'affiliate_lifecycle_events',
         'affiliate_payout_items',
         'affiliate_payouts',
         'affiliate_program_policies',

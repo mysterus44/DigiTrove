@@ -11,6 +11,31 @@
 - **Branche git active** : **`codex/storefront-checkout`**, créée depuis le merge du panier
   invité **`01896f585390f266c66f51f2371399e21d41f387`**.
 
+### ⚠️ TESTS : TOUJOURS EN ARRIÈRE-PLAN SUR LA BASE PARTAGÉE
+
+Mesuré à ses dépens, deux fois. Un run de test lancé au PREMIER PLAN se fait tuer au bout
+de 10 minutes (`exit 143`) — souvent **en pleine migration** — et laisse
+`digitrove_testing` à moitié construite. La base rend alors des erreurs contradictoires
+qui n'ont rien à voir avec le code :
+
+```
+SQLSTATE[42P01] relation "migrations" does not exist
+SQLSTATE[42P07] relation "carts" already exists
+```
+
+⚠️ **Ces états produisent des décomptes d'échecs entièrement faux** — 32 puis 15 lors de
+la reprise P6-D1.1 — et un chiffre faux recopié dans un rapport oriente tout le gate dans
+la mauvaise direction. On diagnostique alors avec un outil qu'on casse soi-même.
+
+**Règle** : tout `pest`/`artisan test` part en arrière-plan, sortie complète capturée dans
+un fichier. Et si des `QueryException` du type ci-dessus apparaissent, **reconstruire la
+base avant d'interpréter quoi que ce soit** :
+
+```
+docker exec digitrove-postgres-1 psql -U digitrove -d postgres -c "DROP DATABASE IF EXISTS digitrove_testing"
+docker exec digitrove-postgres-1 psql -U digitrove -d postgres -c "CREATE DATABASE digitrove_testing"
+```
+
 ### ⚠️ PRÉVISUALISATION LOCALE : `php -S`, PAS `php artisan serve`
 
 Mesuré, pas supposé. Dans ce contexte conteneurisé, `php artisan serve` **se bloque
@@ -137,7 +162,35 @@ responsive automatisé n'existe ; Pint **536 fichiers** ; diff-check
 propre. Suite exhaustive via Pest avec 1 Gio : **1586 tests / 12281 assertions**, 0 échec ;
 `artisan test` seul hérite du plafond mémoire PHP de 128 Mio sur ce workspace.
 
-### ⏸️ P6-D1.1 — PAUSE PRODUIT, WIP PRÉSERVÉ
+### ✅ P6-D1.1 — PAUSE LEVÉE, GATE LIVRÉ (D-066)
+
+La pause D-060 est **levée**. Un préflight de réactivation a mesuré l'état avant toute
+reprise, et a trouvé mieux que prévu : le WIP `f15d192` n'était pas une ébauche mais une
+**implémentation finie** — 21 fichiers, +3827 lignes, migration `000031` (917 l.), page
+Filament, service et 4 DTO, **cinq suites de tests D1.1** et quatre contrats rescopés. Tout
+ce que D-059 décrivait était à la fois codé ET testé.
+
+⚠️ **La dérive était faible : `1 / 16` commits, pas plusieurs centaines.** La fusion a été
+vérifiée par `git merge-tree --write-tree` **avant toute mutation** (arbre propre, aucun
+conflit) puis réalisée par **merge, jamais rebase**. Le seul risque nommé —
+`P4B_ALLOWED_SERVICE_FILES` modifiée des deux côtés — ne s'est pas matérialisé.
+
+⚠️ **Le Storefront ne déplaçait pas le périmètre.** Aucune classe `app/` du WIP ne
+référence `OrderPaid`, `OrderService`, `PaymentInitiation` ni les tables d'attribution.
+D-059 avait séparé **cycle de vie + codes** (D1.1) de **l'attribution** (P6-D2) : la
+question business de D-060 se pose donc **en P6-D2**, pas ici. Le Storefront rend le gate
+SUIVANT réaliste, il ne change rien à celui-ci.
+
+⚠️ **Un premier run a rendu 32 échecs qui n'en étaient pas** : `digitrove_testing` était à
+moitié migrée (`relation "migrations" does not exist` ET `relation "carts" already exists`),
+laissée par un run tué et par les conteneurs de prévisualisation de D-065. **Panne
+d'environnement**, jamais un défaut du WIP. Base reconstruite, campagne verte :
+**183 tests / 3538 assertions / 0 échec**.
+
+⚠️ **La branche garde son nom et son commit « checkpoint paused »** : le renommer
+masquerait une information vraie — ce gate a été gelé puis repris.
+
+### ⏸️ Référence historique — la pause D-060 telle qu'elle était formulée
 
 KingKouda a priorisé le **Storefront MVP invité** avant la poursuite de l'affiliation :
 sans storefront, aucune vente ni touche réelle ne peut alimenter D2/D3. **D-059 reste

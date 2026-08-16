@@ -136,7 +136,7 @@ function runP4A21Migration(string $database, string $command, string $migration)
 }
 
 it('applies additive migration 000011 without changing the P4-A2 object topology', function () {
-    expect(DB::table('migrations')->count())->toBe(46)
+    expect(DB::table('migrations')->count())->toBe(47)
         ->and(DB::table('migrations')->where('migration', '2026_07_14_000011_harden_download_grants_integrity')->exists())->toBeTrue()
         ->and(Schema::hasTable('download_grants'))->toBeTrue()
         ->and(Schema::hasTable('licenses'))->toBeFalse();
