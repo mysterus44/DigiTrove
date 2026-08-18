@@ -4293,6 +4293,83 @@ chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la mêm
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
 vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
 
+### D-067 : P6-D2 — l'attribution sort de `orders` et passe par la queue ✅
+
+CONTEXTE : la première écriture de P6-D2 attachait `resolve_affiliate_attribution()` à
+`orders` par un trigger `AFTER INSERT`. La forme paraissait naturelle — PostgreSQL est déjà
+l'autorité partout dans ce dépôt — mais elle décidait **deux choses à la fois** sans que
+personne ne les ait arbitrées : *quand* attribuer, et *où* le code s'exécute.
+
+CHOIX :
+
+1. **Aucun trigger affilié sur `orders`.** `orders` est partagée par tout P1/P3/P4. Un
+   trigger y accroche une fonction métier spécifique à l'affiliation sur **chaque** insertion,
+   y compris celles de code qui n'a rien à voir avec le programme. Le coût est nul tant que
+   la fonction est correcte ; le risque ne l'est pas : une exception imprévue, une table
+   absente en cours de migration, et c'est la **création de commande** qui casse pour tout le
+   monde. Sur une table dont le comportement transactionnel venait de coûter trois échanges
+   de diagnostic, ajouter une dépendance synchrone de plus était le mauvais sens.
+
+2. **`resolve_affiliate_attribution(p_order_id BIGINT) RETURNS TEXT`** — une fonction
+   ordinaire, plus une fonction trigger. Elle lit elle-même `visitor_id`, `user_id` et
+   `placed_at` depuis `orders`. **`placed_at` reste l'ancre de la fenêtre d'éligibilité**,
+   jamais l'heure d'exécution : un retard de queue ne doit pas changer qui est crédité.
+
+3. **Attribution au `paid`, pas au `pending`.** Conséquence directe et voulue du point 1 :
+   l'accroche est `OrderPaid`. Cela aligne P6-D2 sur l'attribution CRM P6-A1.0 et évite
+   qu'une commande jamais payée consomme définitivement l'unique attribution autorisée par
+   `affiliate_attributions_order_id_unique`.
+
+4. **Listener → job ID-only, jamais de logique dans le listener.** `ResolveAffiliateAttribution`
+   vérifie le drapeau et dispatche `ProcessAffiliateAttribution($orderId)` ; le travail se fait
+   dans le worker. `OrderPaid` partant après COMMIT, aucun rollback financier n'était possible
+   — mais un listener **synchrone** aurait laissé une exception de l'autorité faire échouer la
+   réponse HTTP au webhook de confirmation, **après** que le paiement soit correctement
+   enregistré. C'est exactement le couplage que `QueueSecureDelivery` existe pour éviter.
+   `resolve_affiliate_attribution` étant idempotente (`already_attributed`), la sémantique
+   at-least-once de la queue ne crédite personne deux fois.
+
+5. **Un `GRANT SELECT` par colonne, mesuré et non supposé.** Le trigger recevait `NEW`
+   gratuitement ; une fonction qui lit `orders` elle-même exige un privilège que
+   `digitrove_affiliate_executor` n'a pas — il ne possède que le bloc affiliation. Sans lui :
+   `42501 permission denied for table orders`. Accordé sur **exactement** `id`, `visitor_id`,
+   `user_id`, `placed_at` — jamais l'e-mail client, jamais un montant — et révoqué à
+   l'identique dans le `down()`. Précédent : `000022` fait de même pour l'exécuteur CRM.
+
+6. **Un seul drapeau pour toute la surface affiliée.** Capture publique **et** attribution
+   sont gouvernées par `AffiliateConfig::governanceEnabled()`. La classe documentait déjà la
+   raison : un second toggle permettrait un état où une moitié du programme tourne pendant
+   que l'autre est fermée, ce qu'aucune configuration ne devrait pouvoir produire. Le drapeau
+   est **relu à l'exécution du job**, pas seulement au dispatch, pour que l'extinction coupe
+   aussi les jobs déjà en file — même règle de kill switch qu'en P4-C.
+
+7. **`POST /affiliate/code`, pas `/cart/affiliate-code`.** La route enregistre une touche
+   contre le visiteur de session et ne lit ni n'écrit aucun panier. La placer sous `/cart`
+   obligeait un contrat P6-C à porter une exception documentée pour une route qu'il n'était
+   pas censé surveiller — un garde qui porte une exception dit moins clairement ce qu'il
+   garantit. `POST /affiliate/code` est le pair sémantique de `GET /r/{code}`.
+
+ALTERNATIVES REJETÉES :
+
+- **Trigger sur `orders` filtré par `status`** : réduit la fenêtre, ne change rien au couplage
+  — le code affilié tourne toujours dans la transaction de checkout d'autrui.
+- **Listener synchrone appelant l'autorité** : écarté au point 4.
+- **Second drapeau `AFFILIATE_ATTRIBUTION_ENABLED`** : écarté au point 6.
+- **Contrainte unique sur `affiliate_touches` pour l'idempotence** : écartée au profit d'un
+  `WHERE NOT EXISTS` dans l'autorité, pour ne pas ajouter de contrainte au schéma `000029`.
+  Résidu assumé : sous READ COMMITTED deux requêtes simultanées peuvent encore insérer deux
+  touches. Inoffensif — le resolver prend `LIMIT 1` et les deux lignes nomment le même
+  affilié et le même code.
+- **Exempter `routes/web.php` du contrat P6-D0** : écartée. L'exemption saute le fichier
+  entier, donc n'importe quelle route affiliée y passerait ensuite inaperçue. Remplacée par
+  un inventaire **des jetons** autorisés dans ce fichier.
+
+IMPACT : migration `000032`, **48 migrations**, aucune `000033`. `orders` ne porte **aucun**
+trigger affilié — asserté par un test qui suit la **fonction** et non le nom, et qui vérifie
+aussi que `resolve_affiliate_attribution` retourne `text` et non `trigger`. Neuf contrats
+d'inventaire avancés de leurs trois dents ; trois laissés à leur frontière historique
+(`applyExactMigrations`) ; deux résidus du WIP à trigger convertis en garanties positives.
+
 ### D-066 : P6-D1.1 réactivé et livré — cycle de vie affilié + codes ✅
 
 CONTEXTE : D-060 avait mis P6-D1.1 en pause au profit du Storefront MVP, pour une raison

@@ -35,6 +35,9 @@ const P4B_ALLOWED_SERVICE_FILES = [
     // policy authorities. They hold NO privilege on the affiliate tables; the runtime's
     // only door is the five bounded functions. Listed FIRST because PHP sort() orders
     // 'Affiliate/…' before 'Analytics/…'; confirm the order with `php artisan test`.
+    // À VALIDER (P6-D2) — touch capture and order attribution clients into the two
+    // EXECUTE-only P6-D2 authorities. Same shape: no privilege on the affiliate tables.
+    'Affiliate/AffiliateAttributionService.php',
     'Affiliate/AffiliateDetail.php',
     'Affiliate/AffiliateLifecycleService.php',
     'Affiliate/AffiliateOperationException.php',
@@ -43,6 +46,7 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Affiliate/AffiliateRefusalReason.php',
     'Affiliate/AffiliateReviewDecision.php',
     'Affiliate/AffiliateSummary.php',
+    'Affiliate/AffiliateTouchCaptureService.php',
     'Affiliate/AffiliateTransition.php',
     'Affiliate/Concerns/UsesAffiliateAuthority.php',
     // P5-A2 (D-039) — EXECUTE-only rollup and partition operation clients.
@@ -486,7 +490,7 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(47)
+        ->and(DB::table('migrations')->count())->toBe(48)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')
@@ -1130,8 +1134,25 @@ it('keeps HEAD commercially inert and allows only the explicitly reviewed downlo
     // anything else smuggled into app/Jobs.
     // P6-C (D-056) adds SendCartReminder: ID-only, so the capability it mints never
     // reaches a queue payload. Listed in sorted order — the guard compares exactly.
-    $dirAllowlist('Jobs', ['GenerateCrmExport.php', 'ProcessCrmCommerceRollupRefresh.php', 'ProcessCrmOrderAttribution.php', 'ProcessCrmSegmentGeneration.php', 'SecureDeliveryJob.php', 'SendCartReminder.php']);
-    $dirAllowlist('Listeners', ['QueueCrmOrderAttribution.php', 'QueueSecureDelivery.php']);
+    // P6-D2 adds ProcessAffiliateAttribution: an ID-only job the OrderPaid listener
+    // dispatches, so no affiliate logic runs inside the payment-confirmation request.
+    $dirAllowlist('Jobs', [
+        'GenerateCrmExport.php',
+        'ProcessAffiliateAttribution.php',
+        'ProcessCrmCommerceRollupRefresh.php',
+        'ProcessCrmOrderAttribution.php',
+        'ProcessCrmSegmentGeneration.php',
+        'SecureDeliveryJob.php',
+        'SendCartReminder.php',
+    ]);
+    // P6-D2 adds ResolveAffiliateAttribution: an OrderPaid listener that dispatches the job
+    // above and does nothing else. Named here — like every other listener — so the
+    // fail-closed directory guard keeps catching anything else smuggled into app/Listeners.
+    $dirAllowlist('Listeners', [
+        'QueueCrmOrderAttribution.php',
+        'QueueSecureDelivery.php',
+        'ResolveAffiliateAttribution.php',
+    ]);
     // P6-C (D-056) adds the abandoned cart reminder: synchronous, never ShouldQueue,
     // and it refuses to serialise so the capability cannot reach a queue payload.
     $dirAllowlist('Mail', ['AbandonedCartReminder.php', 'OrderDownloadsReady.php']);

@@ -20,12 +20,12 @@ function p6b1Admin(): int
     return (int) CrmAdminFixtures::admin()->id;
 }
 
-it('creates exactly migration 000027 and no 000032', function () {
+it('creates exactly migration 000027 and no 000033', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(47)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(48)
         ->and(glob($root.'/database/migrations/2026_07_14_000027*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000032*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000033*.php') ?: [])->toBe([]);
 });
 
 it('creates crm_exports owned by the CRM executor with no runtime table access', function () {

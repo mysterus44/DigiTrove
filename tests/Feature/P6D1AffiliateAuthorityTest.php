@@ -53,11 +53,12 @@ function p6d1Publish(int $policyId): object
 it('keeps one migration per affiliate gate and reaches no further', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(47)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(48)
         ->and(glob($root.'/database/migrations/2026_07_14_000029*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000030*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000032*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000032*.php'))->toHaveCount(1)
+        ->and(glob($root.'/database/migrations/2026_07_14_000033*.php') ?: [])->toBe([]);
 });
 
 /**
@@ -425,11 +426,51 @@ it('keeps every P6-D0 trigger firing after the tables changed owner', function (
 
     // CURRENT-STATE, named exactly. The fourth is D-059's lifecycle ledger guard; it
     // protects a history table and grants the financial triggers nothing they did not
-    // already have.
+    // already have. All four sit on tables INSIDE the affiliate block.
     expect($triggers)->toBe([
         'affiliate_commission_entries_append_only_trigger',
         'affiliate_lifecycle_events_append_only_trigger',
         'affiliate_program_policies_immutability_trigger',
         'affiliate_touches_subject_trigger',
     ]);
+});
+
+/**
+ * The arbitrated mechanism of P6-D2, asserted rather than assumed.
+ *
+ * Attribution was first written as an `AFTER INSERT` trigger on `orders`. That hung affiliate
+ * logic on EVERY insert into a table shared by P1/P3/P4, so any fault inside attribution —
+ * an unforeseen exception, a missing table mid-migration — would have broken order creation
+ * for code with nothing to do with affiliation. It also attributed a `pending` order, before
+ * any payment existed.
+ *
+ * Attribution now runs from the `OrderPaid` listener. This test is what keeps it there: it
+ * fails the moment anything affiliate-shaped is attached to `orders` again, whatever the
+ * trigger is named — the check follows the FUNCTION, not the name, because a trigger called
+ * `orders_sync_trigger` running `resolve_affiliate_attribution` would slip past a name match.
+ */
+it('attaches no affiliate trigger to orders, which is a shared commerce table', function () {
+    $onOrders = array_map(
+        static fn (object $r): string => (string) $r->tgname,
+        Fx::owner()->select(<<<'SQL'
+            SELECT t.tgname
+            FROM pg_trigger AS t
+            JOIN pg_class AS c ON c.oid = t.tgrelid
+            JOIN pg_proc AS p ON p.oid = t.tgfoid
+            WHERE NOT t.tgisinternal
+              AND c.relname = 'orders'
+              AND (t.tgname LIKE '%affiliate%' OR p.proname LIKE '%affiliate%')
+            ORDER BY 1
+            SQL),
+    );
+
+    expect($onOrders)->toBe([]);
+
+    // And the authority the listener calls is a plain function, not a trigger function:
+    // `RETURNS TEXT`, never `trigger`. A future change back to a trigger fails here too.
+    expect((string) Fx::owner()->selectOne(<<<'SQL'
+        SELECT pg_get_function_result(p.oid) AS result
+        FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' AND p.proname = 'resolve_affiliate_attribution'
+        SQL)->result)->toBe('text');
 });

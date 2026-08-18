@@ -320,6 +320,20 @@ Vérifications P2 passées :
   (consigné dans HANDOFF).
 - Hors gate : migration, autorités, coupon, compte client, affiliation, P7.
 
+### P6-D2 Attribution affiliée - D-067 (livré)
+
+- Migration `000032`, **48 migrations**, aucune `000033`. Deux autorités
+  `SECURITY DEFINER` : `record_affiliate_touch`, `resolve_affiliate_attribution`.
+- ⚠️ **Aucun trigger sur `orders`.** L'attribution part de `OrderPaid` vers un job
+  ID-only, donc aucune logique affiliée ne tourne dans la transaction de checkout
+  d'autrui ni dans la requête de confirmation de paiement.
+- Attribution au `paid` (aligné P6-A1.0), fenêtre ancrée sur `placed_at` et non sur
+  l'heure d'exécution. `GRANT SELECT` par COLONNE sur `orders` : `id`, `visitor_id`,
+  `user_id`, `placed_at` — jamais l'e-mail, jamais un montant.
+- Un seul drapeau `AffiliateConfig::governanceEnabled()`, **relu à l'exécution du job**
+  (kill switch couvrant les jobs déjà en file).
+- Validation : P6-D2 **20/92**, suite complète **1735/13232**, 0 échec, Pint vert.
+
 ### P6-D1.1 réactivé - D-066 (en revue)
 
 - ⚠️ **Pause D-060 levée.** Le WIP `f15d192` était une implémentation FINIE : 21 fichiers,
@@ -631,7 +645,8 @@ commencés.
 | Affiliation P6-D1 | ✅ **MERGÉ** (PR #41, head `d2ecfb44`, merge `aeac8a5d`, **CI SUCCESS** ; P6-D1 **42 / 307**, régressions **848 / 7776**, suite complète **1566 / 12145**, Pint **510**) — D-058, migration **000030**, **46 migrations**, aucune `000031`. **La dette superuser est fermée** : rôle `digitrove_affiliate_executor` **NOLOGIN/NOINHERIT/non-superuser** créé par le script de provisioning (jamais supprimé au `down()` — cluster-global), propriétaire des **9 tables et 9 séquences** ; **5 autorités `SECURITY DEFINER`** lui appartiennent ; runtime **EXECUTE-only**, **zéro DML direct** ; `PUBLIC` sans `EXECUTE`. Gouvernance : brouillon → modification → **publication immédiate** → politique en vigueur → historique borné ; Filament **admin seul**. `status='active'` **≡ en vigueur maintenant**, intervalle **`[from, until)`** avec **la même valeur `now()`** aux deux bornes (ni trou ni chevauchement), **aucune publication programmée**. Précision élargie à **`timestamptz(6)`** : en `(0)` une succession rapide était **non représentable** et violait le CHECK de période. ⚠️ **ROLLBACK LOSSLESS-ONLY** : le retour vers `(0)` n'est autorisé **que si aucune valeur ne change** ; sinon le `down()` **refuse avant toute mutation**. **Après une publication réelle, ce refus est le cas normalement attendu** (`now()` garde les microsecondes) — c'est voulu, pas un bug. Validation : P6-D1 **42 / 307**, suite complète **1566 / 12145**, Pint **510**. |
 | Affiliation P6-D1 *(plan d'origine)* | 📐 **ARCHITECTURE GELÉE (D-058).** Périmètre arbitré par KingKouda : **frontière d'autorité PostgreSQL + gouvernance des politiques versionnées UNIQUEMENT**. ⚠️ **Dette critique découverte au préflight** : les 9 tables `affiliate_*` appartiennent à **`digitrove`, rôle migrateur superuser** (alors que les surfaces CRM appartiennent à `digitrove_crm_executor`, qui possède **59** des 64 fonctions `SECURITY DEFINER` du dépôt) — une autorité créée en l'état **s'exécuterait en superuser**, la vulnérabilité fermée par D-029.6/P4-B0. Correction en `000030`, **jamais** par réécriture de `000029`. Rôle `digitrove_affiliate_executor` NOLOGIN/NOINHERIT créé par le **script de provisioning** (précédent P4-B0 : les rôles sont cluster-globaux), **jamais supprimé au `down()`**. **Publication atomique** : fermer le prédécesseur et publier le successeur = **une seule transition**, avec **`now()`** et non `clock_timestamp()` pour que `effective_until` et `effective_from` soient **identiques** (intervalle semi-ouvert ⇒ ni trou ni chevauchement). **`status='active'` ≡ « en vigueur maintenant »** : la **publication différée n'est PAS livrée** (elle exigerait `btree_gist`, jamais installée), mais reste ajoutable plus tard **sans rouvrir la frontière**. Cinq autorités bornées, **aucun CRUD générique**. |
 | Affiliation P6-D1.1 | ⏸️ **ARCHITECTURE D-059 INCHANGÉE, IMPLÉMENTATION EN PAUSE PAR D-060.** WIP non livré préservé sur `p6-d1-1-affiliate-lifecycle-codes` à `f15d192`, avec brouillon `000031`. La stable `4407fca` reste à **46 migrations, sans `000031`**. Reprise uniquement après le Storefront MVP. |
-| Prochain gate | ⏳ **Storefront MVP - panier invité, après rapport et prompt humain.** Catalogue D-062 prêt pour revue sur `codex/storefront-catalogue` ; aucun panier/checkout anticipé. P6-D1.1 est préservé, pas abandonné. |
+| Affiliation P6-D2 | ✅ **LIVRÉ (D-067).** `000032`, 48 migrations. Capture publique + attribution au `paid` par job ID-only. Aucun trigger sur `orders`. |
+| Prochain gate | ⏳ **P6-D3 — moteur de commissions et compensations.** Réutilise **Hamilton** (`DiscountAllocator`, D-030 Q3) pour répartir un refund niveau-commande vers les lignes ; aucune seconde implémentation d'arrondi. |
 
 ## P7 — BLOG & SEO
 | Tâche | Statut |

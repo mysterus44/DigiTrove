@@ -2,6 +2,7 @@
 
 namespace Tests\Concerns;
 
+use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -44,8 +45,26 @@ trait InteractsWithPaymentsDatabase
         // connections open until GC and exhaust max_connections. Disconnect
         // them explicitly when the application is torn down.
         $this->beforeApplicationDestroyed(function (): void {
+            // Same reason as the truncate on the way in, applied on the way OUT: this trait
+            // shares its process with `RefreshDatabase` suites, and `migrate:fresh` runs at
+            // most ONCE per process. Rows left behind become the starting state of the next
+            // transactional test, which then fails for a reason unrelated to its subject.
             DB::disconnect('pgsql');
             DB::disconnect('pgsql_migration');
+
+            // This trait does NOT wrap its tests in a transaction, so the rows it wrote are
+            // still there when the next test starts. `RefreshDatabase` runs `migrate:fresh`
+            // at most ONCE per process, so a transactional test scheduled after this one
+            // would open its transaction on our leftovers and fail on an assertion like
+            // `sole()` for a reason unrelated to its subject.
+            //
+            // Forcing the flag back to false makes that next test rebuild the schema, which
+            // is the mechanism Laravel already has for exactly this.
+            //
+            // ⚠️ Do NOT "fix" this by truncating here instead. It was tried and MEASURED: a
+            // 54-table TRUNCATE at teardown leaves a lock-holding backend behind that the
+            // next test's DDL deadlocks against (`40P01`, during `migrate:fresh` itself).
+            RefreshDatabaseState::$migrated = false;
         });
     }
 

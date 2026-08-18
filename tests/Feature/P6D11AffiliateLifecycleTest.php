@@ -99,9 +99,9 @@ function p6d11Events(int $affiliateId): array
 it('adds exactly migration 000031 and never opens the next one', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(47)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(48)
         ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000032*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000033*.php') ?: [])->toBe([]);
 });
 
 // ── Privilege boundary ──────────────────────────────────────────────────────────
@@ -185,6 +185,9 @@ it('owns an exact inventory of affiliate functions, none of them by the superuse
         'list_affiliates',
         'publish_affiliate_program_policy',
         'reactivate_affiliate',
+        // P6-D2 capture and attribution authorities.
+        'record_affiliate_touch',
+        'resolve_affiliate_attribution',
         'review_affiliate_application',
         'rotate_affiliate_code',
         'submit_affiliate_application',
