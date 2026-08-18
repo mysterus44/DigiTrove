@@ -17,9 +17,9 @@ function p6a13Schema(): Connection
 it('adds exactly one migration (000024) and no 000025', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(47)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(48)
         ->and(glob($root.'/database/migrations/2026_07_14_000024*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000032*.php'))->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000033*.php'))->toBe([]);
 });
 
 it('creates the run table with exactly the durable audit columns and no PII', function () {

@@ -5,6 +5,7 @@ use App\Http\Controllers\AnalyticsEventController;
 use App\Http\Controllers\CartResumeController;
 use App\Http\Controllers\DownloadFileController;
 use App\Http\Controllers\DownloadLandingController;
+use App\Http\Controllers\Storefront\AffiliateTouchController;
 use App\Http\Controllers\Storefront\CartController;
 use App\Http\Controllers\Storefront\CatalogController;
 use App\Http\Controllers\Storefront\CheckoutController;
@@ -16,6 +17,22 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', CatalogController::class)->name('storefront.home');
 Route::get('/products', [ProductController::class, 'index'])->name('products.index');
 Route::get('/products/{product:slug}', [ProductController::class, 'show'])->name('products.show');
+
+// P6-D2 affiliate touch capture. Both are throttled like every other public write
+// surface (`analytics-ingestion`, `cart-resume`, `download-file`): the endpoints answer
+// identically whatever the outcome, so the limit is what stops them being used to
+// enumerate codes at volume. The `{code}` pattern mirrors `affiliate_codes_format_check`.
+// `POST /affiliate/code` is the semantic pair of `GET /r/{code}`: it records a touch and
+// never reads or writes a cart, so it deliberately stays OUT of the `/cart` namespace a
+// P6-C contract guards — a guard that has to carry an exception says less than one that
+// does not.
+Route::get('/r/{code}', [AffiliateTouchController::class, 'resolveLink'])
+    ->where('code', '[A-Za-z0-9]{4,32}')
+    ->middleware('throttle:affiliate-touch')
+    ->name('affiliate.link');
+Route::post('/affiliate/code', [AffiliateTouchController::class, 'storeCode'])
+    ->middleware('throttle:affiliate-touch')
+    ->name('affiliate.code.store');
 
 // Guest cart. GET never mutates; the two mutations are POST/DELETE and therefore carry
 // the normal web CSRF boundary. No route exposes a cart id, a `public_id` or a secret:

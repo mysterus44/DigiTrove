@@ -7,6 +7,7 @@ use App\Contracts\Payments\PaymentProvider;
 use App\Events\OrderPaid;
 use App\Listeners\QueueCrmOrderAttribution;
 use App\Listeners\QueueSecureDelivery;
+use App\Listeners\ResolveAffiliateAttribution;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductFile;
@@ -118,10 +119,22 @@ class AppServiceProvider extends ServiceProvider
                 ]));
         });
 
+        // P6-D2 affiliate touch capture. Bounded per IP: the endpoints are deliberately
+        // mute, so the limit is what keeps them from being walked to discover which codes
+        // exist — and it caps how fast one visitor can pile up touches.
+        RateLimiter::for('affiliate-touch', function (Request $request): Limit {
+            return Limit::perMinute(20)->by((string) $request->ip());
+        });
+
         // Secure delivery pipeline (P4-C0, D-035): a paid order queues an
         // order-id-only delivery job, and only when the pipeline is enabled.
         Event::listen(OrderPaid::class, QueueSecureDelivery::class);
         Event::listen(OrderPaid::class, QueueCrmOrderAttribution::class);
+
+        // Affiliate attribution (P6-D2). Explicit listener, NOT a trigger on `orders`:
+        // attribution happens at the paid transition, and no affiliate code runs inside
+        // the checkout transaction of orders that have nothing to do with affiliation.
+        Event::listen(OrderPaid::class, ResolveAffiliateAttribution::class);
     }
 
     private function downloadRateLimitKey(Request $request): string

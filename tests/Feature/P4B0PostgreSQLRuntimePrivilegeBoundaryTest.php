@@ -67,7 +67,7 @@ it('keeps the P4-B0 ACL boundary active after the later P4 and P5-A0 migrations'
     // legitimately exists here. The proof that NOTHING P4-B exists at the 000012
     // boundary itself lives in the isolated rollback test below, which stops
     // exactly there — that is where the gate frontier is asserted.
-    expect(DB::table('migrations')->count())->toBe(47)
+    expect(DB::table('migrations')->count())->toBe(48)
         ->and(DB::table('migrations')->where('migration', '2026_07_14_000012_harden_database_runtime_privileges')->exists())->toBeTrue()
         ->and(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
         ->and(DB::table('migrations')->where('migration', '2026_07_14_000016_create_analytics_rollups_tables')->exists())->toBeTrue()
@@ -164,6 +164,37 @@ it('withholds EXECUTE on the protected trigger functions from PUBLIC and from th
     // Extension functions (citext …) are deliberately untouched: the suite that
     // exercises citext columns passes, so only trigger functions were locked.
     expect(DB::selectOne("SELECT 'A'::citext = 'a'::citext AS v")->v)->toBeTrue();
+});
+
+/**
+ * The mirror of the list above, and the reason that list is about TRIGGER functions
+ * specifically. `resolve_affiliate_attribution` was briefly written as a trigger on
+ * `orders`; as such it belonged with the protected functions, because a trigger function is
+ * never called directly and EXECUTE on it is pure attack surface.
+ *
+ * P6-D2 makes it an ORDINARY authority the `OrderPaid` listener invokes by id, so the
+ * runtime MUST hold EXECUTE — while PUBLIC still must not. Asserting that positively is
+ * stronger than dropping the old line: a future change that either revokes the runtime's
+ * access or re-opens the function to PUBLIC fails here.
+ */
+it('grants the runtime EXECUTE on the two P6-D2 authorities while keeping PUBLIC out', function () {
+    $authorities = [
+        'record_affiliate_touch(uuid, bigint, character varying, character varying)',
+        'resolve_affiliate_attribution(bigint)',
+    ];
+
+    foreach ($authorities as $signature) {
+        expect(DB::selectOne("SELECT has_function_privilege(current_user, 'public.{$signature}', 'EXECUTE') AS v")->v)
+            ->toBeTrue("runtime must hold EXECUTE on {$signature}")
+            ->and(DB::selectOne("SELECT has_function_privilege('public', 'public.{$signature}', 'EXECUTE') AS v")->v)
+            ->toBeFalse("PUBLIC must never hold EXECUTE on {$signature}");
+    }
+
+    // And the runtime still owns no direct write path into the affiliate block: the
+    // authorities are the only door.
+    expect(DB::selectOne("SELECT has_table_privilege(current_user, 'affiliate_touches', 'INSERT') AS v")->v)->toBeFalse()
+        ->and(DB::selectOne("SELECT has_table_privilege(current_user, 'affiliate_attributions', 'INSERT') AS v")->v)->toBeFalse()
+        ->and(DB::selectOne("SELECT has_table_privilege(current_user, 'affiliate_touches', 'SELECT') AS v")->v)->toBeFalse();
 });
 
 it('still fires the existing triggers under the runtime even though EXECUTE was revoked', function () {

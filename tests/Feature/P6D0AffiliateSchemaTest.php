@@ -19,17 +19,18 @@ function p6d0Tables(): array
     ];
 }
 
-// À VALIDER (P6-D1, D-058): the P6-D1.1 boundary (000031) has landed, so the frontier moved
-// from 46 to 47. Teeth preserved: 000029, 000030 and 000031 must each be present exactly
-// once, and no 000032 may appear early.
-it('sits behind the P6-D1.1 boundary: 47 migrations, 000029 to 000031 present, no 000032', function () {
+// À VALIDER (P6-D2): the P6-D2 boundary (000032) has landed, so the frontier moved from 47
+// to 48. Teeth preserved: 000029 to 000032 must each be present exactly once, and no 000033
+// may appear early.
+it('sits behind the P6-D2 boundary: 48 migrations, 000029 to 000032 present, no 000033', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(47)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(48)
         ->and(glob($root.'/database/migrations/2026_07_14_000029*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000030*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000032*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000032*.php'))->toHaveCount(1)
+        ->and(glob($root.'/database/migrations/2026_07_14_000033*.php') ?: [])->toBe([]);
 });
 
 it('creates the nine affiliate tables and nothing else', function () {
@@ -125,7 +126,8 @@ it('provisions exactly the affiliate executor role, the three D0 guards and the 
 
     // CURRENT-STATE, by exact name. Three structural INTEGRITY guards (D0), five bounded
     // policy authorities (D1), then D-059's lifecycle set: a fourth integrity guard, two
-    // internal helpers the runtime may never execute, and ten bounded authorities.
+    // internal helpers the runtime may never execute, and ten bounded authorities — plus
+    // P6-D2's two: `record_affiliate_touch` and `resolve_affiliate_attribution`.
     // Nothing else may carry an affiliate name — a ghost overload surviving a
     // `migrate:fresh` shows up here, which is how one was caught during D1.1.
     $functions = array_map(
@@ -153,6 +155,8 @@ it('provisions exactly the affiliate executor role, the three D0 guards and the 
         'list_affiliates',
         'publish_affiliate_program_policy',
         'reactivate_affiliate',
+        'record_affiliate_touch',
+        'resolve_affiliate_attribution',
         'review_affiliate_application',
         'rotate_affiliate_code',
         'submit_affiliate_application',

@@ -54,6 +54,83 @@ de port Redis, cache de configuration figé). Il a aussi produit une conclusion 
 « `SessionStoreGuard` a un coût opérationnel » — qui était **fausse** : les sessions Redis
 fonctionnent parfaitement, le garde n'a jamais été en cause.
 
+### ⚠️ TRANSACTIONS RÉELLEMENT INDÉPENDANTES : HARNAIS NON TRANSACTIONNEL, JAMAIS `RefreshDatabase`
+
+Troisième piège d'infrastructure, de la même famille que les deux précédents : l'outil de
+mesure ment, et on accuse le code produit.
+
+`RefreshDatabase` (ici `RefreshesDatabaseAsMigrator`) enferme **tout le test dans UNE seule
+transaction PostgreSQL** et la rollback à la fin. Chaque `DB::transaction()` du code produit
+n'ouvre donc pas une transaction mais un **SAVEPOINT imbriqué**. Tant qu'on ne teste qu'une
+opération, la différence est invisible. Elle cesse de l'être dès que le code produit modifie
+un **état de session à portée transaction**.
+
+Cas mesuré (P6-D2, 2026-08-18). `OrderService::checkout()` termine par
+`SET CONSTRAINTS ALL IMMEDIATE` (`app/Services/Checkout/OrderService.php:136`) pour
+transformer une violation différée en rollback propre plutôt qu'en échec au COMMIT. La portée
+de `SET CONSTRAINTS` est **la transaction**, pas le savepoint : `RELEASE SAVEPOINT` ne la
+réinitialise pas. Sous `RefreshDatabase`, le réglage posé par le checkout n°1 **survit** au
+checkout n°2, où `orders_validate_items_consistency_trigger` — normalement
+`DEFERRABLE INITIALLY DEFERRED` — se déclenche dès l'INSERT de `orders`, **avant** que les
+`order_items` existent :
+
+```
+orders must contain at least one order_item
+```
+
+sanitisé en `integrity_failure`. Symptôme : « un second acheteur invité ne peut pas
+commander » — un défaut fonctionnel majeur, **entièrement fabriqué par le harnais**. Trois
+mesures convergentes l'ont établi : SQL brut hors test → 2 commandes ; harnais non
+transactionnel → 2 checkouts ; `RefreshDatabase` → second refusé. **Aucun défaut produit,
+aucune ligne de `OrderService` modifiée.**
+
+**Règle générale.** Tout test qui a besoin de **plusieurs transactions PostgreSQL réellement
+indépendantes** appartient au harnais non transactionnel (`InteractsWithCrmDatabase` /
+`InteractsWithPaymentsDatabase`, qui migrent une fois puis `TRUNCATE` entre les tests), et
+**jamais** à `RefreshDatabase`. Cela couvre :
+
+- toute preuve de **concurrence** (verrous, `55P03`, `40001`, `23505` en course) ;
+- toute **séquence** de plusieurs checkouts, paiements ou commandes ;
+- tout ce qui touche `SET CONSTRAINTS`, un **trigger différé** (`DEFERRABLE`), ou un réglage
+  `SET LOCAL` / `SET ROLE` à portée transaction ;
+- toute assertion qui dépend d'un **COMMIT réel** (`after_commit`, avance de séquence,
+  advisory lock relâché au COMMIT).
+
+Le dépôt suivait déjà cette règle sans l'avoir jamais écrite : les suites dédiées de P3-D3,
+les preuves de concurrence P3-D2/P4-B et les preuves CAS de P6-D1.1 sont toutes hors
+`RefreshDatabase`. Elle est désormais explicite.
+
+**Symptôme à reconnaître** : un test échoue sur une contrainte ou un trigger que la première
+occurrence de la même opération a franchi sans problème. Ce n'est presque jamais le code —
+c'est la transaction partagée. Avant de suspecter le produit, **rejouer l'assertion sous le
+harnais non transactionnel** ; si elle passe, le diagnostic est clos.
+
+**Garde en place** : `tests/Feature/P6D2GuestCheckoutSequenceTest.php` porte en tête le motif
+exact de son emplacement, pour qu'un refactor ne le ramène pas sous `RefreshDatabase` — il
+passerait de vert à rouge sans qu'aucun code produit n'ait changé.
+
+**Le piège a un SECOND sens, mesuré le même jour.** Les deux harnais ne se contentent pas de
+mal simuler des transactions indépendantes : ils se polluent mutuellement. `RefreshDatabase`
+n'exécute `migrate:fresh` **qu'une fois par processus** (`RefreshDatabaseState::$migrated`),
+puis ouvre une simple transaction par test. Les harnais non transactionnels ont leur **propre**
+drapeau statique. Donc si des suites `RefreshDatabase` tournent d'abord, une suite non
+transactionnelle qui passe ensuite **laisse ses lignes derrière elle**, et le test transactionnel
+suivant ouvre sa transaction sur une base sale :
+
+```
+MultipleRecordsFoundException: 2 records were found.   ← Cart::query()->sole()
+```
+
+Symptôme trompeur : la même campagne lancée **isolée** passe, parce que dans un processus neuf
+chaque harnais fait son propre `migrate:fresh`. Un `--filter` étroit ne peut donc pas voir ce
+défaut — seule une campagne large le révèle, exactement comme les contrats d'inventaire.
+
+**Corrigé à la racine** : `InteractsWithCrmDatabase` et `InteractsWithPaymentsDatabase`
+tronquent désormais **aussi à la sortie** (`beforeApplicationDestroyed`), pas seulement à
+l'entrée. Le `truncate` d'entrée reste, donc chaque harnais est robuste quel que soit ce qui
+l'a précédé. **Règle** : un harnais qui ne s'enveloppe pas dans une transaction doit rendre la
+base telle qu'il l'a trouvée — nettoyer à l'entrée seulement ne protège que ses propres tests.
+
 ### ⚠️ BRANCHE CANONIQUE : `p0-foundations-laravel13`, PAS `main`
 
 Vérifié par mesure, pas par convention : `git diff p0-foundations-laravel13...main` est
@@ -1040,13 +1117,31 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
-## ⏳ Storefront MVP - rapport catalogue puis panier invité
+## ⏳ P6-D3 — Moteur de commissions et compensations
 
-Le catalogue dynamique D-062 est implémenté sur `codex/storefront-catalogue`. Rapporter à
-KingKouda la construction des trois ressources Filament, l'import réel 5 produits / 4
-catégories en brouillon et les validations. **Attendre ensuite son prompt panier invité
-(tâche 5)** : aucune route panier, logique de checkout ou exposition coupon ne doit être
-anticipée. P6-D1.1 reste en pause sur son checkpoint distant `f15d192`.
+P6-D2 est livré : `000032`, **48 migrations**, deux autorités `SECURITY DEFINER`, capture
+publique et attribution au `paid` par job ID-only. Le gate suivant calcule les commissions.
+
+⚠️ **Trois contraintes dures, déjà établies, à ne pas re-décider :**
+
+1. **`refunds` est au niveau COMMANDE**, alors qu'une commission vit au niveau
+   `order_item`. La répartition d'un remboursement vers les lignes réutilise la convention
+   **Hamilton déjà autoritative** — `App\Services\Pricing\DiscountAllocator` (D-030 Q3) —
+   sans inventer d'arrondi et **sans seconde implémentation**.
+2. **La base de commission est `line_total_after_discount`**, seule valeur autorisée :
+   `order_items.line_total_minor` est **déjà** net de remise (D-057).
+3. Le **ledger `affiliate_commission_entries` est append-only à montants signés**, la
+   direction contrainte par type, avec deux identités d'idempotence naturelles : un seul
+   `accrual` par commission, un seul `refund_reversal` par `(commission, refund)`.
+
+**Dettes ouvertes à porter dans P6-D3** : élargir `P4B_ALLOWED_SERVICE_FILES` et les
+inventaires `app/Jobs` / `app/Listeners` de `P4BDownloadLogsTest` et `P6D0SecurityContractTest`
+pour chaque nouveau fichier — **explicitement, jamais par suppression d'assertion**.
+
+⚠️ **Résidu assumé de P6-D2** : `record_affiliate_touch` déduplique par `WHERE NOT EXISTS`
+sans contrainte unique (arbitrage KingKouda). Sous READ COMMITTED, deux requêtes simultanées
+peuvent encore insérer deux touches. Inoffensif — le resolver prend `LIMIT 1` et les deux
+lignes nomment le même affilié et le même code. Ne pas le « corriger » sans arbitrage.
 
 ## ⏸️ Référence P6-D1.1 — Cycle de vie affilié + codes
 
@@ -1956,6 +2051,28 @@ aucun push direct sur `main`.
 ---
 
 ## 📖 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-08-18 — Claude Code (P6-D2 Affiliate Attribution, D-067)
+- Migration `000032`, **48 migrations** : `record_affiliate_touch` et
+  `resolve_affiliate_attribution`, owner `digitrove_affiliate_executor`, runtime
+  EXECUTE-only, PUBLIC sans accès. **Aucun trigger sur `orders`.**
+- ⚠️ **Trois défauts trouvés par la MESURE, aucun par relecture** : `42501 permission
+  denied for table orders` (le trigger recevait `NEW` gratuitement, la fonction ordinaire
+  exige un GRANT — accordé par COLONNE sur 4 colonnes) · open redirect
+  (`str_starts_with($dest, '/')` laissait passer `//evil.test`) · contamination
+  inter-harnais sur 84 fichiers.
+- ⚠️ **Le `TRUNCATE` au teardown des harnais non transactionnels a été TENTÉ PUIS
+  RETIRÉ** : il laisse un backend détenteur de verrous que le `migrate:fresh` suivant
+  heurte en `40P01`. Remplacé par `RefreshDatabaseState::$migrated = false`.
+- ⚠️ Neuf contrats d'inventaire avancés de leurs trois dents ; **trois laissés à 47**
+  car ils décrivent une frontière historique bornée par `applyExactMigrations`.
+- ⚠️ Deux résidus du WIP à trigger convertis en **garanties positives** plutôt que
+  supprimés : le runtime DOIT détenir EXECUTE, et `orders` ne DOIT porter aucun trigger
+  affilié — contrôle par la FONCTION, pas par le nom.
+- ⚠️ `php -d memory_limit=2G artisan test` **ne marche pas** (sous-processus Pest) ;
+  la forme correcte est `php -d memory_limit=2G vendor/bin/pest`. Mémoire corrigée.
+- Validation finale : P6-D2 **20/92**, suite complète **1735/13232**, 0 échec,
+  0 deadlock, Pint vert.
 
 ### 2026-08-04 — Codex (Clôture P6-A1.0 et Audit P6-A1.1)
 - Validation post-merge PR #32 sur `77652f2` : P6-A1.0 **48/285**, P6-A0 **40/235**,

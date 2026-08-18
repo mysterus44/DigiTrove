@@ -55,15 +55,16 @@ function p6d0ApplicationFiles(): array
 // ── The gate boundary ────────────────────────────────────────────────────────────
 
 // À VALIDER (P6-D1, D-058): the P6-D1.1 boundary (000031) has landed. The frontier moved
-// from 46 to 47; teeth kept — 000029, 000030 and 000031 each present once, no 000032 early.
-it('sits behind the P6-D1.1 boundary: 47 migrations, 000029 to 000031 present, no 000032', function () {
+// from 47 to 48; teeth kept — 000029 to 000032 each present once, no 000033 early.
+it('sits behind the P6-D2 boundary: 48 migrations, 000029 to 000032 present, no 000033', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(47)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(48)
         ->and(glob($root.'/database/migrations/2026_07_14_000029*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000030*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000032*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000032*.php'))->toHaveCount(1)
+        ->and(glob($root.'/database/migrations/2026_07_14_000033*.php') ?: [])->toBe([]);
 });
 
 /**
@@ -104,8 +105,12 @@ it('ships exactly the P6-D1 governance surface and no other affiliate file', fun
         'app/Filament/Pages/AffiliateLifecycle.php',
         'app/Filament/Pages/AffiliateProgramme.php',
         'app/Filament/Pages/Concerns/AuthorizesAffiliateAdmin.php',
+        'app/Http/Controllers/Storefront/AffiliateTouchController.php',
+        'app/Jobs/ProcessAffiliateAttribution.php',
+        'app/Listeners/ResolveAffiliateAttribution.php',
         'app/Policies/AffiliatePolicyGovernancePolicy.php',
         'app/Providers/AppServiceProvider.php',
+        'app/Services/Affiliate/AffiliateAttributionService.php',
         'app/Services/Affiliate/AffiliateDetail.php',
         'app/Services/Affiliate/AffiliateLifecycleService.php',
         'app/Services/Affiliate/AffiliateOperationException.php',
@@ -114,11 +119,13 @@ it('ships exactly the P6-D1 governance surface and no other affiliate file', fun
         'app/Services/Affiliate/AffiliateRefusalReason.php',
         'app/Services/Affiliate/AffiliateReviewDecision.php',
         'app/Services/Affiliate/AffiliateSummary.php',
+        'app/Services/Affiliate/AffiliateTouchCaptureService.php',
         'app/Services/Affiliate/AffiliateTransition.php',
         'app/Services/Affiliate/Concerns/UsesAffiliateAuthority.php',
         'app/Support/AffiliateConfig.php',
         'config/affiliate.php',
         'resources/views/filament/pages/affiliate-lifecycle.blade.php',
+        'routes/web.php',
     ]);
 });
 
@@ -129,10 +136,23 @@ it('ships exactly the P6-D1 governance surface and no other affiliate file', fun
 it('adds no affiliate route, command, job, listener, mail or model, and only the governance surface elsewhere', function () {
     $root = str_replace('\\', '/', dirname(__DIR__, 2));
 
-    // Nothing on the public or admin routing surface.
+    // Every routing file except `web.php` stays completely free of the word.
     foreach (glob($root.'/routes/*.php') ?: [] as $file) {
-        expect(stripos(Scanner::phpCode($file), 'affiliate'))->toBeFalse();
+        if (basename($file) !== 'web.php') {
+            expect(stripos(Scanner::phpCode($file), 'affiliate'))->toBeFalse();
+        }
     }
+
+    // `web.php` carries the P6-D2 capture routes, so it cannot be held to zero. Exempting
+    // the whole FILE would be a hole: any affiliate route could then be added unnoticed.
+    // Instead the affiliate-bearing TOKENS it may contain are inventoried exactly — the
+    // controller class and the bare word behind the route names, the throttle alias and the
+    // URI. A third token, whatever it is called, fails here.
+    preg_match_all('/\w*affiliate\w*/i', Scanner::phpCode($root.'/routes/web.php'), $tokens);
+    $distinct = array_values(array_unique($tokens[0]));
+    sort($distinct);
+
+    expect($distinct)->toBe(['AffiliateTouchController', 'affiliate']);
 
     /** @return list<string> Affiliate-named files under $dir, relative to root, sorted. */
     $affiliateFilesUnder = static function (string $dir) use ($root): array {
@@ -156,10 +176,22 @@ it('adds no affiliate route, command, job, listener, mail or model, and only the
         return $out;
     };
 
-    // Layers a live programme would need but this governance-only gate must not touch.
-    foreach (['app/Console/Commands', 'app/Jobs', 'app/Listeners', 'app/Mail', 'app/Models'] as $layer) {
+    // Layers a live programme would need and that this gate still must not touch. NOTE the
+    // absence of `app/Listeners`: P6-D2 puts exactly one file there, inventoried below. It
+    // left this list by being NAMED somewhere else, never by the assertion being dropped.
+    foreach (['app/Console/Commands', 'app/Mail', 'app/Models'] as $layer) {
         expect($affiliateFilesUnder($root.'/'.$layer))->toBe([], "unexpected affiliate file under {$layer}");
     }
+
+    // P6-D2: one listener and one job, each carrying `order_id` alone. They left the
+    // "must stay empty" list above by being NAMED here, never by an assertion being
+    // dropped. There is still no affiliate command, mail or model.
+    expect($affiliateFilesUnder($root.'/app/Listeners'))->toBe([
+        'app/Listeners/ResolveAffiliateAttribution.php',
+    ]);
+    expect($affiliateFilesUnder($root.'/app/Jobs'))->toBe([
+        'app/Jobs/ProcessAffiliateAttribution.php',
+    ]);
 
     // The exact governance surface, by inventory.
     expect($affiliateFilesUnder($root.'/app/Policies'))->toBe([
@@ -170,7 +202,11 @@ it('adds no affiliate route, command, job, listener, mail or model, and only the
         'app/Filament/Pages/AffiliateProgramme.php',
         'app/Filament/Pages/Concerns/AuthorizesAffiliateAdmin.php',
     ]);
+    expect($affiliateFilesUnder($root.'/app/Http/Controllers'))->toBe([
+        'app/Http/Controllers/Storefront/AffiliateTouchController.php',
+    ]);
     expect($affiliateFilesUnder($root.'/app/Services'))->toBe([
+        'app/Services/Affiliate/AffiliateAttributionService.php',
         'app/Services/Affiliate/AffiliateDetail.php',
         'app/Services/Affiliate/AffiliateLifecycleService.php',
         'app/Services/Affiliate/AffiliateOperationException.php',
@@ -179,6 +215,7 @@ it('adds no affiliate route, command, job, listener, mail or model, and only the
         'app/Services/Affiliate/AffiliateRefusalReason.php',
         'app/Services/Affiliate/AffiliateReviewDecision.php',
         'app/Services/Affiliate/AffiliateSummary.php',
+        'app/Services/Affiliate/AffiliateTouchCaptureService.php',
         'app/Services/Affiliate/AffiliateTransition.php',
         'app/Services/Affiliate/Concerns/UsesAffiliateAuthority.php',
     ]);

@@ -6,6 +6,7 @@ use App\Enums\OrderStatus;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\DB;
 
 trait InteractsWithCrmDatabase
@@ -26,8 +27,28 @@ trait InteractsWithCrmDatabase
         $this->truncateCrmApplicationTables();
 
         $this->beforeApplicationDestroyed(function (): void {
+            // Leave the database as clean as we found it. This trait truncates on the way
+            // IN, which is enough between its own tests — but it shares the process with
+            // `RefreshDatabase` suites, and `migrate:fresh` runs at most ONCE per process.
+            // A `RefreshDatabase` test that starts after this one therefore opens its
+            // transaction on whatever rows we left, and an assertion like `sole()` fails
+            // for a reason that has nothing to do with the code under test.
             DB::disconnect('pgsql');
             DB::disconnect('pgsql_migration');
+
+            // This trait does NOT wrap its tests in a transaction, so the rows it wrote are
+            // still there when the next test starts. `RefreshDatabase` runs `migrate:fresh`
+            // at most ONCE per process, so a transactional test scheduled after this one
+            // would open its transaction on our leftovers and fail on an assertion like
+            // `sole()` for a reason unrelated to its subject.
+            //
+            // Forcing the flag back to false makes that next test rebuild the schema, which
+            // is the mechanism Laravel already has for exactly this.
+            //
+            // ⚠️ Do NOT "fix" this by truncating here instead. It was tried and MEASURED: a
+            // 54-table TRUNCATE at teardown leaves a lock-holding backend behind that the
+            // next test's DDL deadlocks against (`40P01`, during `migrate:fresh` itself).
+            RefreshDatabaseState::$migrated = false;
         });
     }
 
