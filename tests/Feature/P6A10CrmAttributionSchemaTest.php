@@ -137,8 +137,8 @@ it('installs exactly the P6-A1.0 tables with closed physical contracts', functio
         ->and(CrmOrderAttributionStatus::cases())->toHaveCount(3)
         ->and(CrmOrderAttributionReason::cases())->toHaveCount(2)
         ->and(CrmOrderAttributionSource::cases())->toHaveCount(3)
-        ->and(glob(database_path('migrations').'/*.php'))->toHaveCount(50)
-        ->and(glob(database_path('migrations').'/2026_07_14_000035*.php') ?: [])->toBe([]);
+        ->and(glob(database_path('migrations').'/*.php'))->toHaveCount(51)
+        ->and(glob(database_path('migrations').'/2026_07_14_000036*.php') ?: [])->toBe([]);
 });
 
 it('installs exact restrictive foreign keys checks indexes functions and triggers', function () {

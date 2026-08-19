@@ -6,6 +6,10 @@
 
 @section('title', 'Page introuvable - DigiTrove')
 
+{{-- Supprime canonical et og:url : ils porteraient l'URL demandee et rendraient deux
+     404 distinguables — exactement l'oracle que ce fichier existe pour fermer. --}}
+@section('suppress_canonical', '1')
+
 @section('content')
     <section class="catalog-header">
         <p class="eyebrow">Introuvable</p>

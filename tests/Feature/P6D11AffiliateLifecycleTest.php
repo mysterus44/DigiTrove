@@ -99,9 +99,9 @@ function p6d11Events(int $affiliateId): array
 it('adds exactly migration 000031 and never opens the next one', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(50)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(51)
         ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000035*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000036*.php') ?: [])->toBe([]);
 });
 
 // ── Privilege boundary ──────────────────────────────────────────────────────────
