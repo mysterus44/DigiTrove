@@ -24,12 +24,12 @@ function p6cCart(string $status = 'active'): int
     return (int) Fx::owner()->selectOne('SELECT id FROM carts ORDER BY id DESC LIMIT 1')->id;
 }
 
-it('creates exactly migration 000028 and no 000033', function () {
+it('creates exactly migration 000028 and no 000034', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(48)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(49)
         ->and(glob($root.'/database/migrations/2026_07_14_000028*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000033*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000034*.php') ?: [])->toBe([]);
 });
 
 it('adds an authoritative cart activity signal maintained by the database', function () {

@@ -38,11 +38,16 @@ const P4B_ALLOWED_SERVICE_FILES = [
     // À VALIDER (P6-D2) — touch capture and order attribution clients into the two
     // EXECUTE-only P6-D2 authorities. Same shape: no privilege on the affiliate tables.
     'Affiliate/AffiliateAttributionService.php',
+    // À VALIDER (P6-D3) — commission accrual, payable promotion and refund reversal.
+    // `AffiliateRefundReversalService` is the ONLY caller of `DiscountAllocator` outside
+    // pricing: it adapts to that authority, it does not reimplement it.
+    'Affiliate/AffiliateCommissionService.php',
     'Affiliate/AffiliateDetail.php',
     'Affiliate/AffiliateLifecycleService.php',
     'Affiliate/AffiliateOperationException.php',
     'Affiliate/AffiliatePolicy.php',
     'Affiliate/AffiliatePolicyService.php',
+    'Affiliate/AffiliateRefundReversalService.php',
     'Affiliate/AffiliateRefusalReason.php',
     'Affiliate/AffiliateReviewDecision.php',
     'Affiliate/AffiliateSummary.php',
@@ -490,7 +495,7 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(48)
+        ->and(DB::table('migrations')->count())->toBe(49)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')
@@ -1139,6 +1144,8 @@ it('keeps HEAD commercially inert and allows only the explicitly reviewed downlo
     $dirAllowlist('Jobs', [
         'GenerateCrmExport.php',
         'ProcessAffiliateAttribution.php',
+        'ProcessAffiliateCommissionAccrual.php',
+        'ProcessAffiliateRefundReversal.php',
         'ProcessCrmCommerceRollupRefresh.php',
         'ProcessCrmOrderAttribution.php',
         'ProcessCrmSegmentGeneration.php',
@@ -1149,6 +1156,7 @@ it('keeps HEAD commercially inert and allows only the explicitly reviewed downlo
     // above and does nothing else. Named here — like every other listener — so the
     // fail-closed directory guard keeps catching anything else smuggled into app/Listeners.
     $dirAllowlist('Listeners', [
+        'QueueAffiliateRefundReversal.php',
         'QueueCrmOrderAttribution.php',
         'QueueSecureDelivery.php',
         'ResolveAffiliateAttribution.php',

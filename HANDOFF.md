@@ -1117,31 +1117,40 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
-## ⏳ P6-D3 — Moteur de commissions et compensations
+## ⏳ P6-D4 — Payout administratif
 
-P6-D2 est livré : `000032`, **48 migrations**, deux autorités `SECURITY DEFINER`, capture
-publique et attribution au `paid` par job ID-only. Le gate suivant calcule les commissions.
+P6-D3 est livré : `000033`, **49 migrations**, trois autorités, accrual au paiement,
+balayage `pending → payable`, reversals de remboursement via l'adaptateur `DiscountAllocator`.
+Le gate suivant paie les commissions `payable`.
 
-⚠️ **Trois contraintes dures, déjà établies, à ne pas re-décider :**
+⚠️ **Ce qui est DÉJÀ figé par le schéma `000029` — ne pas re-décider :**
 
-1. **`refunds` est au niveau COMMANDE**, alors qu'une commission vit au niveau
-   `order_item`. La répartition d'un remboursement vers les lignes réutilise la convention
-   **Hamilton déjà autoritative** — `App\Services\Pricing\DiscountAllocator` (D-030 Q3) —
-   sans inventer d'arrondi et **sans seconde implémentation**.
-2. **La base de commission est `line_total_after_discount`**, seule valeur autorisée :
-   `order_items.line_total_minor` est **déjà** net de remise (D-057).
-3. Le **ledger `affiliate_commission_entries` est append-only à montants signés**, la
-   direction contrainte par type, avec deux identités d'idempotence naturelles : un seul
-   `accrual` par commission, un seul `refund_reversal` par `(commission, refund)`.
+- **Payout manuel, mono-affilié, mono-devise, STRUCTURELLEMENT.** Quatre FK composites sur
+  `affiliate_payout_items` l'imposent : payer la commission de l'affilié B dans le payout de
+  A, ou mélanger XOF et USD, est refusé par PostgreSQL — aucun taux de change ne peut être
+  glissé pour atteindre un seuil de retrait.
+- **`affiliate_payouts.administrative_reference` est une référence ADMINISTRATIVE non
+  sensible.** Aucune donnée bancaire, aucun numéro Wave ou Mobile Money : cela exigerait son
+  propre gate revu. Ne pas l'y glisser.
+- **`payout_allocation` (négatif) et `payout_reversal` (direction libre)** existent déjà dans
+  le ledger et n'ont **jamais été émis** — P6-D3 s'en est explicitement abstenu.
 
-**Dettes ouvertes à porter dans P6-D3** : élargir `P4B_ALLOWED_SERVICE_FILES` et les
-inventaires `app/Jobs` / `app/Listeners` de `P4BDownloadLogsTest` et `P6D0SecurityContractTest`
-pour chaque nouveau fichier — **explicitement, jamais par suppression d'assertion**.
+⚠️ **`release` N'A TOUJOURS PAS DE SÉMANTIQUE.** C'est un type **positif** et le solde est
+`SUM(amount_minor)` : l'émettre par-dessus l'`accrual` créditerait deux fois. P6-D3 ne
+l'émet pas à la promotion (D-068 §4). Ne pas l'utiliser sans lui donner d'abord une
+sémantique qui ne double pas le solde.
+
+⚠️ **LE DÉCLENCHEUR RÉEL DE REMBOURSEMENT N'EXISTE TOUJOURS PAS** — voir le bloc dédié
+plus bas. Le moteur de compensation P6-D3 est **testable mais dormant**.
+
+**Dettes à porter dans P6-D4** : élargir `P4B_ALLOWED_SERVICE_FILES` et les inventaires
+`app/Jobs`, `app/Listeners`, `app/Console/Commands`, `routes/console.php` (jetons) et le
+compteur de migrations, **explicitement, jamais par suppression d'assertion**.
 
 ⚠️ **Résidu assumé de P6-D2** : `record_affiliate_touch` déduplique par `WHERE NOT EXISTS`
-sans contrainte unique (arbitrage KingKouda). Sous READ COMMITTED, deux requêtes simultanées
-peuvent encore insérer deux touches. Inoffensif — le resolver prend `LIMIT 1` et les deux
-lignes nomment le même affilié et le même code. Ne pas le « corriger » sans arbitrage.
+sans contrainte unique (arbitrage). Sous READ COMMITTED deux requêtes simultanées peuvent
+encore insérer deux touches. Inoffensif — le resolver prend `LIMIT 1`. Ne pas « corriger »
+sans arbitrage.
 
 ## ⏸️ Référence P6-D1.1 — Cycle de vie affilié + codes
 
@@ -2051,6 +2060,26 @@ aucun push direct sur `main`.
 ---
 
 ## 📖 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-08-19 — Claude Code (P6-D3 Commissions & Compensations, D-068)
+- Migration `000033`, **49 migrations**, AUCUNE table : `accrue_affiliate_commissions`,
+  `promote_affiliate_commissions_to_payable`, `apply_affiliate_refund_reversal`.
+- ⚠️ **Arrêt AVANT écriture pour signaler la migration.** Le prompt disait « aucune
+  migration de schéma attendue » ; mesure : le runtime ne détient RIEN sur
+  `affiliate_commissions`/`_entries` et aucune des 20 autorités ne les touche. Feu vert
+  obtenu, puis écriture. La règle « signaler avant, pas après » a servi.
+- ⚠️ **`release` n'est PAS émis à la promotion** : type positif, doublerait le solde.
+- ⚠️ **Le plafond `SUM(line_total_minor)` est ATTEIGNABLE**, pas décoratif :
+  `validate_order_items_consistency` impose `SUM(line_total) + tax = total`, donc dès que
+  `tax_minor > 0` un remboursement dépasse la base. Testé ainsi.
+- ⚠️ **Trois erreurs de fixture, aucune de produit** — dont deux où le schéma s'est
+  défendu (`orders_paid_at_after_placement_check`, `order_items` immuable). Back-dater
+  une commande oblige à back-dater la touche : `occurred_at <= placed_at <= expires_at`.
+- ⚠️ **Une erreur de contrat de ma part** : ajout des 3 autorités à
+  `p6d1AuthoritySignatures()`, liste filtrée par `%affiliate_program_polic%` qu'elles ne
+  matchent pas. Reverté. Un correctif générique appliqué à des contrats de portées
+  différentes fabrique des faux positifs.
+- Validation : P6-D3 **22/129**, affiliation **226/3790**, 0 échec, 0 deadlock.
 
 ### 2026-08-18 — Claude Code (P6-D2 Affiliate Attribution, D-067)
 - Migration `000032`, **48 migrations** : `record_affiliate_touch` et

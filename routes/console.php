@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\AffiliateConfig;
 use App\Support\AnalyticsOperationsConfig;
 use App\Support\CartReminderConfig;
 use App\Support\CrmConfig;
@@ -132,5 +133,16 @@ if (AnalyticsOperationsConfig::enabled()) {
         if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
             $event->onOneServer();
         }
+    }
+}
+
+// P6-D3 payable promotion. Gated by the single affiliate flag — which is OFF by default —
+// so the sweep does not exist until the programme is deliberately switched on.
+if (AffiliateConfig::governanceEnabled()) {
+    $promotionSchedule = Schedule::command('affiliate:promote-commissions')->hourly();
+    $promotionSchedule->withoutOverlapping();
+
+    if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
+        $promotionSchedule->onOneServer();
     }
 }

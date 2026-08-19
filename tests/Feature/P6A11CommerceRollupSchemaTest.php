@@ -38,15 +38,15 @@ it('installs only the P6-A1.1 table with closed physical constraints', function 
         'visitor_id'
     );
 
-    // CURRENT-STATE : 48 migrations, la derniere etant 000032 (P6-D2, autorites de
+    // CURRENT-STATE : 49 migrations, la derniere etant 000032 (P6-D2, autorites de
     // touche et d'attribution). Nommee et non comptee : une 49e migration, ou une
     // derniere differente, doit toujours faire echouer ce contrat.
     $migrations = DB::table('migrations')->orderBy('id')->get();
-    expect($migrations)->toHaveCount(48)
-        ->and($migrations->last()->migration)->toBe('2026_07_14_000032_create_affiliate_attribution_authorities');
+    expect($migrations)->toHaveCount(49)
+        ->and($migrations->last()->migration)->toBe('2026_07_14_000033_create_affiliate_commission_authorities');
 
     // Aucune migration 000033 : P6-D2 est la frontiere courante.
-    expect(glob(database_path('migrations').'/2026_07_14_000033*.php') ?: [])->toBe([]);
+    expect(glob(database_path('migrations').'/2026_07_14_000034*.php') ?: [])->toBe([]);
 });
 
 it('verifies exact restrictive foreign keys checks and primary key', function () {

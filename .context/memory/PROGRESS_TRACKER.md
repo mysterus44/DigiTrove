@@ -320,6 +320,20 @@ Vérifications P2 passées :
   (consigné dans HANDOFF).
 - Hors gate : migration, autorités, coupon, compte client, affiliation, P7.
 
+### P6-D3 Commissions et compensations - D-068 (livré)
+
+- Migration `000033`, **49 migrations**, aucune `000034`, AUCUNE table. Trois autorités
+  `SECURITY DEFINER` : accrual, promotion `pending → payable`, reversal de remboursement.
+- Taux issu de la politique de **l'attribution**, jamais de la politique active.
+  `payable_at = orders.paid_at + délai snapshoté`. Aucune ligne pour un montant nul.
+- ⚠️ La promotion n'écrit **aucune** entrée de ledger : `release` est positif et
+  doublerait le solde. Remboursement total ⇒ solde renversé **en entier** + `cancelled` ;
+  partiel ⇒ au taux snapshoté, plafonné au solde.
+- Hamilton réutilisé via un **adaptateur**, `DiscountAllocator` intouché.
+- ⚠️ **Moteur DORMANT** : rien n'appelle `RefundCompletionService`, le déclencheur réel de
+  remboursement reste entièrement à construire.
+- Validation : P6-D3 **22/129**, affiliation **226/3790**, 0 échec.
+
 ### P6-D2 Attribution affiliée - D-067 (livré)
 
 - Migration `000032`, **48 migrations**, aucune `000033`. Deux autorités
@@ -646,7 +660,9 @@ commencés.
 | Affiliation P6-D1 *(plan d'origine)* | 📐 **ARCHITECTURE GELÉE (D-058).** Périmètre arbitré par KingKouda : **frontière d'autorité PostgreSQL + gouvernance des politiques versionnées UNIQUEMENT**. ⚠️ **Dette critique découverte au préflight** : les 9 tables `affiliate_*` appartiennent à **`digitrove`, rôle migrateur superuser** (alors que les surfaces CRM appartiennent à `digitrove_crm_executor`, qui possède **59** des 64 fonctions `SECURITY DEFINER` du dépôt) — une autorité créée en l'état **s'exécuterait en superuser**, la vulnérabilité fermée par D-029.6/P4-B0. Correction en `000030`, **jamais** par réécriture de `000029`. Rôle `digitrove_affiliate_executor` NOLOGIN/NOINHERIT créé par le **script de provisioning** (précédent P4-B0 : les rôles sont cluster-globaux), **jamais supprimé au `down()`**. **Publication atomique** : fermer le prédécesseur et publier le successeur = **une seule transition**, avec **`now()`** et non `clock_timestamp()` pour que `effective_until` et `effective_from` soient **identiques** (intervalle semi-ouvert ⇒ ni trou ni chevauchement). **`status='active'` ≡ « en vigueur maintenant »** : la **publication différée n'est PAS livrée** (elle exigerait `btree_gist`, jamais installée), mais reste ajoutable plus tard **sans rouvrir la frontière**. Cinq autorités bornées, **aucun CRUD générique**. |
 | Affiliation P6-D1.1 | ⏸️ **ARCHITECTURE D-059 INCHANGÉE, IMPLÉMENTATION EN PAUSE PAR D-060.** WIP non livré préservé sur `p6-d1-1-affiliate-lifecycle-codes` à `f15d192`, avec brouillon `000031`. La stable `4407fca` reste à **46 migrations, sans `000031`**. Reprise uniquement après le Storefront MVP. |
 | Affiliation P6-D2 | ✅ **LIVRÉ (D-067).** `000032`, 48 migrations. Capture publique + attribution au `paid` par job ID-only. Aucun trigger sur `orders`. |
-| Prochain gate | ⏳ **P6-D3 — moteur de commissions et compensations.** Réutilise **Hamilton** (`DiscountAllocator`, D-030 Q3) pour répartir un refund niveau-commande vers les lignes ; aucune seconde implémentation d'arrondi. |
+| Affiliation P6-D3 | ✅ **LIVRÉ (D-068).** `000033`, 49 migrations, trois autorités. Moteur de compensation **dormant** : aucun déclencheur réel de remboursement n'existe. |
+| Prochain gate | ⏳ **P6-D4 — payout administratif.** Mono-affilié et mono-devise déjà structurels (4 FK composites) ; aucune donnée bancaire. |
+| ~~Ancien~~ | ~~P6-D3 — moteur de commissions et compensations.~~ Réutilise **Hamilton** (`DiscountAllocator`, D-030 Q3) pour répartir un refund niveau-commande vers les lignes ; aucune seconde implémentation d'arrondi. |
 
 ## P7 — BLOG & SEO
 | Tâche | Statut |
