@@ -4293,6 +4293,105 @@ chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la mêm
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
 vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
 
+### D-070 : P7 — Blog natif & SEO ✅
+
+CONTEXTE : dernier gate de la feuille de route P0→P7. Le blog est un canal d'acquisition, pas
+une décoration : il doit amener du trafic qualifié et le convertir. Le PRD et
+`.context/skills/SEO_BLOG.md` décrivaient le modèle ; neuf points ont été arbitrés en amont
+par KingKouda, plus deux tranchés au préflight.
+
+CHOIX :
+
+1. **Un seul macro-gate, migration `000035`.** P7 ne touche **aucune** frontière de privilège
+   PostgreSQL : rien n'est money-adjacent, donc aucun rôle, aucune autorité `SECURITY
+   DEFINER`, aucun ACL. Importer la machinerie P4/P6 ici n'aurait rien acheté. Traité comme
+   P2 Catalogue.
+
+2. **`body` en Markdown, rendu serveur par CommonMark avec `html_input: strip` et
+   `allow_unsafe_links: false`.** Plus strict qu'une allowlist : il n'y a **aucune liste de
+   balises à maintenir**, et rien à resynchroniser quand le sanitizer évolue. Prouvé sur six
+   formes d'attaque — `<script>` en bloc, HTML inline, handler `onclick`, `onerror`,
+   `javascript:` et `data:` — plus la preuve inverse que le Markdown légitime survit intact.
+   Le rendu se fait **à la lecture** depuis le Markdown stocké : stocker du HTML figerait le
+   sanitizer d'aujourd'hui en base, et corriger une évasion future exigerait de réécrire
+   chaque ligne au lieu de déployer une fois.
+
+3. **AUCUN `views_count`.** C'est la classe de défaut que P4-B a coûté cher à fermer : un
+   compteur incrémenté depuis une requête publique est **forgeable**, et il transforme chaque
+   lecture de page en écriture sur une table que tout le site lit. Les métriques de lecture
+   appartiennent au pipeline `events`/rollups P5. `reading_minutes` reste, parce qu'il est
+   **dérivé du corps à l'écriture** — aucune entrée utilisateur, aucune requête, aucune
+   course. Un test assère l'absence de la colonne sur `pg_attribute`.
+
+4. **JSON-LD sans jamais d'`aggregateRating`.** Aucune table `reviews` n'existe — P2 l'a
+   explicitement mise en pause — donc une note structurée serait adossée à rien : une
+   **pénalité Google**, pas une fonctionnalité. Prix et devise du bloc `Product` viennent du
+   **prix réel affiché** (`activeXofPrice`), jamais d'un `XOF` codé en dur.
+   ⚠️ **`@json(...)` TRONQUE UN TABLEAU MULTI-LIGNES** : le parseur d'arguments de directive
+   Blade n'équilibre pas les crochets sur plusieurs lignes et la vue compilée cesse de
+   parser. Mesuré, pas supposé. Les deux blocs sont construits dans un `@php` puis encodés
+   sur une ligne, avec `JSON_HEX_TAG|HEX_AMP|HEX_APOS|HEX_QUOT` : un titre contenant une
+   balise fermante ne peut pas refermer le `<script>` qui le porte.
+
+5. **Sitemap fail-closed**, même discipline que D-062 : articles `published` non
+   soft-deleted, produits publiés avec prix actif, `/`, `/products`, `/blog`.
+   ⚠️ **Pages de catégorie EXCLUES** : mesuré sur les données réelles, **19 articles portent
+   19 catégories distinctes**, donc chaque page listerait un seul article. Dix-neuf pages
+   quasi vides soumises au crawl, c'est du thin content qui dilue les articles eux-mêmes. Les
+   pages restent navigables ; elles ne sont pas déclarées.
+
+6. **`ArticleResource` = Resource Filament standard adossée à Eloquent**, pas une Page custom
+   façon `AffiliateLifecycle`/`AffiliatePayouts`. Celles-là existent parce que les tables
+   affiliées sont derrière une frontière de privilège où un modèle serait un trou. Aucune
+   frontière ici : un Resource normal est le bon niveau.
+   ⚠️ **`BlogPolicy` créée et enregistrée** : les policies se lient **par modèle**, donc
+   `Article`, `ArticleCategory` et `Redirect` n'héritaient **rien** de `CatalogPolicy`. Sans
+   elle, Filament serait retombé sur son défaut et **tout utilisateur authentifié — `staff` et
+   `customer` compris — aurait pu écrire des articles et créer des 301 pointant n'importe
+   où**. Classe distincte plutôt que réutilisation : une policy nommée « catalogue »
+   gouvernant en silence l'éditorial rendrait une divergence future dangereuse à découvrir.
+   `forceDelete` refusé pour tous — détruire un article libère son slug, et un article
+   ultérieur héritant de cette URL hériterait de son SEO et de ses backlinks.
+
+7. **`redirects` : `from_path` unique, ni boucle ni chaîne.** Le CHECK ne voit pas les autres
+   lignes, donc la chaîne est interdite par **trigger** dans les deux sens (A→B quand B→C
+   existe, et A→B quand C→A existe). Chemins internes absolus seulement : `//host` et
+   `/\host` sont lus comme protocol-relative — l'open redirect fermé en P6-D2, sur une table
+   bien plus facile à cibler.
+   ⚠️ **Le middleware est GLOBAL, pas dans le groupe `web`** — mesuré : une URI non matchée
+   lève `NotFoundHttpException` **pendant le routage** et n'atteint jamais un middleware de
+   groupe. Enregistré sur `web`, la table de redirections **n'aurait jamais fonctionné** et
+   le SEO legacy aurait été perdu au premier déploiement. Il n'agit que sur un 404, donc une
+   redirection ne peut pas masquer une route réelle.
+
+8. **Import legacy idempotent par slug**, patron `catalog:import-legacy`. Importe en
+   **brouillons** : dix-neuf articles apparaissant en ligne au lancement d'une commande
+   serait une décision de publication prise par un script. `withTrashed()` dans le contrôle
+   d'existence — un article soft-deleted possède encore son slug.
+
+9. **Core Web Vitals hors gate**, comme le PRD le note — reporté au durcissement
+   préproduction, même traitement que P5-A3D.
+
+10. **FK simple `articles.article_category_id`, pas de pivot** : le legacy porte exactement
+    une catégorie par article et le PRD rend le pivot optionnel « selon le legacy ». Une FK
+    est un sous-ensemble strict d'un futur pivot — l'extension serait un backfill, pas une
+    réécriture.
+
+ALTERNATIVES REJETÉES :
+
+- **`views_count`** (§3) · **`aggregateRating`** (§4) · **pages de catégorie au sitemap** (§5).
+- **Réutiliser `CatalogPolicy`** pour le blog : couplage sémantique dangereux (§6).
+- **Créer une table `tags`** : le legacy porte une chaîne `tags` par article, mais ni le PRD
+  ni les arbitrages ne la demandent. **DETTE NOMMÉE** : les tags ne sont pas importés,
+  `legacy/data/blog-articles.json` les préserve, reprise possible en gate ultérieur.
+- **Un pivot catégories** (§10) · **Stocker du HTML rendu** (§2) · **`@json()` multi-lignes**
+  (§4) · **Le middleware sur le groupe `web`** (§7).
+
+IMPACT : migration `000035`, **51 migrations**, aucune `000036`. Quatre tables, un trigger
+d'intégrité, **aucune fonction `SECURITY DEFINER`**. La feuille de route **P0→P7 est CLOSE**.
+Restent au durcissement préproduction : P5-A3D, Core Web Vitals, et le **déclencheur réel de
+remboursement** sans lequel le moteur P6-D3/D4 ne peut pas se déclencher.
+
 ### D-069 : P6-D4 — payout administratif et fermeture du trou D-057 §10 ✅
 
 CONTEXTE : le schéma des payouts existait depuis `000029` avec ses quatre FK composites, mais

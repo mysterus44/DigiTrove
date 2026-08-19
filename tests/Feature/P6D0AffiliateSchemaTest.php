@@ -20,17 +20,17 @@ function p6d0Tables(): array
 }
 
 // À VALIDER (P6-D2): the P6-D2 boundary (000032) has landed, so the frontier moved from 47
-// to 48. Teeth preserved: 000029 to 000032 must each be present exactly once, and no 000035
+// to 48. Teeth preserved: 000029 to 000032 must each be present exactly once, and no 000036
 // may appear early.
-it('sits behind the P6-D2 boundary: 50 migrations, 000029 to 000034 present, no 000035', function () {
+it('sits behind the P6-D2 boundary: 51 migrations, 000029 to 000034 present, no 000036', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(50)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(51)
         ->and(glob($root.'/database/migrations/2026_07_14_000029*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000030*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000032*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000035*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000036*.php') ?: [])->toBe([]);
 });
 
 it('creates the nine affiliate tables and nothing else', function () {

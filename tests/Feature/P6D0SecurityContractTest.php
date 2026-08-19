@@ -54,17 +54,20 @@ function p6d0ApplicationFiles(): array
 
 // ── The gate boundary ────────────────────────────────────────────────────────────
 
-// À VALIDER (P6-D1, D-058): the P6-D1.1 boundary (000031) has landed. The frontier moved
-// from 47 to 48; teeth kept — 000029 to 000032 each present once, no 000033 early.
-it('sits behind the P6-D2 boundary: 50 migrations, 000029 to 000034 present, no 000035', function () {
+// P7 (D-070) added `000035`, which is BLOG schema and owns nothing affiliate. The three
+// teeth of this contract are unchanged in nature: the total, the affiliate migrations each
+// present exactly once, and the next number still absent.
+it('sits behind the P6-D4 boundary: 51 migrations, 000029 to 000034 present, no 000036', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(50)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(51)
         ->and(glob($root.'/database/migrations/2026_07_14_000029*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000030*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000032*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000035*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000033*.php'))->toHaveCount(1)
+        ->and(glob($root.'/database/migrations/2026_07_14_000034*.php'))->toHaveCount(1)
+        ->and(glob($root.'/database/migrations/2026_07_14_000036*.php') ?: [])->toBe([]);
 });
 
 /**

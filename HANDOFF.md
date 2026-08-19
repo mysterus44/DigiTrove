@@ -166,6 +166,41 @@ chaînes** (inventaire global vs inventaire de couche), un remplacement ancré s
 ligne re-matche la première et produit un **doublon dans une liste et une absence dans
 l'autre**. Ancrage propre à chaque liste, plus une assertion de comptage avant écriture.
 
+### ⚠️ REMPLACEMENT GÉNÉRIQUE : BORNER LA PORTÉE, PAS SEULEMENT LA VALEUR
+
+Cinquième piège, **distinct de celui du tri** juste au-dessus. Même cause — un correctif
+générique sans borne — mais une détection totalement différente, donc une règle séparée.
+
+Faire avancer un compteur de migrations est un remplacement de littéral numérique :
+`toBe(50)` → `toBe(51)`. Appliqué à `tests/` en bloc, il touche **tout ce qui vaut 50 pour
+une autre raison**. Mesuré le 2026-08-19, gate P7, sur quatre fichiers hors périmètre :
+
+```
+P6A11CommerceRollupAuthorityTest  gross_revenue_minor  50 → 51   ← UN MONTANT
+P6A13BackfillRunAuthorityTest     batch_size           50 → 51
+P6B0CrmSegmentBuilderTest         array_fill(0, 50)    attendu 51
+P3D1PricingKernelTest             allocation Hamilton  50 → 51   ← DE L'ARGENT
+```
+
+⚠️ **Les deux dernières auraient fait ÉCHOUER la suite et se seraient vues. Les deux
+premières, non.** Un test d'autorité financière dont on a changé la valeur de référence
+**reste vert** — il continue de passer et a cessé de prouver quoi que ce soit. C'est un faux
+négatif silencieux sur une autorité qui manipule de l'argent : la catégorie de défaut la plus
+coûteuse à ne pas voir, parce que rien ne la signale jamais.
+
+**Règle** : un remplacement générique sur un **littéral numérique** doit être borné à une
+portée EXPLICITE — une liste de fichiers nommés, ou un motif de ligne qui contient le contexte
+attendu (`glob(.*database/migrations`, `DB::table('migrations')`) — **jamais à la seule
+valeur**. Le nombre `51` n'a aucune signification hors de son contexte.
+
+**Contrôle avant écriture** : produire le diff et vérifier que **chaque ligne modifiée** porte
+le contexte attendu. Un fichier qui n'était dans aucune liste connue est un signal d'alarme,
+pas une bonne surprise.
+
+**Si c'est déjà écrit** : `git checkout --` sur les fichiers hors périmètre, puis audit ligne
+à ligne du reste. Jamais une relance en espérant que ça passe — le cas dangereux, justement,
+passe.
+
 ### ⚠️ BRANCHE CANONIQUE : `p0-foundations-laravel13`, PAS `main`
 
 Vérifié par mesure, pas par convention : `git diff p0-foundations-laravel13...main` est
@@ -1152,29 +1187,33 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
-## ⏳ Aucun gate ouvert — attendre un prompt humain
+## ⏳ Préflight Genius Pay — attendre le prompt humain
 
-P6-D4 est livré : `000034`, **50 migrations**, cinq autorités, écran Filament `Versements`.
-La feuille de route affiliation D-057 (D0 → D4) est **entièrement close**. Aucun `P6-D5`
-n'est créé artificiellement : les surfaces admin ont été absorbées par les gates qui les
-justifiaient.
+**La feuille de route P0→P7 est CLOSE.** P7 Blog & SEO livré (`000035`, 51 migrations,
+D-070). Aucun gate n'est ouvert : Genius Pay est le suivant, par décision explicite, et
+commence par un préflight.
 
-⚠️ **Trois dettes reconnues, à ne pas confondre avec du travail restant sur P6-D4 :**
+⚠️ **QUATRE DETTES OUVERTES, à ne pas confondre avec du travail restant sur un gate :**
 
-1. **LE DÉCLENCHEUR RÉEL DE REMBOURSEMENT N'EXISTE TOUJOURS PAS** (voir le bloc dédié plus
-   bas). Le moteur de compensation P6-D3/P6-D4 est complet et testé mais **dormant** : rien
-   n'appelle `RefundCompletionService`. C'est un préalable à part entière.
-2. **`release` n'a toujours aucune sémantique.** Type POSITIF ; l'émettre par-dessus un
-   `accrual` doublerait le solde. P6-D3 ne l'émet pas à la promotion (D-068 §4).
-3. **`payout_reversal` est SCOPÉ, pas libre** (D-069 §7) : il libère une réservation jamais
-   payée, rien d'autre. Reprendre de l'argent **déjà versé** (clawback) est un gate séparé,
-   et `paid` est terminal précisément pour que cette frontière ne s'efface pas en silence.
+1. **LE DÉCLENCHEUR RÉEL DE REMBOURSEMENT N'EXISTE PAS** (bloc dédié plus bas). Le moteur de
+   commissions/compensations P6-D3/D4 est complet et testé mais **DORMANT** : rien n'appelle
+   `RefundCompletionService`, le port fournisseur n'a aucune méthode de remboursement.
+2. **`release` n'a aucune sémantique** — type POSITIF, l'émettre par-dessus un `accrual`
+   doublerait le solde (D-068 §4).
+3. **`payout_reversal` est SCOPÉ** : il libère une réservation jamais payée, rien d'autre.
+   Le clawback d'un versement effectué est un gate séparé, et `paid` est terminal pour que
+   cette frontière ne s'efface pas en silence (D-069 §7).
+4. **Tags legacy non importés** : `legacy/data/blog-articles.json` porte une chaîne `tags`
+   par article, aucune table `tags` n'a été créée (ni le PRD ni les arbitrages ne la
+   demandaient). Les données sont préservées ; reprise possible en gate ultérieur (D-070).
 
-⚠️ **Le bilan cumulé de lecture Commerce est à surveiller** : l'exécuteur affilié lit
-désormais **cinq tables, dix-neuf colonnes** (`users`, `orders`, `order_items`, `refunds`,
-`payments`). Chaque gate a demandé le minimum, mais la surface grandit. Un test liste
-l'inventaire exact ; **le prochain gate qui demande une colonne doit présenter le cumul, pas
-sa seule delta**, et `users.email` doit rester dehors.
+⚠️ **Durcissement préproduction, non commencé** : P5-A3D (opérations analytiques dans
+Filament) et Core Web Vitals. Aucun des deux n'est bloquant pour un gate livré.
+
+⚠️ **Le bilan cumulé de lecture Commerce de l'exécuteur affilié est à surveiller** : cinq
+tables, dix-neuf colonnes (`users`, `orders`, `order_items`, `refunds`, `payments`). Un test
+liste l'inventaire exact. **Le prochain gate qui demande une colonne doit présenter le CUMUL,
+pas sa seule delta**, et `users.email` doit rester dehors.
 
 ## ⏸️ Référence P6-D1.1 — Cycle de vie affilié + codes
 
@@ -2084,6 +2123,44 @@ aucun push direct sur `main`.
 ---
 
 ## 📖 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-08-19 — Claude Code (P7 Blog & SEO, D-070) — **P0→P7 CLOSE**
+- Migration `000035`, **51 migrations** : `article_categories`, `articles`,
+  `article_product`, `redirects` + un trigger anti-chaîne. **Aucune frontière de privilège**,
+  aucune fonction `SECURITY DEFINER` — rien ici n'est money-adjacent.
+- ⚠️ **UN TROU D'AUTORISATION RÉEL, trouvé par une vérification légère.** Les policies se
+  lient **PAR MODÈLE** : `Article`, `ArticleCategory` et `Redirect` n'héritaient rien de
+  `CatalogPolicy`, donc Filament serait retombé sur son défaut et **`staff` comme `customer`
+  auraient pu écrire des articles et poser des 301 arbitraires**. `BlogPolicy` créée,
+  séparée de `CatalogPolicy` (un couplage silencieux catalogue/éditorial coûterait cher le
+  jour où l'une évolue). Test croisé **3 modèles × 4 profils**, admin suspendu et
+  soft-deleted inclus.
+- ⚠️ **LA TABLE DE REDIRECTIONS ÉTAIT MORTE.** `appendToGroup('web', …)` ne voit jamais un
+  404 : une URI non matchée lève `NotFoundHttpException` **pendant le routage**. Schéma,
+  migration et garde anti-chaîne étaient corrects — seul le raccordement HTTP manquait, et
+  rien ne l'aurait signalé avant la perte du SEO legacy en production. Passé en middleware
+  **global**, avec le commentaire qui interdit le futur « rangement propre ».
+- ⚠️ **`@json()` TRONQUE UN TABLEAU MULTI-LIGNES** : le parseur d'arguments de directive
+  Blade n'équilibre pas les crochets sur plusieurs lignes. Les deux blocs JSON-LD sont
+  construits en `@php` puis encodés sur une ligne, avec
+  `JSON_HEX_TAG|HEX_AMP|HEX_APOS|HEX_QUOT` — un titre contenant `</script>` est une XSS via
+  JSON-LD, pas un défaut de rendu.
+- ⚠️ **Cinquième occurrence du correctif générique sans borne**, la première à toucher de
+  l'argent : `toBe(50)` → `toBe(51)` a corrompu `gross_revenue_minor` et `batch_size` dans
+  deux tests d'autorité. **Ceux-là seraient restés VERTS.** Reverté, audit ligne à ligne,
+  règle consignée en piège n°5.
+- ⚠️ **Trois fois le schéma s'est défendu contre une fixture mal construite** dans ce seul
+  gate : politique effective immuable, index d'idempotence, chaîne de redirections. Chaque
+  fois la contrainte avait raison.
+- **Pages de catégorie exclues du sitemap** : mesuré, 19 articles portent 19 catégories
+  distinctes — dix-neuf pages à un article, c'est du thin content.
+- ⚠️ **Une RÉGRESSION attrapée par un contrat de P6-C/D-064** : le `canonical` ajouté au
+  LAYOUT PARTAGÉ s'appliquait aussi à la page 404, y réinjectant l'URL demandée — le 404
+  d'une commande d'autrui cessait d'être identique octet pour octet à celui d'une commande
+  inexistante, donc **un oracle d'existence**. Corrigé par `@section('suppress_canonical')`,
+  et c'était de toute façon le bon SEO : une page d'erreur n'a pas de canonique.
+  **Leçon : une balise ajoutée à un layout n'est jamais locale.**
+- Validation : P7 **18/116**, suite complète **1794 / 13633**, 0 échec, 0 deadlock.
 
 ### 2026-08-19 — Claude Code (P6-D4 Payout administratif, D-069)
 - Migration `000034`, **50 migrations**, aucune table : cinq autorités payout + deux index

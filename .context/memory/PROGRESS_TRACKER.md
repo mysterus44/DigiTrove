@@ -9,18 +9,26 @@
 P0 FONDATIONS       : ██████████  100%
 P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
-STOREFRONT MVP      : ████░░░░░░  Catalogue dynamique D-062 prêt pour revue ; panier/checkout non commencés
+STOREFRONT MVP      : ██████████  100% — catalogue D-062, panier D-063, checkout D-064 et polish D-065 TOUS MERGÉS sur `p0-foundations-laravel13`
 P1 IDENTITÉ         : ██████████  100%
-P2 CATALOGUE        : ██████████  Schéma mergé PR #3 ; admin/import/lecture publique livrés sur `codex/storefront-catalogue`
+P2 CATALOGUE        : ██████████  100% — schéma mergé PR #3 ; admin, import et lecture publique mergés avec le Storefront
 P3 COMMERCE         : ██████████  Schéma P3C-C refunds mergé PR #10
 P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (PR #17→#23) ; P3-D4 + P3-D5 TERMINÉS, MERGÉS ET VALIDÉS (merge a62563fd, CI #27, D-034) ; confirmation serveur + webhook CinetPay + OrderPaid, aucune migration — **couche paiement complète**. Le prérequis Storefront corrige la variable `$now` hors portée dans la récupération concurrente d'idempotence et ajoute une collision réelle à deux processus (P3-D3 : **55/257**).
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle. D-061 aligne son garde mail sur l'autorité stricte P6-C : D-030 GLOBAL fermé sur la branche de prérequis Storefront.
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
-P6 CRM & MARKETING  : █████████░  P6-A0→P6-D1 mergés ; P6-D1.1 gelé par D-059 puis MIS EN PAUSE par D-060, WIP préservé à `f15d192`. Les prérequis Storefront sont mergés via PR #42 et le catalogue dynamique D-062 est prêt pour revue. Reprise affiliation différée.
-P7 BLOG & SEO       : ░░░░░░░░░░  0%
+P6 CRM & MARKETING  : ██████████  100% — P6-A0→P6-C mergés, puis affiliation P6-D0→P6-D4 CLOSE (D-057 → D-069, PR #40→#50). Moteur de commissions/payouts complet mais **DORMANT** : aucun déclencheur réel de remboursement n'existe encore.
+P7 BLOG & SEO       : ██████████  100% — `000035`, blog natif, sitemap/robots dynamiques, JSON-LD Article+Product, redirections 301 sans chaîne, import legacy idempotent (D-070)
 ```
 
+> ⚠️ **BLOC CI-DESSUS CORRIGÉ LE 2026-08-19.** Il annonçait encore « P6-A0→P6-D1 mergés »
+> et « Storefront panier/checkout non commencés » alors que les deux étaient faux depuis
+> plusieurs gates : c'est le TRACKER qui était périmé, jamais le code. Vérifier l'état réel
+> par `git merge-base --is-ancestor` avant de se fier à une ligne de ce tableau.
+>
+> **La feuille de route P0→P7 est CLOSE.** Reste : le durcissement préproduction
+> (P5-A3D, Core Web Vitals), et le déclencheur réel de remboursement.
+>
 > Rappel : **aucune logique métier avant que P1→P4 soient migrés et testés.**
 > P1, P2, P3A et P3B sont mergés dans `p0-foundations-laravel13` (P3B via PR #5 →
 > `f07d225`).

@@ -10,12 +10,16 @@ use App\Listeners\QueueAffiliateRefundReversal;
 use App\Listeners\QueueCrmOrderAttribution;
 use App\Listeners\QueueSecureDelivery;
 use App\Listeners\ResolveAffiliateAttribution;
+use App\Models\Article;
+use App\Models\ArticleCategory;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductFile;
+use App\Models\Redirect;
 use App\Payments\PaymentProviderFactory;
 use App\Policies\AffiliatePolicyGovernancePolicy;
 use App\Policies\AnalyticsPolicy;
+use App\Policies\BlogPolicy;
 use App\Policies\CatalogPolicy;
 use App\Policies\CrmPolicy;
 use App\Support\AnalyticsConfig;
@@ -66,6 +70,13 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Product::class, CatalogPolicy::class);
         Gate::policy(Category::class, CatalogPolicy::class);
         Gate::policy(ProductFile::class, CatalogPolicy::class);
+
+        // P7 (D-070). Policies bind PER MODEL: without these three lines the blog would
+        // fall back to Filament's default and let any authenticated user — `staff` and
+        // `customer` included — write articles and create 301s pointing anywhere.
+        Gate::policy(Article::class, BlogPolicy::class);
+        Gate::policy(ArticleCategory::class, BlogPolicy::class);
+        Gate::policy(Redirect::class, BlogPolicy::class);
         Gate::define('viewGlobalAnalytics', [AnalyticsPolicy::class, 'viewGlobalAnalytics']);
         Gate::define('manageCustomerRelationships', [CrmPolicy::class, 'manageCustomerRelationships']);
         Gate::define('manageAffiliateProgramme', [AffiliatePolicyGovernancePolicy::class, 'manageAffiliateProgramme']);

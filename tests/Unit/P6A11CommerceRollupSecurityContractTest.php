@@ -8,13 +8,13 @@ it('keeps the P6-A1.1 authority as pure schema (000022) with no rollup-authority
     // P6-A1.2 (D-047) added 000023 and P6-A1.3 (D-048) added 000024, each with its own
     // app layer, so the migration frontier now sits at 40 with no 000025 yet.
     $migrations = glob($root.'/database/migrations/*.php') ?: [];
-    expect($migrations)->toHaveCount(50);
+    expect($migrations)->toHaveCount(51);
 
     // 000022 (P6-A1.1), 000023 (P6-A1.2) and 000024 (P6-A1.3) exist; 000025 does not.
     expect(glob($root.'/database/migrations/2026_07_14_000022*.php') ?: [])->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000023*.php') ?: [])->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000024*.php') ?: [])->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000035*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000036*.php') ?: [])->toBe([]);
 
     // P6-A1.1 itself introduced no Crm*Rollup* model/service/job/command/controller;
     // the P6-A1.2 orchestration classes are named Process*/Sweep*/…RollupRefresh* and

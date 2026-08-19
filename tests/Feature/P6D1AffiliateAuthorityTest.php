@@ -53,12 +53,12 @@ function p6d1Publish(int $policyId): object
 it('keeps one migration per affiliate gate and reaches no further', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(50)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(51)
         ->and(glob($root.'/database/migrations/2026_07_14_000029*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000030*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000032*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000035*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000036*.php') ?: [])->toBe([]);
 });
 
 /**

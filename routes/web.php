@@ -6,10 +6,12 @@ use App\Http\Controllers\CartResumeController;
 use App\Http\Controllers\DownloadFileController;
 use App\Http\Controllers\DownloadLandingController;
 use App\Http\Controllers\Storefront\AffiliateTouchController;
+use App\Http\Controllers\Storefront\BlogController;
 use App\Http\Controllers\Storefront\CartController;
 use App\Http\Controllers\Storefront\CatalogController;
 use App\Http\Controllers\Storefront\CheckoutController;
 use App\Http\Controllers\Storefront\ProductController;
+use App\Http\Controllers\Storefront\SitemapController;
 use App\Http\Middleware\EnsureAnalyticsSameOrigin;
 use App\Http\Middleware\RequireCurrentAnalyticsConsent;
 use Illuminate\Support\Facades\Route;
@@ -17,6 +19,19 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', CatalogController::class)->name('storefront.home');
 Route::get('/products', [ProductController::class, 'index'])->name('products.index');
 Route::get('/products/{product:slug}', [ProductController::class, 'show'])->name('products.show');
+
+// P7 blog. URLs by slug, never by id: a slug is stable, readable and carries a keyword,
+// while an id leaks the publication order and can never be part of a search result.
+// `/blog/categorie/{slug}` sits under its own prefix so a category can never collide with
+// an article slug.
+Route::get('/blog', [BlogController::class, 'index'])->name('blog.index');
+Route::get('/blog/categorie/{articleCategory:slug}', [BlogController::class, 'category'])->name('blog.category');
+Route::get('/blog/{article:slug}', [BlogController::class, 'show'])->name('blog.show');
+
+// Served from the database on every request rather than written to a file: a stale
+// sitemap.xml on disk is a slow lie, and this one is cheap.
+Route::get('/sitemap.xml', [SitemapController::class, 'sitemap'])->name('seo.sitemap');
+Route::get('/robots.txt', [SitemapController::class, 'robots'])->name('seo.robots');
 
 // P6-D2 affiliate touch capture. Both are throttled like every other public write
 // surface (`analytics-ingestion`, `cart-resume`, `download-file`): the endpoints answer
