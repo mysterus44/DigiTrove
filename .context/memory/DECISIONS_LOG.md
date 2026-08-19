@@ -4293,6 +4293,102 @@ chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la mêm
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
 vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
 
+### D-069 : P6-D4 — payout administratif et fermeture du trou D-057 §10 ✅
+
+CONTEXTE : le schéma des payouts existait depuis `000029` avec ses quatre FK composites, mais
+aucune autorité ne pouvait l'écrire. Le préflight a en outre déterré un **défaut réel de
+P6-D3** : D-057 §10 exigeait depuis le début « commission déjà payée ⇒ solde négatif reporté
+et auditable », et l'implémentation plafonnait tout renversement au solde du ledger — ce qui
+était juste tant que rien ne pouvait le tirer à zéro, et **P6-D4 est précisément ce qui le
+peut**. Le trou n'était pas visible avant parce que `paid` était inatteignable.
+
+CHOIX :
+
+1. **`allocated` à la DEMANDE, pas à l'approbation.** Une commission passe
+   `payable → allocated` et reçoit son `payout_allocation` (solde tiré à zéro) au moment où
+   elle entre dans un payout `requested`. Sinon rien n'empêche deux administrateurs de
+   sélectionner la même commission dans deux brouillons concurrents : la protection doit
+   exister dès la réservation. `approved` est une **porte d'autorisation humaine**, pas un
+   mouvement d'argent supplémentaire.
+
+2. **Deux administrateurs DISTINCTS pour `requested → approved`**, imposé par l'autorité.
+   Le compare-and-swap protège d'une course entre deux administrateurs sur le même écran ;
+   il ne protège en rien d'un administrateur unique qui demande un virement et se
+   l'auto-approuve. Sur un flux qui mobilise de l'argent réel, la ségrégation des rôles est
+   le contrôle minimal. Refus par **statut de domaine**
+   (`same_administrator_forbidden`), jamais par exception. Aucune colonne ajoutée :
+   `requested_by_user_id` et `approved_by_user_id` existaient déjà dans `000029`.
+
+3. **Le montant d'une ligne est le SOLDE du ledger**, jamais `commission.amount_minor`. Un
+   remboursement partiel a pu le réduire avant qu'un payout ne soit demandé ; figer le
+   montant nominal ferait payer plus que ce qui est réellement dû.
+
+4. **Le statut de l'affilié ne bloque PAS le versement.** Une commission gagnée reste due
+   même si l'affilié a depuis été suspendu ou fermé. Refuser inventerait une politique de
+   confiscation qui n'a jamais été décidée.
+
+5. **`administrative_reference` obligatoire au passage `paid`**, imposé par l'autorité et non
+   par un nouveau CHECK (aucune modification de schéma non sollicitée). Refus par statut de
+   domaine `missing_administrative_reference` — même distinction qu'en D-068 : un contrat
+   d'appel violé lève, une règle métier retourne un statut.
+
+6. **Machine à états exhaustive**, dans l'autorité et non par convention applicative :
+   `requested → approved|rejected|cancelled` · `approved → paid|cancelled`. **`paid`,
+   `rejected` et `cancelled` sont TERMINAUX**, sans transition sortante.
+
+7. **`payout_reversal` : lecture SCOPÉE.** Il reste dormant pour le clawback d'un versement
+   déjà effectué — un gate séparé si jamais requis — mais devient **l'unique mécanisme
+   légitime de libération d'une réservation jamais payée**. Déclenché **uniquement à
+   l'intérieur** de l'autorité de transition vers `cancelled`/`rejected`, dans la même
+   transaction : jamais une étape manuelle qu'un administrateur pourrait oublier, sinon
+   l'argent serait irrécupérablement bloqué sur des commissions `allocated` à solde nul.
+   Montant **repris de l'entrée d'allocation elle-même**, jamais recalculé. Effet :
+   `allocated → payable`. Que `paid` soit terminal (§6) est ce qui empêche cette lecture
+   scopée de s'effondrer silencieusement en lecture large.
+
+8. **Deux index uniques partiels** `(commission_id, payout_id)` — un pour
+   `payout_allocation`, un pour `payout_reversal` — aux côtés des deux existants. Le garde
+   est sur la table qui porte le mouvement d'argent : s'appuyer sur l'UNIQUE
+   d'`affiliate_payout_items` laisserait passer une écriture de ledger rejouée.
+
+9. **Correctif D-057 §10 dans `apply_affiliate_refund_reversal`** (`CREATE OR REPLACE`, pas
+   une exception greffée). Le plafond portait sur le **solde du ledger** ; il porte désormais
+   sur **ce qui reste commissionnable** — l'accrual moins ce que les remboursements
+   précédents ont déjà repris — quantité indépendante de tout payout. Un renversement ne peut
+   toujours pas dépasser ce qui a été gagné, et une commission déjà versée porte un **solde
+   négatif**. Une commission `allocated`/`paid` intégralement renversée **ne passe pas
+   `cancelled`** : elle A ÉTÉ payée, et le prétendre autrement effacerait le fait même que le
+   ledger existe pour enregistrer.
+
+10. **Une troisième `Page` Filament custom**, aucun modèle Eloquent (un Resource exigerait un
+    modèle, et ce modèle serait un trou dans la frontière de privilèges). Même groupe de
+    navigation, même trait `AuthorizesAffiliateAdmin`, même patron snapshot + CAS. Montants
+    en unités mineures avec devise explicite, **aucune division par 100**, aucun total
+    multi-devises. Affiliés identifiés par `public_id` — **jamais `users.email`**.
+
+ALTERNATIVES REJETÉES :
+
+- **`payout_reversal` strictement dormant** : rendrait `cancelled` inapplicable et
+  **détruirait l'argent** — commission bloquée en `allocated` à solde nul, sans transition
+  possible sur un ledger append-only. Signalé avant écriture, arbitré en lecture scopée.
+- **`admin_adjustment` pour libérer une réservation** : exige un `reason_code` et signifie
+  « correction manuelle », pas « libération systématique ». L'audit deviendrait illisible.
+- **S'appuyer sur l'UNIQUE d'`affiliate_payout_items` seul** pour l'idempotence (§8).
+- **Une exception pour `allocated`/`paid`** dans le correctif du plafond : marche, mais
+  greffe un cas particulier là où la quantité était simplement fausse (§9).
+- **`CREATE TEMPORARY TABLE`** dans une autorité `SECURITY DEFINER` : D-029.6 a fermé `TEMP`
+  et rien ne garantit que l'exécuteur le détienne. Remplacé par des CTE.
+- **Comparer un seuil entre devises** : aucune conversion n'existe dans ce dépôt, et en
+  inventer une serait le total multi-devises que P6-A1.1 interdit. Une paire
+  `(affilié, devise)` dont la devise n'est pas celle de la politique est simplement non
+  éligible (`unsupported_currency`).
+
+IMPACT : migration `000034`, **50 migrations**, aucune `000035`, **aucune table, aucune
+colonne**. Aucun fournisseur, aucun virement, aucune donnée bancaire ou Mobile Money.
+Vingt-et-un contrats d'inventaire avancés ; trois laissés à leur frontière historique.
+**Aucune colonne Commerce supplémentaire** : le bilan cumulé reste à cinq tables et dix-neuf
+colonnes, asserté par un test qui liste l'inventaire exact.
+
 ### D-068 : P6-D3 — moteur de commissions et compensations de remboursement ✅
 
 CONTEXTE : le schéma des commissions existait depuis `000029`, mais **aucune autorité ne

@@ -248,9 +248,9 @@ beforeEach(function (): void {
 it('owns exactly migration 000033 and installs three ordinary authorities, no trigger', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(49)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(50)
         ->and(glob($root.'/database/migrations/2026_07_14_000033*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000034*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000035*.php') ?: [])->toBe([]);
 
     // Ordinary functions. A trigger function would return `trigger`, and P6-D3 attaches
     // nothing to `orders`, `payments` or `refunds` — the same rule D-067 set for P6-D2.

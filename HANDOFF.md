@@ -131,6 +131,41 @@ l'entrée. Le `truncate` d'entrée reste, donc chaque harnais est robuste quel q
 l'a précédé. **Règle** : un harnais qui ne s'enveloppe pas dans une transaction doit rendre la
 base telle qu'il l'a trouvée — nettoyer à l'entrée seulement ne protège que ses propres tests.
 
+### ⚠️ LISTE TRIÉE PAR CONTRAT : VÉRIFIER PAR TRI, JAMAIS À L'ŒIL
+
+Quatrième piège de la même famille que les trois précédents : l'outil de vérification, c'est
+soi-même, et l'œil se trompe.
+
+Beaucoup de contrats d'inventaire comparent une liste **ordonnée** — `ORDER BY 1` côté
+PostgreSQL, `sort()` côté PHP. **L'ordre fait partie du contrat**, donc insérer une entrée au
+mauvais endroit fait échouer un test qui n'a rien à voir avec le changement en cours.
+
+Le tri est byte-order, et il surprend :
+
+```
+list_affiliate_codes < list_affiliate_lifecycle_events < list_affiliate_payout_candidates
+record_affiliate_touch < request_affiliate_payout          (rec < req)
+AffiliatePayoutService.php < AffiliatePolicy.php           (Pa < Po)
+```
+
+⚠️ **Ces trois-là ont coûté QUATRE allers-retours dans le seul gate P6-D4**, dont un sur la
+campagne complète de 60 minutes — parce que la campagne ciblée ne contenait pas le contrat
+fautif.
+
+**Règle** : tout ajout à une liste triée-par-contrat se vérifie **programmatiquement avant
+écriture**, jamais à l'œil, **dès la première fois** :
+
+- liste d'objets PostgreSQL ⇒ lire l'ordre **réel** en base (`ORDER BY 1`) et comparer ;
+- liste de fichiers/chaînes ⇒ extraire la liste et asserter `$files === sorted($files)`.
+
+Vérifier la **liste entière**, pas seulement l'entrée ajoutée : un désordre hérité d'un gate
+précédent apparaît alors au lieu d'attendre le prochain incident.
+
+⚠️ Piège connexe, deuxième occurrence : quand **deux listes différentes partagent les mêmes
+chaînes** (inventaire global vs inventaire de couche), un remplacement ancré sur une seule
+ligne re-matche la première et produit un **doublon dans une liste et une absence dans
+l'autre**. Ancrage propre à chaque liste, plus une assertion de comptage avant écriture.
+
 ### ⚠️ BRANCHE CANONIQUE : `p0-foundations-laravel13`, PAS `main`
 
 Vérifié par mesure, pas par convention : `git diff p0-foundations-laravel13...main` est
@@ -1117,40 +1152,29 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
-## ⏳ P6-D4 — Payout administratif
+## ⏳ Aucun gate ouvert — attendre un prompt humain
 
-P6-D3 est livré : `000033`, **49 migrations**, trois autorités, accrual au paiement,
-balayage `pending → payable`, reversals de remboursement via l'adaptateur `DiscountAllocator`.
-Le gate suivant paie les commissions `payable`.
+P6-D4 est livré : `000034`, **50 migrations**, cinq autorités, écran Filament `Versements`.
+La feuille de route affiliation D-057 (D0 → D4) est **entièrement close**. Aucun `P6-D5`
+n'est créé artificiellement : les surfaces admin ont été absorbées par les gates qui les
+justifiaient.
 
-⚠️ **Ce qui est DÉJÀ figé par le schéma `000029` — ne pas re-décider :**
+⚠️ **Trois dettes reconnues, à ne pas confondre avec du travail restant sur P6-D4 :**
 
-- **Payout manuel, mono-affilié, mono-devise, STRUCTURELLEMENT.** Quatre FK composites sur
-  `affiliate_payout_items` l'imposent : payer la commission de l'affilié B dans le payout de
-  A, ou mélanger XOF et USD, est refusé par PostgreSQL — aucun taux de change ne peut être
-  glissé pour atteindre un seuil de retrait.
-- **`affiliate_payouts.administrative_reference` est une référence ADMINISTRATIVE non
-  sensible.** Aucune donnée bancaire, aucun numéro Wave ou Mobile Money : cela exigerait son
-  propre gate revu. Ne pas l'y glisser.
-- **`payout_allocation` (négatif) et `payout_reversal` (direction libre)** existent déjà dans
-  le ledger et n'ont **jamais été émis** — P6-D3 s'en est explicitement abstenu.
+1. **LE DÉCLENCHEUR RÉEL DE REMBOURSEMENT N'EXISTE TOUJOURS PAS** (voir le bloc dédié plus
+   bas). Le moteur de compensation P6-D3/P6-D4 est complet et testé mais **dormant** : rien
+   n'appelle `RefundCompletionService`. C'est un préalable à part entière.
+2. **`release` n'a toujours aucune sémantique.** Type POSITIF ; l'émettre par-dessus un
+   `accrual` doublerait le solde. P6-D3 ne l'émet pas à la promotion (D-068 §4).
+3. **`payout_reversal` est SCOPÉ, pas libre** (D-069 §7) : il libère une réservation jamais
+   payée, rien d'autre. Reprendre de l'argent **déjà versé** (clawback) est un gate séparé,
+   et `paid` est terminal précisément pour que cette frontière ne s'efface pas en silence.
 
-⚠️ **`release` N'A TOUJOURS PAS DE SÉMANTIQUE.** C'est un type **positif** et le solde est
-`SUM(amount_minor)` : l'émettre par-dessus l'`accrual` créditerait deux fois. P6-D3 ne
-l'émet pas à la promotion (D-068 §4). Ne pas l'utiliser sans lui donner d'abord une
-sémantique qui ne double pas le solde.
-
-⚠️ **LE DÉCLENCHEUR RÉEL DE REMBOURSEMENT N'EXISTE TOUJOURS PAS** — voir le bloc dédié
-plus bas. Le moteur de compensation P6-D3 est **testable mais dormant**.
-
-**Dettes à porter dans P6-D4** : élargir `P4B_ALLOWED_SERVICE_FILES` et les inventaires
-`app/Jobs`, `app/Listeners`, `app/Console/Commands`, `routes/console.php` (jetons) et le
-compteur de migrations, **explicitement, jamais par suppression d'assertion**.
-
-⚠️ **Résidu assumé de P6-D2** : `record_affiliate_touch` déduplique par `WHERE NOT EXISTS`
-sans contrainte unique (arbitrage). Sous READ COMMITTED deux requêtes simultanées peuvent
-encore insérer deux touches. Inoffensif — le resolver prend `LIMIT 1`. Ne pas « corriger »
-sans arbitrage.
+⚠️ **Le bilan cumulé de lecture Commerce est à surveiller** : l'exécuteur affilié lit
+désormais **cinq tables, dix-neuf colonnes** (`users`, `orders`, `order_items`, `refunds`,
+`payments`). Chaque gate a demandé le minimum, mais la surface grandit. Un test liste
+l'inventaire exact ; **le prochain gate qui demande une colonne doit présenter le cumul, pas
+sa seule delta**, et `users.email` doit rester dehors.
 
 ## ⏸️ Référence P6-D1.1 — Cycle de vie affilié + codes
 
@@ -2060,6 +2084,28 @@ aucun push direct sur `main`.
 ---
 
 ## 📖 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-08-19 — Claude Code (P6-D4 Payout administratif, D-069)
+- Migration `000034`, **50 migrations**, aucune table : cinq autorités payout + deux index
+  uniques partiels + `CREATE OR REPLACE` de `apply_affiliate_refund_reversal`.
+- ⚠️ **Arrêt AVANT écriture sur un conflit d'arbitrages.** L'arbitrage « `payout_reversal`
+  dormant » rendait `cancelled` inapplicable et **détruisait l'argent** (commission
+  bloquée en `allocated` à solde nul sur un ledger append-only). Lecture scopée arbitrée.
+- ⚠️ **Trou D-057 §10 fermé** : le plafond de renversement portait sur le solde du ledger,
+  qu'une allocation ramène à zéro. Il porte désormais sur **ce qui reste commissionnable**.
+- ⚠️ **`CREATE TEMPORARY TABLE` écarté** dans une autorité `SECURITY DEFINER` : D-029.6 a
+  fermé `TEMP`. Et un `CROSS JOIN LATERAL` sur la politique active aurait **masqué tous les
+  candidats** sans politique — passé en `LEFT JOIN LATERAL`.
+- ⚠️ **Trois erreurs de fixture, deux fois le schéma qui se défend** : une politique
+  effective est IMMUABLE (superséder est permis, tuner ne l'est pas), et l'index
+  d'idempotence a refusé ma « première » forgerie parce qu'une allocation existait déjà.
+- ⚠️ **Trois allers-retours sur l'ORDRE ALPHABÉTIQUE** d'un inventaire de fonctions.
+  Corrigé en lisant l'ordre RÉEL en base et en le comparant programmatiquement, au lieu de
+  deviner le tri. À faire d'emblée la prochaine fois.
+- ⚠️ **Doublon d'inventaire** : deux listes partageant les mêmes chaînes, le second
+  remplacement a re-matché la première. Deuxième occurrence du motif — ancrage propre à
+  chaque liste + assertion de comptage avant écriture.
+- Validation : P6-D4 **19/114**, affiliation **245/3929**, 0 échec, 0 deadlock.
 
 ### 2026-08-19 — Claude Code (P6-D3 Commissions & Compensations, D-068)
 - Migration `000033`, **49 migrations**, AUCUNE table : `accrue_affiliate_commissions`,

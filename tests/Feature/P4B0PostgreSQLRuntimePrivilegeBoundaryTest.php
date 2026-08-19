@@ -67,7 +67,7 @@ it('keeps the P4-B0 ACL boundary active after the later P4 and P5-A0 migrations'
     // legitimately exists here. The proof that NOTHING P4-B exists at the 000012
     // boundary itself lives in the isolated rollback test below, which stops
     // exactly there — that is where the gate frontier is asserted.
-    expect(DB::table('migrations')->count())->toBe(49)
+    expect(DB::table('migrations')->count())->toBe(50)
         ->and(DB::table('migrations')->where('migration', '2026_07_14_000012_harden_database_runtime_privileges')->exists())->toBeTrue()
         ->and(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
         ->and(DB::table('migrations')->where('migration', '2026_07_14_000016_create_analytics_rollups_tables')->exists())->toBeTrue()

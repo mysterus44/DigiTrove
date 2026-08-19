@@ -20,17 +20,17 @@ function p6d0Tables(): array
 }
 
 // À VALIDER (P6-D2): the P6-D2 boundary (000032) has landed, so the frontier moved from 47
-// to 48. Teeth preserved: 000029 to 000032 must each be present exactly once, and no 000034
+// to 48. Teeth preserved: 000029 to 000032 must each be present exactly once, and no 000035
 // may appear early.
-it('sits behind the P6-D2 boundary: 49 migrations, 000029 to 000033 present, no 000034', function () {
+it('sits behind the P6-D2 boundary: 50 migrations, 000029 to 000034 present, no 000035', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(49)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(50)
         ->and(glob($root.'/database/migrations/2026_07_14_000029*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000030*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000032*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000034*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000035*.php') ?: [])->toBe([]);
 });
 
 it('creates the nine affiliate tables and nothing else', function () {
@@ -155,17 +155,23 @@ it('provisions exactly the affiliate executor role, the three D0 guards and the 
         'get_affiliate',
         'list_affiliate_codes',
         'list_affiliate_lifecycle_events',
+        // À VALIDER (P6-D4) — the five payout authorities.
+        'list_affiliate_payout_candidates',
+        'list_affiliate_payout_items',
+        'list_affiliate_payouts',
         'list_affiliate_program_policies',
         'list_affiliates',
         'promote_affiliate_commissions_to_payable',
         'publish_affiliate_program_policy',
         'reactivate_affiliate',
         'record_affiliate_touch',
+        'request_affiliate_payout',
         'resolve_affiliate_attribution',
         'review_affiliate_application',
         'rotate_affiliate_code',
         'submit_affiliate_application',
         'suspend_affiliate',
+        'transition_affiliate_payout',
         'update_affiliate_program_policy_draft',
     ]);
 
