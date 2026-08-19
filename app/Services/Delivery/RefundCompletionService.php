@@ -7,6 +7,7 @@ namespace App\Services\Delivery;
 use App\Enums\GrantRevocationReason;
 use App\Enums\OrderStatus;
 use App\Enums\RefundStatus;
+use App\Events\RefundSucceeded;
 use App\Models\DownloadGrant;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -15,6 +16,7 @@ use App\Models\Refund;
 use App\Support\RefundCompletionResult;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use RuntimeException;
 
 /**
@@ -41,7 +43,7 @@ final class RefundCompletionService
             throw new RuntimeException('A provider refund reference is required.');
         }
 
-        return DB::transaction(function () use ($refundId, $reference, $providerStatus, $now): RefundCompletionResult {
+        $result = DB::transaction(function () use ($refundId, $reference, $providerStatus, $now): RefundCompletionResult {
             // Resolve the immutable payment pointer without a lock, then acquire
             // the gate's stable lock order: Payment -> Order -> Refund.
             $pointer = Refund::query()->select(['id', 'payment_id'])->whereKey($refundId)->first();
@@ -104,6 +106,14 @@ final class RefundCompletionService
 
             return new RefundCompletionResult($refund->id, $order->status->value, false, $revoked);
         });
+
+        // AFTER COMMIT, never inside — same rule as `OrderPaid` (D-034). A consumer fault
+        // must never be able to roll a refund back. Fired on a replay too: the downstream
+        // reversal authority is idempotent by construction, and re-firing is the only way a
+        // reversal lost to a crashed worker gets a second chance (P6-D3).
+        Event::dispatch(new RefundSucceeded($result->refundId));
+
+        return $result;
     }
 
     private function climbToSucceeded(Refund $refund, string $reference, ?string $providerStatus, CarbonImmutable $now): void

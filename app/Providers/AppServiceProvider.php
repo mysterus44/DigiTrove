@@ -5,6 +5,8 @@ namespace App\Providers;
 use App\Contracts\Payments\PaymentConfirmationProvider;
 use App\Contracts\Payments\PaymentProvider;
 use App\Events\OrderPaid;
+use App\Events\RefundSucceeded;
+use App\Listeners\QueueAffiliateRefundReversal;
 use App\Listeners\QueueCrmOrderAttribution;
 use App\Listeners\QueueSecureDelivery;
 use App\Listeners\ResolveAffiliateAttribution;
@@ -135,6 +137,13 @@ class AppServiceProvider extends ServiceProvider
         // attribution happens at the paid transition, and no affiliate code runs inside
         // the checkout transaction of orders that have nothing to do with affiliation.
         Event::listen(OrderPaid::class, ResolveAffiliateAttribution::class);
+
+        // Affiliate commission reversal (P6-D3). `RefundSucceeded` is emitted by
+        // `RefundCompletionService` after COMMIT; the listener only dispatches a
+        // refund-id-only job. ⚠️ Nothing in this repository CALLS that service yet — the
+        // real refund trigger (provider port, webhook, admin action) is still to be built,
+        // so this chain is testable but dormant. See HANDOFF.
+        Event::listen(RefundSucceeded::class, QueueAffiliateRefundReversal::class);
     }
 
     private function downloadRateLimitKey(Request $request): string

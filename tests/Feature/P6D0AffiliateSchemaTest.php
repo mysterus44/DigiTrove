@@ -20,17 +20,17 @@ function p6d0Tables(): array
 }
 
 // À VALIDER (P6-D2): the P6-D2 boundary (000032) has landed, so the frontier moved from 47
-// to 48. Teeth preserved: 000029 to 000032 must each be present exactly once, and no 000033
+// to 48. Teeth preserved: 000029 to 000032 must each be present exactly once, and no 000034
 // may appear early.
-it('sits behind the P6-D2 boundary: 48 migrations, 000029 to 000032 present, no 000033', function () {
+it('sits behind the P6-D2 boundary: 49 migrations, 000029 to 000033 present, no 000034', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(48)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(49)
         ->and(glob($root.'/database/migrations/2026_07_14_000029*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000030*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000032*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000033*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000034*.php') ?: [])->toBe([]);
 });
 
 it('creates the nine affiliate tables and nothing else', function () {
@@ -139,6 +139,10 @@ it('provisions exactly the affiliate executor role, the three D0 guards and the 
     );
 
     expect($functions)->toBe([
+        // À VALIDER (P6-D3) — the three commission authorities. Ordinary functions the
+        // runtime EXECUTEs; they own no privilege on the tables themselves.
+        'accrue_affiliate_commissions',
+        'apply_affiliate_refund_reversal',
         'assert_affiliate_actor_is_admin',
         'close_affiliate',
         'create_affiliate_program_policy_draft',
@@ -153,6 +157,7 @@ it('provisions exactly the affiliate executor role, the three D0 guards and the 
         'list_affiliate_lifecycle_events',
         'list_affiliate_program_policies',
         'list_affiliates',
+        'promote_affiliate_commissions_to_payable',
         'publish_affiliate_program_policy',
         'reactivate_affiliate',
         'record_affiliate_touch',

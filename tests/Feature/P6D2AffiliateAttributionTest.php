@@ -141,9 +141,9 @@ beforeEach(function (): void {
 it('owns exactly migration 000032 and installs its two authorities, and no trigger', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(48)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(49)
         ->and(glob($root.'/database/migrations/2026_07_14_000032*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000033*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000034*.php') ?: [])->toBe([]);
 
     // `prokind = 'f'`: an ordinary function. A trigger function would return `trigger`.
     $functions = array_map(
@@ -348,8 +348,10 @@ it('lets the executor read exactly four columns of orders and nothing more', fun
             SQL),
     );
 
-    // Never the customer e-mail, never an amount: the authority reads identity and time only.
-    expect($granted)->toBe(['id', 'placed_at', 'user_id', 'visitor_id']);
+    // Never the customer e-mail, never an amount. P6-D2 granted four columns; P6-D3 added
+    // `paid_at` (the anchor of every commission deadline) and `status` (full vs partial
+    // refund), each named in its own migration and revoked by its own `down()`.
+    expect($granted)->toBe(['id', 'paid_at', 'placed_at', 'status', 'user_id', 'visitor_id']);
 });
 
 // ── 5. The application layer ─────────────────────────────────────────────────────

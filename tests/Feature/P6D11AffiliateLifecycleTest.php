@@ -99,9 +99,9 @@ function p6d11Events(int $affiliateId): array
 it('adds exactly migration 000031 and never opens the next one', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(48)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(49)
         ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000033*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000034*.php') ?: [])->toBe([]);
 });
 
 // ── Privilege boundary ──────────────────────────────────────────────────────────
@@ -166,6 +166,9 @@ it('owns an exact inventory of affiliate functions, none of them by the superuse
 
     expect($names)->toBe([
         // P6-D1.1 internal helper — never callable by the runtime.
+        // À VALIDER (P6-D3) — the three commission authorities.
+        'accrue_affiliate_commissions',
+        'apply_affiliate_refund_reversal',
         'assert_affiliate_actor_is_admin',
         'close_affiliate',
         // P6-D1 policy governance.
@@ -183,6 +186,7 @@ it('owns an exact inventory of affiliate functions, none of them by the superuse
         'list_affiliate_lifecycle_events',
         'list_affiliate_program_policies',
         'list_affiliates',
+        'promote_affiliate_commissions_to_payable',
         'publish_affiliate_program_policy',
         'reactivate_affiliate',
         // P6-D2 capture and attribution authorities.

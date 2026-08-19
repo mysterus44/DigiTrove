@@ -4293,6 +4293,96 @@ chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la mêm
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
 vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
 
+### D-068 : P6-D3 — moteur de commissions et compensations de remboursement ✅
+
+CONTEXTE : le schéma des commissions existait depuis `000029`, mais **aucune autorité ne
+pouvait y écrire**. Mesuré avant tout code : `digitrove_runtime` ne détient RIEN sur
+`affiliate_commissions` ni `affiliate_commission_entries` — pas même `SELECT` — et aucune des
+20 autorités existantes ne les touche. La frontière D-058 ne se lève pas en assouplissant un
+GRANT sur les tables ; elle se respecte en passant par des fonctions étroites.
+
+CHOIX :
+
+1. **Migration `000033`, AUCUNE table.** Même catégorie que `000032` : trois autorités
+   `SECURITY DEFINER` bornées, owner `digitrove_affiliate_executor`, `search_path` épinglé,
+   `REVOKE ALL FROM PUBLIC`, `GRANT EXECUTE TO digitrove_runtime`. Aucun nouveau rôle, aucun
+   trigger sur `orders`/`payments`/`refunds` — la règle posée par D-067 tient.
+
+2. **Le taux vient de la politique de L'ATTRIBUTION**, jamais de la politique active au
+   moment du calcul. C'est le sens même des politiques versionnées : publier une nouvelle
+   version demain ne réécrit pas une vente d'hier. Un test publie une politique à 500 bps
+   avant que l'accrual tourne et prouve que la commission reste à 1500.
+
+3. **`payable_at = orders.paid_at + payable_delay_days_snapshot`** (arbitrage KingKouda).
+   Ancré sur l'entrée d'argent, jamais sur l'heure du worker : un retard de queue ne doit pas
+   déplacer une échéance financière. Transition `pending → payable` par **balayage planifié**
+   sur `(status, payable_at)`, jamais dérivée à la lecture — la transition porte alors un
+   horodatage réel et auditable.
+
+4. ⚠️ **La promotion n'écrit AUCUNE entrée de ledger.** `release` est un type **positif** et
+   le solde d'un affilié est `SUM(amount_minor)` sur le ledger : émettre un `release`
+   par-dessus l'`accrual` créditerait deux fois la même somme. Devenir payable est un
+   changement d'ÉTAT, pas un mouvement d'argent. `release` reste inutilisé jusqu'à ce qu'un
+   gate lui donne une sémantique qui ne double pas le solde.
+
+5. **Aucune ligne de commission pour un montant nul** (arbitrage KingKouda). Le ledger refuse
+   `amount_minor = 0`, donc une telle ligne ne pourrait jamais recevoir son `accrual` et
+   resterait éternellement dans un état sans transition légale. L'attribution peut exister
+   sans commission ; l'inverse ne doit jamais se produire.
+
+6. **Remboursement : deux régimes.** TOTAL (`orders.status = 'refunded'`) ⇒ chaque commission
+   est renversée de son **solde restant entier** — sinon deux remboursements partiels
+   totalisant la commande laisseraient l'affilié avec quelques unités mineures d'une vente
+   intégralement rendue. PARTIEL ⇒ `(alloué × rate_bps) / 10000`, la même troncature que
+   l'accrual, **plafonnée au solde restant**. Une commission dont le solde atteint zéro passe
+   `cancelled` : elle ne doit jamais être ramassée par un futur payout.
+
+7. **L'adaptateur Hamilton, jamais une seconde implémentation.**
+   `App\Services\Pricing\DiscountAllocator` n'est pas modifié (arbitrage KingKouda : une
+   autorité validée ne se plie pas pour un usage aval). Deux adaptations dans l'appelant :
+   (a) `order_items.product_id` étant NULLABLE (`ON DELETE SET NULL`, D-006) et l'allocateur
+   refusant `product_id < 1`, on passe l'`order_item.id` — **substitut de tri**, jamais une
+   identité produit, jamais persisté, l'allocateur ne s'en servant que pour départager les
+   résidus ; (b) base = `SUM(order_items.line_total_minor)`, **jamais `orders.total_minor`**,
+   et un remboursement excédant cette somme est **plafonné** à elle.
+   ⚠️ Ce plafond n'est pas décoratif : `validate_order_items_consistency` impose
+   `SUM(line_total_minor) + tax_minor = total_minor`, donc il est atteignable **dès que
+   `tax_minor > 0`**. Un test le construit ainsi et échouerait si le plafond disparaissait.
+
+8. **Chaînage, pas deux écouteurs.** `ProcessAffiliateAttribution` dispatche
+   `ProcessAffiliateCommissionAccrual` **uniquement** sur `attributed` / `already_attributed`.
+   Deux écouteurs indépendants sur `OrderPaid` se courraient après : un accrual exige que la
+   ligne d'attribution existe, et rien n'ordonne deux écouteurs du même événement. Dispatch
+   direct et non `Bus::chain` — ce dépôt n'utilise `Bus::chain` NULLE PART.
+
+9. **Compensation déclenchée par `RefundCompletionService` seul.** Il émet `RefundSucceeded`
+   **après** le `DB::transaction()`, y compris sur rejeu — l'autorité étant idempotente par
+   construction, re-tirer l'événement est la seule chance de rattrapage d'un reversal perdu
+   par un worker mort. Aucun trigger, aucun nouveau déclencheur métier.
+
+10. **`GRANT SELECT` par COLONNE sur le Commerce** pour l'exécuteur affilié :
+    `order_items(id, order_id, line_total_minor, currency)`, `orders(id, paid_at, status)`,
+    `refunds(id, payment_id, status)`, `payments(id, order_id)`. Jamais `customer_email`,
+    jamais un montant qu'il ne calcule pas. `REVOKE` symétrique au `down()`.
+
+ALTERNATIVES REJETÉES :
+
+- **Assouplir un GRANT sur `affiliate_commissions`** pour que le runtime écrive directement :
+  détruirait la frontière D-058 que P6-D1 a payée cher.
+- **Émettre un `release` à la promotion** : double le solde (point 4).
+- **Renverser au prorata du solde plutôt qu'au taux snapshoté** : ajouterait une seconde règle
+  d'arrondi là où celle de l'accrual suffit.
+- **Construire le déclencheur réel de remboursement** (port fournisseur, webhook, action
+  admin) : plus que doublerait le gate et sort du périmètre D-057. ⚠️ **Conséquence assumée :
+  le moteur est testable mais DORMANT** — aucun code n'appelle `RefundCompletionService`.
+- **`Bus::chain`** : mécanisme absent du dépôt (point 8).
+
+IMPACT : migration `000033`, **49 migrations**, aucune `000034`. Aucun payout, aucun
+`payout_allocation`, aucun `payout_reversal` — c'est P6-D4. Vingt contrats d'inventaire
+avancés de leurs trois dents ; **trois laissés à leur frontière historique** ; `app/Console/
+Commands` et `routes/console.php` sortent des listes « doit rester vide » **en étant nommés**,
+`console.php` par un inventaire de JETONS et non par une exemption de fichier.
+
 ### D-067 : P6-D2 — l'attribution sort de `orders` et passe par la queue ✅
 
 CONTEXTE : la première écriture de P6-D2 attachait `resolve_affiliate_attribution()` à

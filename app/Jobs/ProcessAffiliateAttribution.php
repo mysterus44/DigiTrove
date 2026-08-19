@@ -59,6 +59,20 @@ final class ProcessAffiliateAttribution implements ShouldBeUnique, ShouldQueue
 
     public function handle(AffiliateAttributionService $attributions): void
     {
-        $attributions->resolveForOrder($this->orderId);
+        $status = $attributions->resolveForOrder($this->orderId);
+
+        // P6-D3 chains from HERE, not from a second listener on `OrderPaid`. An accrual needs
+        // the attribution row to exist, and nothing orders two listeners of the same event —
+        // they would race, and the loser would find no attribution to commission.
+        //
+        // Only these two statuses mean "an attribution exists for this order". The others —
+        // `no_match`, `no_active_policy`, `no_such_order`, `disabled` — mean there is nothing
+        // to commission, and chaining on them would queue work that can only fail.
+        //
+        // A direct dispatch, not `Bus::chain`: this repository uses `Bus::chain` NOWHERE, and
+        // a mechanism the codebase does not already use is not introduced for one call site.
+        if (in_array($status, ['attributed', 'already_attributed'], true)) {
+            ProcessAffiliateCommissionAccrual::dispatch($this->orderId);
+        }
     }
 }
