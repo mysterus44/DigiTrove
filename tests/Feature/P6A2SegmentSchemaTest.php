@@ -29,9 +29,9 @@ function p6a2Columns(string $table): array
 it('adds exactly one migration (000025) and no 000026', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(49)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(50)
         ->and(glob($root.'/database/migrations/2026_07_14_000025*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000034*.php'))->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000035*.php'))->toBe([]);
 });
 
 it('creates exactly the four segment tables', function () {

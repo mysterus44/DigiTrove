@@ -54,10 +54,10 @@ it('scans exactly the files P6-C owns and fails closed if one disappears', funct
 it('adds exactly one migration and never touches a historical one', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(49)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(50)
         ->and(glob($root.'/database/migrations/2026_07_14_000028*.php'))->toHaveCount(1)
         // P6-D1.1 has not started.
-        ->and(glob($root.'/database/migrations/2026_07_14_000034*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000035*.php') ?: [])->toBe([]);
 });
 
 it('never reaches a crm_ or commerce table directly from the runtime layer', function () {

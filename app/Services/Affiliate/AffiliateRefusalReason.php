@@ -18,6 +18,7 @@ enum AffiliateRefusalReason: string
     case VersionTaken = 'version_taken';
     case ConcurrentPublication = 'concurrent_publication';
     case StaleCodeRotation = 'stale_code_rotation';
+    case StalePayoutTransition = 'stale_payout_transition';
 
     public function message(): string
     {
@@ -28,6 +29,7 @@ enum AffiliateRefusalReason: string
             self::VersionTaken => 'That policy version already exists.',
             self::ConcurrentPublication => 'Another policy was published at the same time. Reload and try again.',
             self::StaleCodeRotation => 'The affiliate code changed since this page was loaded. Reload the affiliate before rotating its code again.',
+            self::StalePayoutTransition => 'The payout changed since this page was loaded. Reload it before deciding again.',
         };
     }
 }

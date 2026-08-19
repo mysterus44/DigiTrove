@@ -320,6 +320,19 @@ Vérifications P2 passées :
   (consigné dans HANDOFF).
 - Hors gate : migration, autorités, coupon, compte client, affiliation, P7.
 
+### P6-D4 Payout administratif - D-069 (livré)
+
+- Migration `000034`, **50 migrations**, aucune `000035`, AUCUNE table. Cinq autorités
+  `SECURITY DEFINER` + deux index uniques partiels d'idempotence.
+- Réservation à la **demande** (`payable → allocated` + `payout_allocation`), approbation
+  par **deux administrateurs distincts**, `paid` exige une référence administrative.
+  Machine à états close : `paid`/`rejected`/`cancelled` terminaux.
+- ⚠️ **Aucun virement** : marquer `paid` enregistre un paiement fait AILLEURS. Aucune
+  donnée bancaire ni Mobile Money.
+- ⚠️ **Trou D-057 §10 fermé** : une commission déjà versée puis remboursée porte un
+  **solde négatif reporté**, au lieu d'un renversement silencieusement réduit à zéro.
+- Validation : P6-D4 **19/114**, affiliation **245/3929**, 0 échec.
+
 ### P6-D3 Commissions et compensations - D-068 (livré)
 
 - Migration `000033`, **49 migrations**, aucune `000034`, AUCUNE table. Trois autorités
@@ -661,7 +674,9 @@ commencés.
 | Affiliation P6-D1.1 | ⏸️ **ARCHITECTURE D-059 INCHANGÉE, IMPLÉMENTATION EN PAUSE PAR D-060.** WIP non livré préservé sur `p6-d1-1-affiliate-lifecycle-codes` à `f15d192`, avec brouillon `000031`. La stable `4407fca` reste à **46 migrations, sans `000031`**. Reprise uniquement après le Storefront MVP. |
 | Affiliation P6-D2 | ✅ **LIVRÉ (D-067).** `000032`, 48 migrations. Capture publique + attribution au `paid` par job ID-only. Aucun trigger sur `orders`. |
 | Affiliation P6-D3 | ✅ **LIVRÉ (D-068).** `000033`, 49 migrations, trois autorités. Moteur de compensation **dormant** : aucun déclencheur réel de remboursement n'existe. |
-| Prochain gate | ⏳ **P6-D4 — payout administratif.** Mono-affilié et mono-devise déjà structurels (4 FK composites) ; aucune donnée bancaire. |
+| Affiliation P6-D4 | ✅ **LIVRÉ (D-069).** `000034`, 50 migrations. Feuille de route affiliation D-057 **close** (D0→D4). Moteur toujours **dormant** faute de déclencheur de remboursement. |
+| Prochain gate | ⏳ **Aucun — attendre un prompt humain.** |
+| ~~Ancien~~ | ~~P6-D4 — payout administratif.~~ Mono-affilié et mono-devise déjà structurels (4 FK composites) ; aucune donnée bancaire. |
 | ~~Ancien~~ | ~~P6-D3 — moteur de commissions et compensations.~~ Réutilise **Hamilton** (`DiscountAllocator`, D-030 Q3) pour répartir un refund niveau-commande vers les lignes ; aucune seconde implémentation d'arrondi. |
 
 ## P7 — BLOG & SEO

@@ -80,6 +80,10 @@ trait UsesAffiliateAuthority
             // `40001` and the administrator would read a message about policies while
             // rotating a code.
             'AF001' => AffiliateRefusalReason::StaleCodeRotation,
+            // P6-D4. A separate code for the same reason AF001 exists: a stale payout
+            // decision must not be reported as a stale code rotation, or the
+            // administrator reads about codes while approving money.
+            'AF002' => AffiliateRefusalReason::StalePayoutTransition,
             default => AffiliateRefusalReason::Unavailable,
         });
     }
