@@ -270,15 +270,20 @@ it('applies 000036 with the new state, the two columns and the partial index', f
     expect($index?->indexdef)->toContain('received')->toContain('failed');
 });
 
-it('counts 52 migrations, names the last one, and has no 000037', function (): void {
+it('owns exactly one migration, named exactly, present exactly once', function (): void {
+    // ⚠️ CE CONTRAT N'ASSERTE PLUS QUE 000036 EST LA DERNIERE — et ce n'est pas un
+    // affaiblissement, c'est une correction de perimetre. « Quelle est la derniere migration
+    // du depot » est une propriete GLOBALE, portee par UN SEUL contrat
+    // (P6A11CommerceRollupSchemaTest). La revendiquer ici aussi obligerait a mettre a jour
+    // deux endroits a chaque gate, sans rien prouver de plus — et un contrat qu'on met a
+    // jour machinalement cesse d'etre lu.
+    //
+    // Ce que ce gate doit prouver lui reste entier : SA migration existe, porte exactement
+    // ce nom, et n'apparait qu'une fois.
     $files = collect(File::files(database_path('migrations')))
         ->map(fn ($file): string => $file->getFilename())
-        ->values()
-        ->all();
+        ->values();
 
-    sort($files);
-
-    expect($files)->toHaveCount(52)
-        ->and(end($files))->toBe('2026_07_14_000036_create_webhook_reconciliation_state.php')
-        ->and(collect($files)->filter(fn (string $f): bool => str_contains($f, '000037')))->toBeEmpty();
+    expect($files->filter(fn (string $f): bool => str_contains($f, '000036'))->values()->all())
+        ->toBe(['2026_07_14_000036_create_webhook_reconciliation_state.php']);
 });

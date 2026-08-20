@@ -1257,7 +1257,23 @@ restent hors périmètre** — à lister comme REPORTÉS si le calendrier ne les
 | **1** | H2.1 en-têtes · H2.2 cookie de session · H2.5 throttle webhook | aucune | **PR A** |
 | **2** | H2.3 seeder admin · H2.4 `test@example.com` gaté | aucune | **PR B** |
 | **3** | **H1 réconciliation webhooks** — dette #6 | **`000036`** | **PR C** |
-| **4** | H2.6 CORS · H2.7 `failed_jobs` · H2.8 canal de log | `000037` | à faire |
+| **4** | H2.6 CORS · H2.7 `failed_jobs` · H2.8 canal de log | `000037` | **PR D** |
+
+### ✅ LA DÉPENDANCE H1 → H2.8 EST FERMÉE
+
+Le lot 3 (H1) émet `Log::critical` et **interdisait** `WEBHOOK_RECONCILIATION_ENABLED=true`
+tant qu'un `critical` ne pouvait pas être vu — avec `LOG_STACK=single`, l'alerte était
+présente mais introuvable dans un fichier sans limite de taille.
+
+**Le lot 4 ferme ce prérequis** : `LOG_STACK=daily`, `LOG_DAILY_DAYS=30`, `LOG_LEVEL=info`.
+Ce n'est pas une coïncidence de calendrier, c'est la levée explicite de la condition posée
+par D-074 §« prérequis d'activation ». Un futur lecteur doit pouvoir le retrouver ici sans
+recomparer deux PR.
+
+⚠️ Ce qui reste à la main de KingKouda : passer `WEBHOOK_RECONCILIATION_ENABLED` à `true`
+**une fois seulement** que le canal de log est réellement branché sur l'environnement de
+production (rotation en place, alertes lues par quelqu'un). Le drapeau reste `false` dans
+le gabarit.
 
 ⚠️ **UNE MIGRATION PAR PR.** Les lots 3 et 4 en portent chacun une : les grouper mettrait
 deux migrations dans une seule frontière de rollback, ce que le protocole interdit depuis

@@ -58,9 +58,9 @@ function p7SellableProduct(string $slug = 'p7-produit'): Product
 it('owns exactly migration 000035 with four tables and one chain guard', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(52)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(53)
         ->and(glob($root.'/database/migrations/2026_07_14_000035*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000037*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000038*.php') ?: [])->toBe([]);
 
     foreach (['articles', 'article_categories', 'article_product', 'redirects'] as $table) {
         expect(DB::selectOne('SELECT to_regclass(?) AS t', ['public.'.$table])->t)->not->toBeNull();

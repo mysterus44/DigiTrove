@@ -57,17 +57,17 @@ function p6d0ApplicationFiles(): array
 // P7 (D-070) added `000035`, which is BLOG schema and owns nothing affiliate. The three
 // teeth of this contract are unchanged in nature: the total, the affiliate migrations each
 // present exactly once, and the next number still absent.
-it('sits behind the P6-D4 boundary: 52 migrations, 000029 to 000034 present, no 000037', function () {
+it('sits behind the P6-D4 boundary: 53 migrations, 000029 to 000034 present, no 000038', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(52)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(53)
         ->and(glob($root.'/database/migrations/2026_07_14_000029*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000030*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000031*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000032*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000033*.php'))->toHaveCount(1)
         ->and(glob($root.'/database/migrations/2026_07_14_000034*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000037*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000038*.php') ?: [])->toBe([]);
 });
 
 /**

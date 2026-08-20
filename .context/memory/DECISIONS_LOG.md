@@ -4293,6 +4293,95 @@ chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la mêm
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
 vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
 
+### D-076 : L'invariant « dernière migration du dépôt » a UN SEUL propriétaire 📐
+
+⚠️ **DÉCISION STRUCTURANTE, à retrouver indépendamment du gate qui l'a produite.**
+
+Les contrats d'inventaire du dépôt portent **trois dents** : total des migrations · dernière
+**NOMMÉE** · suivante absente. La deuxième — « la dernière migration est exactement X » — est
+une propriété **GLOBALE**, et elle est désormais portée par **un seul contrat** :
+**`tests/Feature/P6A11CommerceRollupSchemaTest.php`**.
+
+**POURQUOI UN SEUL.** La dupliquer dans chaque gate obligerait à mettre à jour N endroits à
+chaque migration. Or ce projet a mesuré deux fois ce que coûte la mise à jour mécanique d'un
+inventaire : le **piège #4** (tri à l'œil, quatre erreurs consécutives) et surtout le
+**piège #5** — un remplacement générique de littéral numérique a corrompu quatre assertions
+métier en P7, dont **deux qui seraient restées VERTES** en ayant cessé de prouver quoi que
+ce soit, l'une portant un montant et l'autre une allocation Hamilton. Multiplier les points
+de mise à jour, c'est fabriquer l'incitation exacte au script générique qui produit ce
+défaut. **Un contrat qu'on met à jour machinalement cesse d'être lu.**
+
+**CONSÉQUENCE ASSUMÉE, ET SA PROTECTION.** Un invariant porté par un seul fichier disparaît
+si ce fichier est supprimé, renommé ou refactorisé par quelqu'un qui ignore ce qu'il porte.
+La protection est donc **explicite, pas implicite** :
+
+- un commentaire **dans** `P6A11CommerceRollupSchemaTest`, au-dessus de l'assertion, dit
+  qu'il en est le seul propriétaire et qu'il faut **relocaliser l'assertion AVANT** de
+  déplacer ou supprimer le test ;
+- la présente entrée, pour qu'un lecteur la retrouve sans dépendre du contexte d'un lot.
+
+⚠️ **Ce qui reste dupliqué et doit le rester** : le **total** et la **sentinelle** (« la
+suivante n'existe pas ») restent dans chaque gate. Ils sont bon marché à vérifier, et ils
+attrapent « quelqu'un a ajouté une migration ». Seule la dent qui **nomme** est unique,
+parce que c'est elle qui exige une décision consciente plutôt qu'un incrément.
+
+Corollaire appliqué au lot 4 : `H1WebhookReconciliationSchemaTest` **ne revendique plus** la
+position finale de `000036`. Il prouve ce qui le concerne — sa migration existe, porte
+exactement ce nom, apparaît une seule fois. **Réduction de PORTÉE, jamais de force** : la
+propriété n'a pas disparu, elle a un propriétaire nommé.
+
+### D-075 : H2.6 / H2.7 / H2.8 — CORS, failed_jobs, canal de log ✅
+
+CONTEXTE : quatrième et dernier lot du durcissement. Migration **`000037`**.
+
+DÉCISIONS :
+
+1. **`config/cors.php` publié pour REFUSER, pas pour autoriser.** Sans ce fichier, les
+   défauts du framework s'appliquaient — `allowed_origins => ['*']` sur `api/*` — et cette
+   permission n'était **visible nulle part** dans le dépôt.
+   ⚠️ **Rien n'était exploitable, et ce n'est pas la raison du fichier.** Mesuré :
+   `supports_credentials` valait déjà `false` (en-tête `Access-Control-Allow-Credentials`
+   absent des réponses, sondé sur les trois routes), et le cookie de tentative est posé en
+   `SameSite=Strict`. Deux barrières indépendantes neutralisaient `*` **par accident de
+   configuration**. Une permission large qui ne sert à rien reste de la surface à
+   ré-auditer à chaque changement. Même principe que `SecurityHeaders` (H2.1) : un plancher
+   explicite, jamais un défaut permissif rattrapé par autre chose.
+   Vérifié par `grep` plutôt que par navigateur — **niveau de preuve proportionné au mode
+   d'échec** : un défaut CSP casse silencieusement pendant que le HTML sort normalement,
+   alors qu'un appel cross-origin refusé casse **bruyamment et immédiatement**. Les deux
+   seuls appels client du dépôt (`carts/resume`, `downloads/exchange`) utilisent des chemins
+   **relatifs**, donc same-origin.
+2. **`failed_jobs` — trois défauts trouvés là où on en cherchait un.**
+   `config/queue.php` déclarait `'table' => 'failed_jobs'` et **la table n'a jamais
+   existé** ; `.env.example` contournait avec `QUEUE_FAILED_DRIVER=file`, qui écrit dans un
+   fichier que personne ne regarde. Un job de livraison, de réconciliation CRM ou
+   d'attribution qui mourait partait **sans trace exploitable**.
+   Trouvé au passage : **`env('DB_CONNECTION', 'sqlite')` deux fois** — un défaut SQLite
+   dans un projet qui l'interdit explicitement. Corrigé en `pgsql`.
+3. **Prouvé, pas déduit : le rôle `digitrove_runtime` écrit et relit réellement une ligne
+   d'échec.** `000012` accorde les privilèges par `ALTER DEFAULT PRIVILEGES`, donc
+   l'héritage devait suffire — mais **une table d'échecs muette aurait été exactement le
+   silence que ce lot supprime**. Un `GRANT` explicite est posé en ceinture par-dessus.
+4. ⚠️ **`failed_jobs.payload` contient les arguments sérialisés du job.** Cette table n'est
+   acceptable que parce que la discipline **ID-ONLY** (D-030 Q2) est tenue partout : chaque
+   job ne transporte qu'un identifiant. **Un futur job qui transporterait un secret le
+   publierait ici**, en clair, dans une table lue par quiconque débogue une queue. La règle
+   ne se relâche pas parce qu'une table d'échecs existe désormais.
+5. **`LOG_STACK=daily` / 30 jours / `LOG_LEVEL=info`.** Avec `single`, tout s'entassait dans
+   un fichier unique sans limite : un `Log::critical` y était **présent mais introuvable**,
+   et le fichier finissait trop gros pour être ouvert.
+   ⚠️ **CECI FERME LA DÉPENDANCE POSÉE PAR LE LOT 3, ce n'est pas une coïncidence.** H1
+   (D-074) émet `Log::critical` et interdisait explicitement
+   `WEBHOOK_RECONCILIATION_ENABLED=true` tant qu'un `critical` ne pouvait pas être vu. **Le
+   prérequis d'activation de H1 est satisfait par ce lot.**
+6. **Ni `jobs` ni `job_batches` ne sont créées** : `QUEUE_CONNECTION=redis` et le dépôt ne
+   fait aucun batching, donc ce serait du schéma mort. Elles restent des dettes nommées.
+
+IMPACT : **53 migrations**, la dernière `000037`, aucune `000038`. Contrats d'inventaire
+élargis **explicitement** — 49 lignes, portée bornée à une liste nommée de fichiers, mot
+`migration` exigé en co-occurrence avant de toucher un `52`. Voir **D-076** pour la
+propriété de l'invariant « dernière migration ».
+
 ### D-074 : H1 — réconciliation des webhooks non aboutis (dette #6) ✅
 
 CONTEXTE : troisième lot du durcissement, et le seul risque argent connu et non couvert.
