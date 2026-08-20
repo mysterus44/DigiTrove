@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\SessionCookiePolicy;
 use Illuminate\Support\Str;
 
 return [
@@ -167,9 +168,15 @@ return [
     | to the server if the browser has a HTTPS connection. This will keep
     | the cookie from being sent to you when it can't be done securely.
     |
+    | H2.2 — FORCED outside local/testing, not merely defaulted. `env()` with no default
+    | returned null, which Laravel reads as "not secure": a session cookie could travel
+    | over plain HTTP in production because a variable was missing from `.env`, with
+    | nothing anywhere saying so. Same shape as `payments.*.require_https` — the
+    | environment decides in local and testing, and is not consulted in production.
+    |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE'),
+    'secure' => SessionCookiePolicy::secure(env('APP_ENV', 'production'), env('SESSION_SECURE_COOKIE')),
 
     /*
     |--------------------------------------------------------------------------
@@ -180,9 +187,12 @@ return [
     | value of the cookie and the cookie will only be accessible through
     | the HTTP protocol. It's unlikely you should disable this option.
     |
+    | H2.2 — same rule. A session cookie readable from JavaScript turns any XSS into a
+    | session takeover, so production never lets an environment variable disable it.
+    |
     */
 
-    'http_only' => env('SESSION_HTTP_ONLY', true),
+    'http_only' => SessionCookiePolicy::httpOnly(env('APP_ENV', 'production'), env('SESSION_HTTP_ONLY')),
 
     /*
     |--------------------------------------------------------------------------
@@ -197,9 +207,14 @@ return [
     |
     | Supported: "lax", "strict", "none", null
     |
+    | H2.2 — bounded to an ALLOWLIST outside local/testing. "none" is a supported value
+    | that disables the protection entirely, and null behaves the same way in practice.
+    | Anything that is not "lax" or "strict" falls back to "lax" rather than silently
+    | dropping CSRF mitigation because of a typo.
+    |
     */
 
-    'same_site' => env('SESSION_SAME_SITE', 'lax'),
+    'same_site' => SessionCookiePolicy::sameSite(env('APP_ENV', 'production'), env('SESSION_SAME_SITE')),
 
     /*
     |--------------------------------------------------------------------------
