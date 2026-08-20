@@ -4293,6 +4293,69 @@ chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la mêm
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
 vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
 
+### D-073 : H2.3 / H2.4 — seeder d'administrateur et compte jetable ✅
+
+CONTEXTE : deuxième lot du durcissement. **Aucune migration.** Le tracker P1 décrivait
+« un seeder admin qui refuse un mot de passe vide » ; `.env.example` annonçait `ADMIN_EMAIL`
+et `ADMIN_PASSWORD` depuis P1. **Aucun fichier du dépôt ne les lisait.** Il n'y avait rien à
+vérifier : il fallait l'écrire.
+
+DÉCISIONS :
+
+1. **Le seeder n'utilise PAS `UserFactory`, délibérément.** Elle pose
+   `role => Customer` et horodate `email_verified_at` : s'y appuyer aurait produit **un
+   client vérifié** en ayant l'air d'un succès — une ligne existe, le seeder rend la main
+   proprement, et personne ne peut entrer dans le panel. `role`, `status` et
+   `email_verified_at` sont écrits explicitement, et `canAccessPanel()` est l'assertion qui
+   attrape ce défaut-là.
+2. ⚠️ **`config()`, JAMAIS `env()` — défaut trouvé dans mon propre code avant de le
+   tester.** `php artisan config:cache`, que tout déploiement de production exécute, fait
+   retourner `null` à `env()` hors des fichiers de config. Un seeder appelant `env()`
+   directement aurait **refusé sur un serveur correctement configuré** : fail-closed pour
+   une raison entièrement fausse, bloquant un déploiement légitime tout en ressemblant à une
+   mesure de sécurité. `config/admin.php` déclare, `App\Support\AdminCredentialPolicy`
+   valide — le patron de `DeliveryConfig` et `SessionCookiePolicy`.
+3. **« Trivial » est défini, pas improvisé** : **12 caractères minimum**, liste noire des
+   valeurs qu'un humain tape réellement, refus d'un caractère unique répété (`aaaaaaaaaaaa`
+   fait douze caractères et ne vaut rien), et **le mot de passe ne doit ni égaler ni contenir
+   la partie locale d'`ADMIN_EMAIL`**. Ce dernier point ferme l'erreur la plus probable —
+   `admin@digitrove.com` avec `admin123` — qu'une liste noire seule ne peut pas attraper,
+   puisque le mot fautif vient de l'adresse que l'opérateur vient de choisir.
+   ⚠️ **Aucune règle de composition** type « une majuscule un chiffre » : elles produisent
+   surtout des mots de passe mémorisables donc faibles (`Password1!`) tout en paraissant
+   strictes. La longueur est le facteur qui coûte réellement à un attaquant.
+   ⚠️ **Seuil de trois caractères sur la partie locale** avant d'appliquer la règle
+   « contient » : pour `a@example.com` la partie locale est `a`, et la règle refuserait
+   sinon tout mot de passe contenant la lettre a.
+4. **Le refus n'écrit rien et ne cite jamais le mot de passe.** La sortie d'un seeder finit
+   dans les logs de CI et le défilement du terminal ; un message « utile » qui citerait la
+   valeur refusée la publierait. Il nomme la règle enfreinte, pas la valeur.
+5. **Un compte existant est RÉPARÉ, jamais dupliqué** — `users.email` est UNIQUE, donc un
+   second `INSERT` échouerait, et relancer un seeder doit être sûr. Promotion en admin,
+   réactivation et restauration d'un compte soft-deleted font partie de « l'opérateur
+   demande que ce compte soit l'administrateur ». `users.email` étant **CITEXT**, la
+   correspondance est insensible à la casse sans normalisation applicative.
+6. **`test@example.com` est gaté derrière `local`/`testing`, pas l'administrateur.**
+   `UserFactory` pose `Hash::make('password')`, `email_verified_at` et `status => Active` :
+   un `php artisan db:seed` en production créait donc **un compte client RÉEL, VÉRIFIÉ et
+   ACTIF dont le mot de passe est écrit dans les sources du framework**. Pas un admin, donc
+   pas une prise de contrôle — mais un vrai compte à mot de passe public, créé par une
+   commande qu'un opérateur lance sans y penser. Le contrôle d'environnement est
+   **explicite**, jamais déduit d'`APP_DEBUG` ni de la discipline de quiconque.
+
+⚠️ **PREUVE D'AUTHENTIFICATION, ET SA LIMITE ASSUMÉE.** Je n'ai **pas** saisi de mot de
+passe dans un formulaire, y compris celui que j'avais généré pour une base jetable : la
+règle qui me l'interdit est catégorique et ne distingue pas les credentials de test des
+vrais. La preuve équivalente est `Auth::attempt()`, qui traverse **le même user provider, le
+même `getAuthPasswordName()` retournant `password_hash` et le même contrôle de hash** que le
+composant Livewire de Filament, complétée par l'ouverture réelle de `/admin` pour l'admin et
+son refus pour un client. Ce qu'un navigateur ajouterait au-delà est la soumission du
+formulaire — **déjà prouvée vivante au lot 1** (11/11 composants Alpine initialisés, bouton
+de soumission lié). Vérifié sans credentials en navigateur : `/admin` anonyme redirige.
+
+IMPACT : **aucune migration**. Nouvelle entrée `config/admin.php`, lue par le seeder et par
+rien d'autre.
+
 ### D-072 : H2.1 / H2.2 / H2.5 — en-têtes, cookie de session, throttle webhook ✅
 
 CONTEXTE : premier lot du durcissement pré-production. **Aucune fonctionnalité nouvelle,
