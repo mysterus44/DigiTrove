@@ -141,9 +141,9 @@ beforeEach(function (): void {
 it('owns exactly migration 000032 and installs its two authorities, and no trigger', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(52)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(53)
         ->and(glob($root.'/database/migrations/2026_07_14_000032*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000037*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000038*.php') ?: [])->toBe([]);
 
     // `prokind = 'f'`: an ordinary function. A trigger function would return `trigger`.
     $functions = array_map(

@@ -188,9 +188,9 @@ beforeEach(function (): void {
 it('owns exactly migration 000034, five authorities and two idempotency indexes', function () {
     $root = dirname(__DIR__, 2);
 
-    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(52)
+    expect(glob($root.'/database/migrations/*.php'))->toHaveCount(53)
         ->and(glob($root.'/database/migrations/2026_07_14_000034*.php'))->toHaveCount(1)
-        ->and(glob($root.'/database/migrations/2026_07_14_000037*.php') ?: [])->toBe([]);
+        ->and(glob($root.'/database/migrations/2026_07_14_000038*.php') ?: [])->toBe([]);
 
     $functions = array_map(
         static fn (object $r): string => $r->proname,

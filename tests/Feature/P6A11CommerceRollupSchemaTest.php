@@ -38,18 +38,32 @@ it('installs only the P6-A1.1 table with closed physical constraints', function 
         'visitor_id'
     );
 
-    // CURRENT-STATE : 52 migrations, la derniere etant 000036 (H1, reconciliation des
-    // webhooks). Nommee et non seulement comptee : une 53e migration, ou une derniere
-    // differente, doit toujours faire echouer ce contrat.
+    // CURRENT-STATE : 53 migrations, la derniere etant 000037 (H2.7, failed_jobs).
+    // Nommee et non seulement comptee : une 54e migration, ou une derniere differente,
+    // doit toujours faire echouer ce contrat.
     $migrations = DB::table('migrations')->orderBy('id')->get();
-    expect($migrations)->toHaveCount(52)
-        // H1 (000036) — DEUXIEME DENT, elargie explicitement. C'est le seul contrat du depot
-        // qui NOMME la derniere migration plutot que de la compter : celui qui la fait
-        // avancer doit le faire deliberement, pas par un compteur qui glisse tout seul.
-        ->and($migrations->last()->migration)->toBe('2026_07_14_000036_create_webhook_reconciliation_state');
+    expect($migrations)->toHaveCount(53)
+        // ============================================================================
+        // PROPRIETAIRE UNIQUE DE L'INVARIANT « DERNIERE MIGRATION DU DEPOT » (D-076)
+        // ============================================================================
+        //
+        // ⚠️ SI VOUS DEPLACEZ, RENOMMEZ OU SUPPRIMEZ CE TEST : RELOCALISEZ CETTE
+        // ASSERTION EN PREMIER. Aucun autre fichier du depot ne porte cette invariante ;
+        // la perdre ne casserait rien et ne se verrait pas.
+        //
+        // C'est la DEUXIEME DENT des contrats d'inventaire (total · derniere NOMMEE ·
+        // suivante absente), et la seule des trois a etre unique. Le total et la
+        // sentinelle restent dupliques dans chaque gate : ils sont bon marche et
+        // attrapent « quelqu'un a ajoute une migration ». Celle-ci nomme, donc elle
+        // exige une DECISION plutot qu'un incrément — et la dupliquer fabriquerait
+        // l'incitation exacte au remplacement generique qui a corrompu quatre assertions
+        // metier en P7, dont deux seraient restees VERTES (piege #5).
+        //
+        // Elargie explicitement a chaque gate qui ajoute une migration. Jamais par script.
+        ->and($migrations->last()->migration)->toBe('2026_07_14_000037_create_failed_jobs_table');
 
-    // Aucune migration 000037 : H1 est la frontiere courante.
-    expect(glob(database_path('migrations').'/2026_07_14_000037*.php') ?: [])->toBe([]);
+    // Aucune migration 000038 : H1 est la frontiere courante.
+    expect(glob(database_path('migrations').'/2026_07_14_000038*.php') ?: [])->toBe([]);
 });
 
 it('verifies exact restrictive foreign keys checks and primary key', function () {
