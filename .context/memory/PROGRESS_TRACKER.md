@@ -19,7 +19,7 @@ P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERG
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
 P6 CRM & MARKETING  : ██████████  100% — P6-A0→P6-C mergés, puis affiliation P6-D0→P6-D4 CLOSE (D-057 → D-069, PR #40→#50). Moteur de commissions/payouts complet ; **son déclencheur de remboursement existe depuis le gate Genius Pay** (D-071).
 P7 BLOG & SEO       : ██████████  100% — `000035`, blog natif, sitemap/robots dynamiques, JSON-LD Article+Product, redirections 301 sans chaîne, import legacy idempotent (D-070)
-DURCISSEMENT PROD   : ███░░░░░░░   30% — lot 1 (en-têtes, cookie de session, throttle webhook) en PR ; lots 2 à 4 à suivre. **H3 P5-A3D et H4 Core Web Vitals REPORTÉS, jamais omis** (D-072).
+DURCISSEMENT PROD   : █████░░░░░   50% — lot 1 MERGÉ (PR #53 → `c2baaeb5`) ; lot 2 (seeder admin fail-closed, compte jetable gaté) en PR ; lots 3 et 4 à suivre. **H3 P5-A3D et H4 Core Web Vitals REPORTÉS, jamais omis** (D-072).
 GENIUS PAY          : █████████░   90% — MERGÉ (PR #52 → `5f4c9394`, CI SUCCESS, D-071) : adaptateur, ingress webhook JSON signé sur octets bruts, intake de remboursement, 86 tests, AUCUNE migration — 51 inchangées. Suite complète 1880/13790, Pint 623, post-merge 236/1364. **Reste : un run sandbox réel de bout en bout**, seul capable de trancher les trois points non documentés listés en §7 de `docs/integrations/GENIUSPAY_SETUP.md`.
 ```
 

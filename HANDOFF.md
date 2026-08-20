@@ -233,6 +233,33 @@ remplacement générique ci-dessus, appliqué aux octets au lieu des littéraux.
 Ni `grep -c`, ni `tr -cd`, ni `wc` sous Git Bash : MSYS traduit les fins de ligne en lecture et **rapporte des
 chiffres contradictoires**, ce qui a coûté un aller-retour de diagnostic ici.
 
+### ⚠️ BASE AU NOM ÉPHÉMÈRE : ZÉRO CONNEXION NE PROUVE RIEN
+
+Septième piège, fixé le 2026-08-20 avant qu'il ne serve — il n'a pas causé de dégât, il a
+failli.
+
+Les tests de rollback et de backfill créent des bases jetables au nom parlant :
+`digitrove_p5a2_backfill_9s58vxjy0u`, `digitrove_p6a0_rollback_mujt9o1gzd`. Elles
+ressemblent à des résidus. Certaines en sont ; d'autres appartiennent à une campagne **en
+cours d'exécution**.
+
+⚠️ **`pg_stat_activity` à zéro ne prouve pas qu'une base est abandonnée.** Entre deux étapes
+d'un test, la connexion se ferme sans que la base cesse d'être nécessaire — le compte est
+à zéro pendant que la base est vivante. C'est la même famille que le verrou
+`.git/index.lock` : **l'absence d'un signal à un instant donné prouve l'absence de signal à
+cet instant, pas l'absence d'usage.**
+
+**Règle** : avant tout `DROP DATABASE` sur un nom éphémère, recouper **trois** preuves
+indépendantes, jamais une seule —
+
+1. aucune connexion active (`pg_stat_activity`) ;
+2. **aucune campagne Pest en vol** — la preuve qui manque le plus souvent, et la seule qui
+   distingue un résidu d'une base vivante entre deux tests ;
+3. aucune donnée métier (`users`, `orders`, `products`, `payments` à zéro) et aucune
+   référence `DB_DATABASE` dans le dépôt, `.env` non versionné compris.
+
+`DROP DATABASE` ne s'annule pas. La marge de sécurité coûte trois requêtes.
+
 ### ⚠️ BRANCHE CANONIQUE : `p0-foundations-laravel13`, PAS `main`
 
 Vérifié par mesure, pas par convention : `git diff p0-foundations-laravel13...main` est
@@ -1228,7 +1255,7 @@ restent hors périmètre** — à lister comme REPORTÉS si le calendrier ne les
 | lot | contenu | migration | état |
 |---|---|---|---|
 | **1** | H2.1 en-têtes · H2.2 cookie de session · H2.5 throttle webhook | aucune | **PR A** |
-| **2** | H2.3 seeder admin · H2.4 `test@example.com` gaté | aucune | à faire |
+| **2** | H2.3 seeder admin · H2.4 `test@example.com` gaté | aucune | **PR B** |
 | **3** | **H1 réconciliation webhooks** — dette #6 | **`000036`** | à faire |
 | **4** | H2.6 CORS · H2.7 `failed_jobs` · H2.8 canal de log | `000037` | à faire |
 
