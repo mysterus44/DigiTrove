@@ -19,6 +19,7 @@ use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PaymentWebhookEvent;
 use App\Payments\CinetPay\CinetPayWebhook;
+use App\Payments\GeniusPay\GeniusPayWebhook;
 use App\Payments\PaymentProviderFactory;
 use App\Services\Payments\PaymentConfirmationRefusalReason as Reason;
 use App\Support\CustomerRedemptionKey;
@@ -39,6 +40,31 @@ use Throwable;
 final class PaymentConfirmationService
 {
     private const CINETPAY = 'cinetpay';
+
+    private const GENIUSPAY = 'geniuspay';
+
+    /**
+     * The RAW vendor label proving a refund at the provider.
+     *
+     * Read raw on purpose: `refunded` maps to `NormalizedPaymentStatus::Unknown`, because
+     * neither `Succeeded` nor `Failed` is true of money that changed hands and came back.
+     */
+    private const GENIUSPAY_REFUNDED_STATUS = 'refunded';
+
+    /**
+     * The CLOSED set of columns a webhook may locate a payment by.
+     *
+     * A column name reaching `where()` from a variable is an injection surface unless it can
+     * only ever be one of a fixed, code-owned set. It is validated by identity against this
+     * list BEFORE any query is built, and anything else raises rather than querying. Neither
+     * value is caller- or provider-supplied: each is chosen by the adapter's entry point.
+     *
+     * `public_id` — CinetPay: our own id makes the round trip as `cpm_trans_id`.
+     * `provider_payment_reference` — GeniusPay: it accepts no merchant id, so its `MTX-...`
+     * reference (unique per provider by `payments_provider_reference_unique`, and immutable
+     * once set by the `payments` trigger) is the only handle that comes back.
+     */
+    private const LOCATOR_COLUMNS = ['public_id', 'provider_payment_reference'];
 
     private const UUID_PATTERN = '/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i';
 
@@ -68,20 +94,267 @@ final class PaymentConfirmationService
         $filtered = CinetPayWebhook::filteredPayload($envelope);
         $payloadHash = CinetPayWebhook::payloadHash($filtered);
 
+        $externalEventId = CinetPayWebhook::externalEventId($transactionId, $payloadHash);
+
+        return $this->processVerifiedWebhook(
+            providerName: self::CINETPAY,
+            provider: $provider,
+            envelope: $envelope,
+            transactionId: $transactionId,
+            locatorColumn: 'public_id',
+            locatorValue: $transactionId,
+            payloadHash: $payloadHash,
+            externalEventId: $externalEventId,
+            filtered: $filtered,
+            eventType: $envelope->param('cpm_page_action'),
+            now: $now,
+            // CinetPay knows our `public_id` from the reservation onward, so a signed
+            // webhook can never arrive before the payment is findable. Its unresolved
+            // path is unchanged: `ignored`, 200, no retry.
+            retryUnresolved: false,
+        );
+    }
+
+    /**
+     * The provider-agnostic half of webhook confirmation (P3-D4, generalised for GeniusPay).
+     *
+     * ⚠️ NOT A SECOND IMPLEMENTATION. Every adapter shares THIS body: duplicating ninety
+     * lines of financial confirmation would create two versions of one truth that must stay
+     * synchronised for ever. The public entry points differ only in how they EXTRACT the
+     * transaction id, the payload hash and the external event id from their own wire format.
+     *
+     * The order is deliberately unchanged from the CinetPay-only version — transaction-level
+     * guard, clock, provider resolution and extraction all happen in the caller, BEFORE this
+     * method — so a malformed payload under a misconfigured driver still refuses in exactly
+     * the order it always did.
+     *
+     * `transactionId` and `locatorValue` are deliberately SEPARATE parameters even where an
+     * adapter passes the same string for both: one identifies the attempt to the PROVIDER on
+     * the counter-call, the other identifies it LOCALLY. CinetPay conflates them; GeniusPay
+     * cannot, and one parameter serving both roles would hide that.
+     *
+     * @param  array<string, string>  $filtered  the payload actually stored; never the raw body
+     * @param  bool  $retryUnresolved  see {@see self::confirm()} - no default, on purpose
+     */
+    private function processVerifiedWebhook(
+        string $providerName,
+        PaymentConfirmationProvider $provider,
+        ProviderWebhookEnvelope $envelope,
+        string $transactionId,
+        string $locatorColumn,
+        string $locatorValue,
+        string $payloadHash,
+        string $externalEventId,
+        array $filtered,
+        ?string $eventType,
+        CarbonImmutable $now,
+        bool $retryUnresolved,
+    ): WebhookOutcome {
+        $recorded = $this->authenticateAndRecord(
+            $providerName,
+            $provider,
+            $envelope,
+            $payloadHash,
+            $externalEventId,
+            $filtered,
+            $eventType,
+            $now,
+        );
+
+        if ($recorded instanceof WebhookOutcome) {
+            return $recorded;
+        }
+
+        $result = $this->counterCall($provider, $transactionId, $recorded->id, $now);
+
+        $this->guarded(fn () => $this->confirm(
+            $providerName,
+            $locatorColumn,
+            $locatorValue,
+            $recorded->id,
+            $result,
+            $now,
+            $retryUnresolved,
+        ));
+
+        return WebhookOutcome::Accepted;
+    }
+
+    /**
+     * Server-side confirmation of a GeniusPay webhook (Genius Pay gate).
+     *
+     * The sequence mirrors {@see self::handleCinetPayWebhook()} exactly — transaction-level
+     * guard, clock, provider resolution, then extraction — so the two entry points refuse in
+     * the same order. Only the wire format and the locator differ.
+     *
+     * `$refunds` is a METHOD dependency, not a constructor one, and deliberately so: adding
+     * it to the constructor would change the shape of a P3-D4 authority every existing test
+     * builds, for a collaborator only one of its two entry points can ever use.
+     */
+    public function handleGeniusPayWebhook(
+        ProviderWebhookEnvelope $envelope,
+        GeniusPayRefundIntakeService $refunds,
+        ?CarbonImmutable $at = null,
+    ): WebhookOutcome {
+        // The counter-call must run at transaction level 0: an ambient
+        // transaction would hold locks across the external latency.
+        if (DB::transactionLevel() !== 0) {
+            throw self::integrity();
+        }
+
+        $now = $at ?? CarbonImmutable::now();
+        $provider = $this->confirmationProvider();
+
+        // Both are mandatory: the event id is the ONLY deduplication handle GeniusPay gives,
+        // and the reference is the ONLY way to find the payment locally or at the provider.
+        $eventId = GeniusPayWebhook::eventId($envelope);
+        $reference = GeniusPayWebhook::reference($envelope);
+
+        if ($eventId === null || $reference === null) {
+            throw PaymentConfirmationException::of(Reason::WebhookInvalid, 'The webhook payload is invalid.');
+        }
+
+        $filtered = GeniusPayWebhook::filteredPayload($envelope->params);
+        $payloadHash = GeniusPayWebhook::payloadHash($filtered);
+        $externalEventId = GeniusPayWebhook::externalEventId($eventId);
+        $eventType = GeniusPayWebhook::eventType($envelope);
+
+        // A refund is NOT a confirmation: `refunded` normalises to `Unknown`, so it could
+        // never travel the confirmation path without being silently ignored.
+        if ($eventType === GeniusPayWebhook::REFUND_EVENT) {
+            return $this->processRefundWebhook(
+                provider: $provider,
+                envelope: $envelope,
+                refunds: $refunds,
+                webhookEventId: $eventId,
+                reference: $reference,
+                payloadHash: $payloadHash,
+                externalEventId: $externalEventId,
+                filtered: $filtered,
+                eventType: $eventType,
+                now: $now,
+            );
+        }
+
+        return $this->processVerifiedWebhook(
+            providerName: self::GENIUSPAY,
+            provider: $provider,
+            envelope: $envelope,
+            // GeniusPay accepts no merchant id, so the same reference plays both roles: the
+            // provider handle on the counter-call and the local lookup key.
+            transactionId: $reference,
+            locatorColumn: 'provider_payment_reference',
+            locatorValue: $reference,
+            payloadHash: $payloadHash,
+            externalEventId: $externalEventId,
+            filtered: $filtered,
+            eventType: $eventType,
+            now: $now,
+            // See the unresolved branch of confirm(): the reference only exists locally after
+            // P3-D3's second transaction, so an early webhook must stay retryable.
+            retryUnresolved: true,
+        );
+    }
+
+    /**
+     * Provider-observed refund intake (Genius Pay gate).
+     *
+     * It shares authentication, deduplication and the counter-call with the confirmation
+     * path — the same body, never a copy of it — and diverges only at the last step, where
+     * creating a refund replaces confirming a payment.
+     *
+     * @param  array<string, string>  $filtered
+     */
+    private function processRefundWebhook(
+        PaymentConfirmationProvider $provider,
+        ProviderWebhookEnvelope $envelope,
+        GeniusPayRefundIntakeService $refunds,
+        string $webhookEventId,
+        string $reference,
+        string $payloadHash,
+        string $externalEventId,
+        array $filtered,
+        ?string $eventType,
+        CarbonImmutable $now,
+    ): WebhookOutcome {
+        $recorded = $this->authenticateAndRecord(
+            self::GENIUSPAY,
+            $provider,
+            $envelope,
+            $payloadHash,
+            $externalEventId,
+            $filtered,
+            $eventType,
+            $now,
+        );
+
+        if ($recorded instanceof WebhookOutcome) {
+            return $recorded;
+        }
+
+        $result = $this->counterCall($provider, $reference, $recorded->id, $now);
+
+        // The body claiming a refund is not a refund. The provider's own record is the only
+        // authority, exactly as it is for a payment (D-034). The RAW vendor label is read
+        // here because `refunded` normalises to `Unknown` on purpose.
+        if (strtolower(trim((string) $result->providerStatus)) !== self::GENIUSPAY_REFUNDED_STATUS) {
+            $this->markEventIgnoredOutsideTransaction($recorded->id, $now);
+
+            return WebhookOutcome::Accepted;
+        }
+
+        try {
+            $refunds->recordTotalRefund($webhookEventId, $reference, $result->providerStatus, $now);
+        } catch (PaymentConfirmationException $exception) {
+            // Unresolved stays retryable and the event stays `received`; anything else is a
+            // real failure and is recorded as one.
+            if ($exception->reason !== Reason::PaymentUnavailable) {
+                $this->markEventFailed($recorded->id, $now);
+            }
+
+            throw $exception;
+        } catch (Throwable) {
+            $this->markEventFailed($recorded->id, $now);
+
+            throw self::integrity();
+        }
+
+        $this->markEventProcessedOutsideTransaction($recorded->id, $now);
+
+        return WebhookOutcome::Accepted;
+    }
+
+    /**
+     * Authenticate the webhook and record it exactly once.
+     *
+     * Returns the recorded event, or a {@see WebhookOutcome} when the caller must stop —
+     * a rejected signature or an already-terminal replay.
+     *
+     * @param  array<string, string>  $filtered
+     */
+    private function authenticateAndRecord(
+        string $providerName,
+        PaymentConfirmationProvider $provider,
+        ProviderWebhookEnvelope $envelope,
+        string $payloadHash,
+        string $externalEventId,
+        array $filtered,
+        ?string $eventType,
+        CarbonImmutable $now,
+    ): RecordedWebhook|WebhookOutcome {
         // A valid signature authorises the counter-call; it never confirms money.
         if (! $provider->verifyWebhookSignature($envelope)) {
-            $this->guarded(fn () => $this->recorder->recordInvalid(self::CINETPAY, $payloadHash, $now));
+            $this->guarded(fn () => $this->recorder->recordInvalid($providerName, $payloadHash, $now));
 
             return WebhookOutcome::SignatureRejected;
         }
 
-        $externalEventId = CinetPayWebhook::externalEventId($transactionId, $payloadHash);
         $recorded = $this->guarded(fn (): RecordedWebhook => $this->recorder->recordVerified(
-            self::CINETPAY,
+            $providerName,
             $externalEventId,
             $payloadHash,
             $filtered,
-            $envelope->param('cpm_page_action'),
+            $eventType,
             $now,
         ));
 
@@ -90,18 +363,24 @@ final class PaymentConfirmationService
             return WebhookOutcome::Replayed;
         }
 
+        return $recorded;
+    }
+
+    /** The mandatory provider counter-call; the webhook body is never authoritative. */
+    private function counterCall(
+        PaymentConfirmationProvider $provider,
+        string $transactionId,
+        int $eventId,
+        CarbonImmutable $now,
+    ): ProviderPaymentVerificationResult {
         try {
-            $result = $provider->verifyPayment(new ProviderPaymentVerificationRequest($transactionId));
+            return $provider->verifyPayment(new ProviderPaymentVerificationRequest($transactionId));
         } catch (PaymentConfirmationException $exception) {
             // No money mutated; the event is failed in its own transaction.
-            $this->markEventFailed($recorded->id, $now);
+            $this->markEventFailed($eventId, $now);
 
             throw $exception;
         }
-
-        $this->guarded(fn () => $this->confirm($recorded->id, $transactionId, $result, $now));
-
-        return WebhookOutcome::Accepted;
     }
 
     private function confirmationProvider(): PaymentConfirmationProvider
@@ -111,16 +390,61 @@ final class PaymentConfirmationService
         return $this->factory->make();
     }
 
-    private function confirm(int $eventId, string $transactionId, ProviderPaymentVerificationResult $result, CarbonImmutable $now): void
-    {
-        DB::transaction(function () use ($eventId, $transactionId, $result, $now): void {
+    /**
+     * @param  string  $locatorColumn  one of {@see self::LOCATOR_COLUMNS}; anything else raises
+     * @param  bool  $retryUnresolved  when the signed webhook names a payment we cannot find:
+     *                                 `false` classifies it `ignored` (terminal, 200) - the
+     *                                 historical CinetPay behaviour; `true` leaves the event
+     *                                 `received` and refuses, so a provider retry reprocesses
+     *                                 it. See the unresolved branch for why.
+     */
+    private function confirm(
+        string $providerName,
+        string $locatorColumn,
+        string $locatorValue,
+        int $eventId,
+        ProviderPaymentVerificationResult $result,
+        CarbonImmutable $now,
+        bool $retryUnresolved,
+    ): void {
+        // Validated by identity against a closed, code-owned list BEFORE a query exists.
+        if (! in_array($locatorColumn, self::LOCATOR_COLUMNS, true)) {
+            throw self::integrity();
+        }
+
+        DB::transaction(function () use ($providerName, $locatorColumn, $locatorValue, $eventId, $result, $now, $retryUnresolved): void {
             // Locate the payment WITHOUT locking to discover its order.
             $located = Payment::query()
-                ->where('provider', self::CINETPAY)
-                ->where('public_id', $transactionId)
+                ->where('provider', $providerName)
+                ->where($locatorColumn, $locatorValue)
                 ->first();
 
             if ($located === null) {
+                if ($retryUnresolved) {
+                    // P3-D3 initiates in two phases: the `pending` row is committed, the
+                    // provider is called OUTSIDE any transaction, and the reference is
+                    // persisted in a second transaction. For a provider located BY that
+                    // reference, a webhook arriving inside that window finds nothing - and
+                    // classifying it `ignored` would be TERMINAL: a genuinely paid order
+                    // would sit at `pending` for ever, undelivered and unflagged.
+                    //
+                    // Leaving the event `received` keeps it non-terminal, so a redelivery
+                    // reprocesses it once the reference lands.
+                    //
+                    // ASSUMPTION, NAMED AS ONE: this relies on GeniusPay retrying after a
+                    // non-2xx response, as nearly every webhook provider does. Their public
+                    // documentation does not state it. It is not confirmed - see debt #6 in
+                    // HANDOFF.md, which covers the expiry job that must eventually bound
+                    // events left `received` for ever should the assumption prove wrong.
+                    //
+                    // The rollback below discards nothing: the event row was committed by
+                    // the recorder's own transaction, not this one.
+                    throw PaymentConfirmationException::of(
+                        Reason::PaymentUnavailable,
+                        'The payment could not be resolved.',
+                    );
+                }
+
                 // Anti-enumeration: never reveal the payment does not exist.
                 $this->markEventIgnored($eventId, null, $now);
 
@@ -340,6 +664,21 @@ final class PaymentConfirmationService
     {
         // 'ignored' requires processed_at to be set (status/date coherence CHECK).
         $this->transitionEvent($eventId, WebhookProcessingStatus::Ignored, ['processed_at' => $now], $paymentId);
+    }
+
+    /**
+     * `markEventProcessed`/`markEventIgnored` run INSIDE `confirm()`'s transaction and take
+     * `FOR UPDATE`. The refund path has no surrounding transaction of its own, so these two
+     * open one — the same shape `markEventFailed` already uses.
+     */
+    private function markEventProcessedOutsideTransaction(int $eventId, CarbonImmutable $now): void
+    {
+        $this->guarded(fn () => DB::transaction(fn () => $this->markEventProcessed($eventId, null, $now)));
+    }
+
+    private function markEventIgnoredOutsideTransaction(int $eventId, CarbonImmutable $now): void
+    {
+        $this->guarded(fn () => DB::transaction(fn () => $this->markEventIgnored($eventId, null, $now)));
     }
 
     private function markEventFailed(int $eventId, CarbonImmutable $now): void

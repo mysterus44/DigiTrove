@@ -201,6 +201,38 @@ pas une bonne surprise.
 à ligne du reste. Jamais une relance en espérant que ça passe — le cas dangereux, justement,
 passe.
 
+### ⚠️ ÉCRIRE UN FICHIER EN PYTHON : `newline=''` OU RIEN
+
+Sixième piège, mesuré le 2026-08-20 pendant le gate Genius Pay.
+
+Le dépôt est en **LF partout** (`.gitattributes` : `* text=auto eol=lf`). Sur Windows,
+`io.open(path, 'w')` de Python traduit **chaque LF en CRLF** — silencieusement, sur
+tout le fichier, pas seulement sur les lignes modifiées. Un patch de trois lignes réécrit
+donc les 210 lignes de `.env.example` en CRLF.
+
+**Comment ça se voit** : cinq contrats d'inventaire ont cassé d'un coup —
+`P4C0QueueMailSecretSafetyTest`, `P6A10…`, `P6A12…`, `P6A13…`, `P6A2SegmentJobTest`. Tous
+assertent une ligne d'environnement par `/(?m)^MAIL_PASSWORD=$/`. **En mode multiligne PCRE,
+`$` matche avant un LF mais PAS après un CR** : la ligne devient introuvable alors que son
+contenu n'a pas bougé d'un caractère.
+
+**`git diff` ne montre RIEN** : `core.autocrlf=true` normalise à la comparaison. Le fichier
+paraît propre côté git et casse côté disque, là où les tests lisent.
+
+**Règle** : tout script qui réécrit un fichier suivi utilise `open(path,'wb')` avec des
+octets, ou `io.open(path,'w',newline='')`. **Jamais le mode texte par défaut.**
+
+⚠️ **ET SURTOUT — la réparation est plus dangereuse que le défaut.** Un script « normalise
+tous les fichiers suivis » lancé sur `git ls-files` a remplacé `0D 0A` **à l'intérieur de 32
+PNG, MP4 et WOFF2**, les corrompant réellement. Restauré par `git checkout -- legacy/
+public/`, sans trace, mais la leçon tient : **une normalisation de fins de ligne se limite à
+une liste de fichiers TEXTE nommés**, jamais à un balayage du dépôt. C'est le piège du
+remplacement générique ci-dessus, appliqué aux octets au lieu des littéraux.
+
+**Contrôle** : mesurer en binaire, en comptant les octets CR-LF avec `open(f,'rb').read()`.
+Ni `grep -c`, ni `tr -cd`, ni `wc` sous Git Bash : MSYS traduit les fins de ligne en lecture et **rapporte des
+chiffres contradictoires**, ce qui a coûté un aller-retour de diagnostic ici.
+
 ### ⚠️ BRANCHE CANONIQUE : `p0-foundations-laravel13`, PAS `main`
 
 Vérifié par mesure, pas par convention : `git diff p0-foundations-laravel13...main` est
@@ -1187,17 +1219,43 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
-## ⏳ Préflight Genius Pay — attendre le prompt humain
+## 🚧 Genius Pay — adaptateur implémenté, sandbox à prouver
 
-**La feuille de route P0→P7 est CLOSE.** P7 Blog & SEO livré (`000035`, 51 migrations,
-D-070). Aucun gate n'est ouvert : Genius Pay est le suivant, par décision explicite, et
-commence par un préflight.
+**La feuille de route P0→P7 est CLOSE.** Le gate Genius Pay est **écrit** : adaptateur,
+ingress webhook, intake de remboursement, 86 tests. **Aucune migration** — la déduplication
+réutilise `payment_webhook_events (provider, external_event_id)`.
 
-⚠️ **QUATRE DETTES OUVERTES, à ne pas confondre avec du travail restant sur un gate :**
+⚠️ **CE QUI RESTE, ET C'EST HUMAIN** : un run sandbox réel de bout en bout. Le code n'a
+jamais parlé au vrai GeniusPay. Trois choses que seul ce run peut trancher, listées en §7
+de `docs/integrations/GENIUSPAY_SETUP.md` : les champs additionnels de la requête
+d'initiation, la forme exacte du corps de webhook, et le format de
+`X-Webhook-Timestamp`. **Chacune se referme par une observation, jamais par une supposition.**
+`PAYMENT_DRIVER=geniuspay` reste fail-closed sans credentials complètes, et la bascule
+`live` exige la validation explicite de KingKouda.
 
-1. **LE DÉCLENCHEUR RÉEL DE REMBOURSEMENT N'EXISTE PAS** (bloc dédié plus bas). Le moteur de
-   commissions/compensations P6-D3/D4 est complet et testé mais **DORMANT** : rien n'appelle
-   `RefundCompletionService`, le port fournisseur n'a aucune méthode de remboursement.
+### Trois décisions structurantes de ce gate, à ne pas défaire par inadvertance
+
+1. **GeniusPay se localise par `provider_payment_reference`, jamais par `public_id`.** Le
+   fournisseur n'accepte aucun identifiant marchand : sa `reference` `MTX-…` est le seul
+   handle qui revient. `PaymentConfirmationService::LOCATOR_COLUMNS` est une **allowlist
+   fermée** validée par identité avant toute construction de requête — un nom de colonne
+   variable dans un `where()` n'est sûr que borné ainsi. **Ne jamais l'ouvrir à une valeur
+   calculée.**
+2. **Un webhook signé mais non résolu reste `received`, jamais `ignored`.** `ignored` est
+   terminal ; sur ce fournisseur il condamnerait une commande réellement payée à rester
+   `pending` pour toujours. Scopé à GeniusPay : CinetPay garde son `ignored` à l'identique.
+3. **`RefundCompletionService` ne crée jamais, il finalise.** La création vit dans
+   `GeniusPayRefundIntakeService`. Écrire `status = 'succeeded'` directement serait plus
+   court et **n'émettrait jamais `RefundSucceeded`** — le moteur P6-D3/D4 resterait dormant
+   sans la moindre erreur. Ne fusionnez jamais les deux contrats.
+
+⚠️ **SEPT DETTES OUVERTES, à ne pas confondre avec du travail restant sur un gate :**
+
+1. ✅ **FERMÉE PAR CE GATE — le déclencheur de remboursement existe.**
+   `payment.refunded` → contre-appel fournisseur → `GeniusPayRefundIntakeService` →
+   `RefundCompletionService::completeSucceededRefund()` → `RefundSucceeded` →
+   `ProcessAffiliateRefundReversal`. Le moteur P6-D3/D4 **n'est plus dormant** — sous
+   réserve que `PAYMENT_DRIVER=geniuspay` soit actif avec des credentials complètes.
 2. **`release` n'a aucune sémantique** — type POSITIF, l'émettre par-dessus un `accrual`
    doublerait le solde (D-068 §4).
 3. **`payout_reversal` est SCOPÉ** : il libère une réservation jamais payée, rien d'autre.
@@ -1206,6 +1264,68 @@ commence par un préflight.
 4. **Tags legacy non importés** : `legacy/data/blog-articles.json` porte une chaîne `tags`
    par article, aucune table `tags` n'a été créée (ni le PRD ni les arbitrages ne la
    demandaient). Les données sont préservées ; reprise possible en gate ultérieur (D-070).
+5. **REMBOURSEMENTS PARTIELS INDÉTECTABLES CHEZ GENIUSPAY.** Leur documentation publique
+   **n'expose aucun champ de montant remboursé** — ni sur le webhook `payment.refunded`, ni
+   sur `GET /payments/{reference}`. Vérifié indépendamment par KingKouda : ce n'est pas une
+   lacune de lecture, c'est une lacune réelle de leur documentation. **Décision : tout
+   `payment.refunded` est traité comme un remboursement TOTAL**, du montant capturé. Un
+   remboursement partiel non exposé est indétectable depuis DigiTrove quel que soit l'effort
+   — limite fournisseur, pas défaut d'adaptateur.
+   **Action hors code, pour Mohammed** : obtenir du support GeniusPay une confirmation
+   **écrite** de leur politique de remboursement partiel, pour lever ou confirmer cette
+   hypothèse **avant** qu'un remboursement partiel réel ne teste la limite en production.
+   Documenté en §6 de `docs/integrations/GENIUSPAY_SETUP.md`.
+6. **AUCUNE EXPIRATION DES WEBHOOKS RESTÉS `received`.** Le point 2 ci-dessus laisse un
+   événement non résolu en `received` pour qu'une redélivrance le reprenne. Cela **suppose**
+   que GeniusPay retente après une réponse non-2xx, comme le fait la quasi-totalité des
+   fournisseurs — **leur documentation ne le dit pas**. Si l'hypothèse est fausse,
+   l'événement reste `received` indéfiniment, silencieusement.
+   **Cahier des charges du job à écrire** (délibérément hors périmètre de ce gate) :
+   - fenêtre proposée : **24 h** avant expiration ;
+   - **nouvel état terminal distinct**, nommé explicitement **`unresolved_expired`** —
+     jamais confondu avec `ignored`, qui signifie un rejet délibéré. Confondre les deux
+     effacerait la différence entre « nous avons décidé de ne rien faire » et « nous n'avons
+     jamais réussi à traiter ceci » ;
+   - **alerte de niveau `critical`** dès qu'un événement dépasse un seuil raisonnable
+     (~15 min) en `received`, pour qu'un opérateur humain voie le problème **avant** que le
+     job n'existe. C'est la partie qui compte le plus tant que le reste n'est pas écrit.
+
+   ⚠️ **TROUVÉ EN RELECTURE ADVERSE, PRÉEXISTANT ET NON MODIFIÉ PAR CE GATE** : le même
+   risque existe déjà pour TOUS les fournisseurs, CinetPay compris, par un autre chemin.
+   Quand le **contre-appel** échoue (timeout, panne fournisseur), `processVerifiedWebhook`
+   appelle `markEventFailed` — et `failed` est **TERMINAL** au sens de
+   `RecordedWebhook::isTerminal()`. Une redélivrance du même `external_event_id` retombe
+   donc sur « replay terminal » et répond 200 **sans jamais retraiter** : un paiement
+   réellement encaissé peut n'être jamais confirmé, à cause d'une panne réseau passagère.
+   C'est le comportement P3-D4 d'origine, prouvé par le test CinetPay
+   *« it mutates nothing and fails the event when the counter-call times out »*.
+   **Délibérément NON corrigé ici** : le changer modifierait CinetPay, hors du périmètre
+   arbitré. Le job de réconciliation ci-dessus doit couvrir **les deux** familles —
+   `received` jamais résolu ET `failed` jamais réessayé — sinon il ne ferme que la moitié
+   du trou.
+
+7. **LA REPRISE D'INITIATION NE PEUT PAS ÊTRE IDEMPOTENTE CHEZ GENIUSPAY.**
+   Trouvé en relecture adverse, déduit du code — pas observé en sandbox, qui reste à faire.
+   Le contrat `App\Contracts\Payments\PaymentProvider` exige qu'`initiate()` soit idempotent
+   sur `paymentPublicId` : « replaying the same public id must not create a second charge ».
+   CinetPay l'honore, parce qu'il accepte notre `transaction_id`. **GeniusPay n'expose aucun
+   champ d'identifiant marchand ni aucune clé d'idempotence** : c'est LUI qui génère la
+   `reference`.
+   **Conséquence exacte**, sur le seul chemin concerné (P3-D3 rappelle le fournisseur pour
+   récupérer des instructions client perdues) : le rappel crée une **seconde** transaction
+   `MTX-…` chez GeniusPay ; `PaymentInitiationService::finalise()` voit alors une référence
+   différente de celle déjà persistée et refuse par `ProviderReferenceConflict`. **Rien
+   n'est corrompu côté DigiTrove** — la référence stockée n'est jamais écrasée — mais la
+   reprise ÉCHOUE là où elle réussit avec CinetPay, et une transaction orpheline reste
+   ouverte côté fournisseur.
+   **Non corrigé ici, délibérément** : la seule correction côté DigiTrove serait de ne plus
+   rappeler le fournisseur sur rejeu, ce qui modifierait `PaymentInitiationService` (P3-D3,
+   hors périmètre arbitré) et casserait le test CinetPay *« it re-calls the provider on
+   replay to recover lost client instructions »*, dont le comportement est voulu.
+   **Action hors code, pour Mohammed — à poser au support GeniusPay EN MÊME TEMPS que la
+   question des remboursements partiels** : exposez-vous une clé d'idempotence, ou un champ
+   de référence marchand accepté à la création d'un paiement ? Une réponse positive se
+   traduit par **un champ de plus** dans `GeniusPayProvider::initiate()`, rien d'autre.
 
 ⚠️ **Durcissement préproduction, non commencé** : P5-A3D (opérations analytiques dans
 Filament) et Core Web Vitals. Aucun des deux n'est bloquant pour un gate livré.

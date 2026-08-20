@@ -7,6 +7,7 @@ namespace App\Payments;
 use App\Contracts\Payments\PaymentConfirmationProvider;
 use App\Contracts\Payments\PaymentProvider;
 use App\Payments\CinetPay\CinetPayProvider;
+use App\Payments\GeniusPay\GeniusPayProvider;
 use App\Services\Payments\PaymentConfirmationException;
 use App\Services\Payments\PaymentConfirmationRefusalReason as Reason;
 
@@ -30,6 +31,7 @@ final class PaymentProviderFactory
 
         return match ($driver) {
             'cinetpay' => new CinetPayProvider($this->cinetpayConfig()),
+            'geniuspay' => new GeniusPayProvider($this->providerConfig('geniuspay')),
             // Reserved but deliberately refused until the official contract exists.
             'powerpay' => throw PaymentConfirmationException::of(
                 Reason::ProviderConfigurationFailure,
@@ -45,7 +47,18 @@ final class PaymentProviderFactory
     /** @return array<string, mixed> */
     private function cinetpayConfig(): array
     {
-        $config = $this->config['cinetpay'] ?? null;
+        return $this->providerConfig('cinetpay');
+    }
+
+    /**
+     * A provider's own config sub-array, or an empty one so its constructor — not this
+     * factory — is what refuses an incomplete adapter.
+     *
+     * @return array<string, mixed>
+     */
+    private function providerConfig(string $provider): array
+    {
+        $config = $this->config[$provider] ?? null;
 
         return is_array($config) ? $config : [];
     }
