@@ -1246,7 +1246,34 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
-## 🛠️ DURCISSEMENT PRÉ-PRODUCTION — en cours
+## ✅ DURCISSEMENT PRÉ-PRODUCTION — H1 + H2 TERMINÉS, MERGÉS ET VALIDÉS
+
+**Les quatre lots sont sur la stable.** 53 migrations, la dernière
+`000037_create_failed_jobs_table.php`, aucune `000038`.
+
+| lot | PR | merge | contenu |
+|---|---|---|---|
+| **1** | [#53](https://github.com/mysterus44/DigiTrove/pull/53) | `c2baaeb5` | en-têtes de sécurité, cookie de session, throttle webhook (D-072) |
+| **2** | [#54](https://github.com/mysterus44/DigiTrove/pull/54) | `1b706eac` | seeder admin fail-closed, compte jetable gaté (D-073) |
+| **3** | [#55](https://github.com/mysterus44/DigiTrove/pull/55) | `ba443627` | **H1 réconciliation webhooks**, `000036` (D-074) |
+| **4** | [#56](https://github.com/mysterus44/DigiTrove/pull/56) | `92188086` | CORS fermé, `failed_jobs` `000037`, log rotatif (D-075, D-076) |
+
+Validation post-merge sur la stable : **309 / 1679, 0 échec** · Pint **642** ·
+non-régression CinetPay **123/123, `sha 2786c22a8177d586`, cinq mesures identiques**.
+
+⚠️ **CE QUI RESTE À LA MAIN DE KINGKOUDA, ET SEULEMENT À LUI :**
+
+1. **Passer `WEBHOOK_RECONCILIATION_ENABLED` à `true`** — le prérequis technique est levé
+   (lot 4 : rotation du log), mais l'activation suppose qu'un humain lise réellement les
+   alertes `critical` en production. Le drapeau reste `false` dans le gabarit.
+2. **Remplir les cinq lignes Genius Pay** dans le `.env` local et prouver le sandbox de bout
+   en bout — voir §7 de `docs/integrations/GENIUSPAY_SETUP.md`.
+3. **Poser les deux questions au support GeniusPay** (dettes #5 et #7) : politique de
+   remboursement partiel, et clé d'idempotence à l'initiation.
+4. **Remplir `ADMIN_EMAIL` / `ADMIN_PASSWORD`** puis lancer `php artisan db:seed`. Le seeder
+   refuse fermé si l'un manque ou si le mot de passe est trivial.
+
+### 🛠️ Historique du cadrage (conservé)
 
 Périmètre arbitré, priorisé, découpé en quatre lots. **H3 (P5-A3D) et H4 (Core Web Vitals)
 restent hors périmètre** — à lister comme REPORTÉS si le calendrier ne les absorbe pas,
