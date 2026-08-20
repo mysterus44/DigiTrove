@@ -14,8 +14,8 @@ return [
     | An empty, unknown, or not-yet-implemented driver fails closed with a
     | ProviderConfigurationFailure and never issues an HTTP request.
     |
-    | Supported: 'cinetpay'. 'powerpay' is reserved but intentionally refused
-    | until its official contract is implemented (see docs/integrations).
+    | Supported: 'cinetpay', 'geniuspay'. 'powerpay' is reserved but intentionally
+    | refused until its official contract is implemented (see docs/integrations).
     |
     */
 
@@ -45,6 +45,39 @@ return [
         'timeout' => (int) env('CINETPAY_TIMEOUT', 15),
         'notify_url' => env('CINETPAY_NOTIFY_URL'),
         'return_url' => env('CINETPAY_RETURN_URL'),
+        // HTTPS is mandatory outside local/testing; never disable TLS verification.
+        'require_https' => ! in_array(env('APP_ENV', 'production'), ['local', 'testing'], true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | GeniusPay (real adapter — disabled unless selected)
+    |--------------------------------------------------------------------------
+    |
+    | Same rules as CinetPay: secrets live in the environment only, there are no
+    | default secret values, HTTPS is mandatory outside local/testing, and TLS
+    | verification is never disabled.
+    |
+    | SANDBOX FIRST. `pk_sandbox_…` / `sk_sandbox_…` / `whsec_sandbox_…` are the only
+    | credentials used until the flow is proven end to end. The adapter never inspects
+    | the prefix and never chooses an environment: switching to `live` is a human
+    | decision made in `.env`, and nowhere else.
+    |
+    */
+
+    'geniuspay' => [
+        // 'sandbox' or 'live'. Not a switch the adapter reads to CHOOSE anything: a
+        // cross-check that refuses live credentials in a sandbox run and the reverse.
+        'environment' => env('GENIUSPAY_ENVIRONMENT', 'sandbox'),
+        'api_key' => env('GENIUSPAY_API_KEY'),
+        'api_secret' => env('GENIUSPAY_API_SECRET'),
+        'webhook_secret' => env('GENIUSPAY_WEBHOOK_SECRET'),
+        'base_url' => env('GENIUSPAY_BASE_URL', 'https://pay.genius.ci/api/v1/merchant'),
+        'connect_timeout' => (int) env('GENIUSPAY_CONNECT_TIMEOUT', 5),
+        'timeout' => (int) env('GENIUSPAY_TIMEOUT', 15),
+        // Replay window on `X-Webhook-Timestamp`, in seconds. Symmetric, so ordinary
+        // NTP drift on the provider side does not drop legitimate notifications.
+        'webhook_tolerance_seconds' => (int) env('GENIUSPAY_WEBHOOK_TOLERANCE', 300),
         // HTTPS is mandatory outside local/testing; never disable TLS verification.
         'require_https' => ! in_array(env('APP_ENV', 'production'), ['local', 'testing'], true),
     ],

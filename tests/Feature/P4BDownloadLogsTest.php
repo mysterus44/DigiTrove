@@ -127,6 +127,9 @@ const P4B_ALLOWED_SERVICE_FILES = [
     'Delivery/RefundCompletionService.php',
     // P3-D4/P3-D5 (D-034) — server-side confirmation. Commerce only, no delivery.
     'Payments/FreeOrderConfirmationService.php',
+    // Genius Pay gate — creates the `refunds` row a provider-observed refund needs, then
+    // hands it to the UNCHANGED RefundCompletionService. Commerce only, no delivery.
+    'Payments/GeniusPayRefundIntakeService.php',
     // P3-D3 (D-033) — payment initiation. Commerce only, no delivery.
     'Payments/InitiatedPayment.php',
     // P3-D4/P3-D5 (D-034) — server-side confirmation. Commerce only, no delivery.

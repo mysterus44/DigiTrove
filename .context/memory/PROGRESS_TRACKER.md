@@ -17,8 +17,9 @@ P3-D APPLICATIF     : ██████████  P3-D1→D5 TOUS MERGÉS (P
 P4 LIVRAISON        : ██████████  Schéma COMPLET — P4-A0/A1/A2/A2.1 + P4-B0 + P4-B mergés (PR #16 → 98441014)
 P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERGÉS ET VALIDÉS via PR #24 et PR #25 (`109fde4c`, CI #31, D-036). Aucun I/O stockage sous transaction PostgreSQL ; autorisation non énumérable, cookie de tentative, streaming privé/Range/HEAD, opérations et C1→C6 ; pipeline désactivé par défaut jusqu'à configuration opérationnelle. D-061 aligne son garde mail sur l'autorité stricte P6-C : D-030 GLOBAL fermé sur la branche de prérequis Storefront.
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
-P6 CRM & MARKETING  : ██████████  100% — P6-A0→P6-C mergés, puis affiliation P6-D0→P6-D4 CLOSE (D-057 → D-069, PR #40→#50). Moteur de commissions/payouts complet mais **DORMANT** : aucun déclencheur réel de remboursement n'existe encore.
+P6 CRM & MARKETING  : ██████████  100% — P6-A0→P6-C mergés, puis affiliation P6-D0→P6-D4 CLOSE (D-057 → D-069, PR #40→#50). Moteur de commissions/payouts complet ; **son déclencheur de remboursement existe depuis le gate Genius Pay** (D-071).
 P7 BLOG & SEO       : ██████████  100% — `000035`, blog natif, sitemap/robots dynamiques, JSON-LD Article+Product, redirections 301 sans chaîne, import legacy idempotent (D-070)
+GENIUS PAY          : █████████░   90% — adaptateur, ingress webhook JSON signé sur octets bruts, intake de remboursement, 86 tests, AUCUNE migration (D-071). **Reste : un run sandbox réel de bout en bout**, seul capable de trancher les trois points non documentés listés en §7 de `docs/integrations/GENIUSPAY_SETUP.md`.
 ```
 
 > ⚠️ **BLOC CI-DESSUS CORRIGÉ LE 2026-08-19.** Il annonçait encore « P6-A0→P6-D1 mergés »
@@ -26,8 +27,18 @@ P7 BLOG & SEO       : ██████████  100% — `000035`, blog na
 > plusieurs gates : c'est le TRACKER qui était périmé, jamais le code. Vérifier l'état réel
 > par `git merge-base --is-ancestor` avant de se fier à une ligne de ce tableau.
 >
-> **La feuille de route P0→P7 est CLOSE.** Reste : le durcissement préproduction
-> (P5-A3D, Core Web Vitals), et le déclencheur réel de remboursement.
+> **La feuille de route P0→P7 est CLOSE.** Le gate Genius Pay (D-071) a fermé le
+> déclencheur réel de remboursement : `payment.refunded` → contre-appel fournisseur →
+> `GeniusPayRefundIntakeService` → `RefundCompletionService` **inchangé** →
+> `RefundSucceeded` → moteur P6-D3/D4. Reste : le durcissement préproduction
+> (P5-A3D, Core Web Vitals) et un **run sandbox réel** de Genius Pay.
+>
+> ⚠️ **Trois invariants du gate Genius Pay à ne pas défaire** : GeniusPay se localise par
+> `provider_payment_reference` via l'allowlist fermée `LOCATOR_COLUMNS` (jamais une valeur
+> calculée) ; un webhook signé non résolu reste `received`, jamais `ignored` (terminal, il
+> condamnerait une commande payée) ; et `RefundCompletionService` **ne crée jamais**, il
+> finalise — fusionner les deux contrats rendrait le moteur de compensation dormant sans
+> aucune erreur.
 >
 > Rappel : **aucune logique métier avant que P1→P4 soient migrés et testés.**
 > P1, P2, P3A et P3B sont mergés dans `p0-foundations-laravel13` (P3B via PR #5 →

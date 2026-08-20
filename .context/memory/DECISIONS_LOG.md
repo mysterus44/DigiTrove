@@ -4293,6 +4293,89 @@ chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la mêm
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
 vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
 
+### D-071 : Genius Pay — adaptateur, ingress webhook et intake de remboursement ✅
+
+CONTEXTE : premier gate money-adjacent avec de vrais secrets depuis P3-D4. GeniusPay
+remplace CinetPay comme `PAYMENT_DRIVER` actif — **additif, jamais une réécriture** :
+CinetPay n'est pas supprimé, seulement désactivé. Le patron port + factory absorbait déjà
+l'ajout ; **aucune architecture nouvelle, aucune migration**. Faits tirés de la
+documentation publique (`pay.genius.ci/docs/api`), rien d'inventé.
+
+DÉCISIONS :
+
+1. **`ProviderWebhookEnvelope` gagne `?string $rawBody = null`** (+8 lignes, −0). GeniusPay
+   signe `timestamp . "." . corps JSON brut` : un corps redécodé puis réencodé change
+   l'ordre des clés et les espaces, donc le condensé. CinetPay signe des champs de
+   formulaire et laisse le champ `null` — comportement inchangé. Option (b), un second DTO,
+   écartée : deux enveloppes presque identiques finissent toujours par diverger.
+2. **`PaymentConfirmationService` généralisé par EXTRACTION PRIVÉE, pas par alias public.**
+   La forme littérale proposée — `handleProviderWebhook(string $provider, …)` avec
+   `handleCinetPayWebhook()` en alias mince — aurait forcé l'extraction AVANT la résolution
+   du fournisseur, donc inversé le type d'exception levée sur un payload malformé en driver
+   mal configuré (`WebhookInvalid` au lieu de `ProviderConfigurationFailure`). **Changement
+   de comportement observable, donc refusé.** Écart signalé avant écriture et validé.
+3. **`confirm()` localise par un couple `(colonne, valeur)`, borné par allowlist fermée.**
+   GeniusPay n'accepte aucun identifiant marchand : sa `reference` `MTX-…` est le seul
+   handle qui revienne, et `payments_provider_reference_unique` la rend non ambiguë.
+   `LOCATOR_COLUMNS = ['public_id', 'provider_payment_reference']` est validée **par
+   identité, avant toute construction de requête** — un nom de colonne variable dans un
+   `where()` n'est sûr que borné ainsi. CinetPay passe textuellement
+   `('public_id', $transactionId)` ; aucun paramètre n'a de valeur par défaut, pour qu'un
+   argument oublié soit une erreur et non un comportement silencieux.
+4. **Un webhook signé mais non résolu reste `received`, jamais `ignored`.** P3-D3 initie en
+   deux phases : la référence n'existe localement qu'après la seconde transaction. Un
+   webhook arrivé dans cette fenêtre ne trouve rien, et `ignored` est TERMINAL — une
+   commande réellement payée resterait `pending` pour toujours, non livrée et non signalée.
+   Réponse 503 pour inviter à la redélivrance. **Scopé à GeniusPay** : CinetPay, qui connaît
+   `public_id` dès la réservation, garde `ignored` à l'identique.
+   ⚠️ **HYPOTHÈSE NOMMÉE** : que GeniusPay retente après un non-2xx. Leur documentation ne
+   le dit pas. Dette #6 (`HANDOFF.md`) porte le job d'expiration, l'état terminal distinct
+   `unresolved_expired` et l'alerte `critical` au-delà de ~15 min.
+5. **`refunded` → `Unknown`, délibérément.** Ni `Succeeded` (ce serait confirmer de l'argent
+   rendu) ni `Failed` (l'argent est bien passé). `expired` → `Cancelled`, car terminal et
+   non payé : `Unknown` laisserait le paiement en attente indéfiniment. Vérification faite :
+   aucun texte visible du client ne confond « annulé » et « expiré » —
+   `CheckoutController::statusLabel()` regroupe déjà les deux sous « Cette commande n'est
+   plus valide. » **Aucune correction de copie nécessaire.**
+6. **`RefundCompletionService` ne crée jamais, il finalise.** `GeniusPayRefundIntakeService`
+   est une classe NOUVELLE et DISTINCTE : elle crée la ligne `refunds` en `pending` avec une
+   clé d'idempotence **déterministe** dérivée de l'`id` du webhook, puis appelle la chaîne
+   existante **inchangée**. Écrire `status = 'succeeded'` directement serait deux lignes de
+   moins et **n'émettrait jamais `RefundSucceeded`** : le moteur P6-D3/D4 resterait dormant
+   **sans aucune erreur** — la forme de panne de la table de redirections morte de P7,
+   appliquée à de l'argent. Les deux contrats ne sont jamais fusionnés.
+7. **Tout `payment.refunded` est un remboursement TOTAL.** GeniusPay ne documente aucun
+   champ de montant remboursé, nulle part. Vérifié indépendamment par KingKouda : lacune
+   réelle de leur documentation, pas de la lecture. Un remboursement partiel non exposé est
+   indétectable quel que soit l'effort — limite fournisseur, pas défaut d'adaptateur.
+   Dette #5, plus une demande de confirmation écrite au support.
+8. **Seul `XOF` est envoyé, et il est envoyé explicitement.** GeniusPay convertit
+   automatiquement les devises non-XOF : le montant capturé différerait de
+   `orders.total_minor` et chaque confirmation partirait en revue manuelle. Refus **avant
+   l'appel réseau**. Ambiguïté évitée plutôt que gérée.
+9. **`GENIUSPAY_ENVIRONMENT` est un contrôle croisé, pas un sélecteur.** Déclarer `sandbox`
+   avec une clé `_live_` — ou l'inverse — refuse avant toute requête. Sans lui, « je teste
+   en sandbox » est une croyance, et sa façon d'être fausse est un vrai débit sur une vraie
+   carte. Une valeur non reconnue refuse aussi : un typo ne doit pas désactiver en silence
+   la garde qui existe pour rattraper une erreur. Seule une CONTRADICTION refuse, jamais
+   l'absence de marqueur — c'est une garde anti-catastrophe, pas un validateur de format.
+
+IMPACT : **aucune migration** — la déduplication réutilise
+`payment_webhook_events (provider, external_event_id)`. `P4B_ALLOWED_SERVICE_FILES` élargie
+**explicitement** d'une entrée (`Payments/GeniusPayRefundIntakeService.php`), tri vérifié
+programmatiquement. `PAYMENT_DRIVER=geniuspay` reste fail-closed sans credentials
+complètes ; aucune bascule `live` sans validation explicite de KingKouda après un run
+sandbox prouvé de bout en bout. Aucun secret dans le dépôt : `.env.example` ne porte que
+des emplacements vides. Non-régression CinetPay **prouvée par liste nommée de tests et
+condensé**, refaite après le changement de `confirm()` et pas seulement avant.
+
+⚠️ **DÉFAUT DE TEST INSTRUCTIF, retenu** : `Http::fake()` **fusionne** les stubs au lieu de
+les remplacer, et le premier motif qui matche gagne. Re-faker la même URL en cours de
+scénario est donc silencieusement sans effet — le contre-appel continuait de répondre
+`completed` et quatre tests de remboursement échouaient. **Le code était correct** : il a
+refusé de créer un remboursement que le fournisseur ne confirmait pas. Corrigé par un stub
+unique à état mutable, jamais en affaiblissant l'assertion.
+
 ### D-070 : P7 — Blog natif & SEO ✅
 
 CONTEXTE : dernier gate de la feuille de route P0→P7. Le blog est un canal d'acquisition, pas

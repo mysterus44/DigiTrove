@@ -23,10 +23,18 @@ final readonly class ProviderWebhookEnvelope
     /**
      * @param  array<string, string>  $headers
      * @param  array<string, string>  $params
+     * @param  ?string  $rawBody  the EXACT bytes of the request body, when the provider signs
+     *                            them rather than a field concatenation. Added for GeniusPay,
+     *                            whose HMAC covers `timestamp . "." . raw JSON`: re-encoding a
+     *                            decoded body would change key order and whitespace, so the
+     *                            signature must be checked against what actually arrived.
+     *                            CinetPay signs form fields and leaves this `null`, so its
+     *                            behaviour is unchanged.
      */
     public function __construct(
         array $headers,
         public array $params,
+        public ?string $rawBody = null,
     ) {
         $normalized = [];
         foreach ($headers as $name => $value) {
