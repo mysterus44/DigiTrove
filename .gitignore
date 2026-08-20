@@ -48,3 +48,7 @@ data/*.db
 /storage/logs/*
 !/storage/logs/.gitignore
 !/storage/logs/.gitkeep
+
+# Configuration locale a la machine (launch.json de previsualisation, reglages
+# d'agent). Rien la-dedans n'est portable d'un poste a l'autre.
+.claude/

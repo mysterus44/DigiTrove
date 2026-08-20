@@ -139,6 +139,24 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(20)->by((string) $request->ip());
         });
 
+        // H2.5 — provider webhook ingress. It was the only public write path in the
+        // repository with no limit at all, and it is not a cheap one: every request costs
+        // an HMAC verification, and every SIGNED request costs a database write plus an
+        // outbound HTTP counter-call to the provider.
+        //
+        // The ceiling is deliberately high. A legitimate provider retrying a burst of
+        // notifications must never be throttled — dropping a real payment notification is
+        // far worse than absorbing some junk — so this bounds abuse, it does not shape
+        // normal traffic. Keyed per IP, which is what a provider actually presents.
+        //
+        // 429 carries no body: the response must reveal nothing, exactly like every other
+        // refusal on this endpoint.
+        RateLimiter::for('payment-webhook', function (Request $request): Limit {
+            return Limit::perMinute(120)
+                ->by((string) $request->ip())
+                ->response(fn () => response()->json(['status' => 'unavailable'], 429));
+        });
+
         // Secure delivery pipeline (P4-C0, D-035): a paid order queues an
         // order-id-only delivery job, and only when the pipeline is enabled.
         Event::listen(OrderPaid::class, QueueSecureDelivery::class);

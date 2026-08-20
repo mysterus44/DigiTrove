@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\ApplyStoredRedirects;
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -23,6 +24,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // redirect can never shadow a real route, and a row for a path that later becomes a
         // genuine page silently stops mattering instead of breaking the site.
         $middleware->append(ApplyStoredRedirects::class);
+
+        // H2.1. GLOBAL, and appended AFTER the redirect middleware so a 301 response
+        // carries the headers too. It is a floor that never overwrites a header a
+        // controller already set — the nonce-based `default-src 'none'` pages stay strict.
+        $middleware->append(SecurityHeaders::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

@@ -1219,6 +1219,63 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
+## 🛠️ DURCISSEMENT PRÉ-PRODUCTION — en cours
+
+Périmètre arbitré, priorisé, découpé en quatre lots. **H3 (P5-A3D) et H4 (Core Web Vitals)
+restent hors périmètre** — à lister comme REPORTÉS si le calendrier ne les absorbe pas,
+**jamais omis silencieusement**.
+
+| lot | contenu | migration | état |
+|---|---|---|---|
+| **1** | H2.1 en-têtes · H2.2 cookie de session · H2.5 throttle webhook | aucune | **PR A** |
+| **2** | H2.3 seeder admin · H2.4 `test@example.com` gaté | aucune | à faire |
+| **3** | **H1 réconciliation webhooks** — dette #6 | **`000036`** | à faire |
+| **4** | H2.6 CORS · H2.7 `failed_jobs` · H2.8 canal de log | `000037` | à faire |
+
+⚠️ **UNE MIGRATION PAR PR.** Les lots 3 et 4 en portent chacun une : les grouper mettrait
+deux migrations dans une seule frontière de rollback, ce que le protocole interdit depuis
+P4-A0.
+
+### ⚠️ LA PREUVE ATTENDUE N'EST PAS LA MÊME SELON LE LOT
+
+Arbitré explicitement, pour ne pas appliquer une discipline mécaniquement au mauvais endroit :
+
+- **Lot 1 et lot 2 ont une surface navigateur** — CSP et connexion admin. La suite Pest ne
+  suffit pas ; il faut un vrai navigateur. Voir ci-dessous pourquoi.
+- **Le lot 3 n'en a aucune** : c'est un trigger PostgreSQL et une commande artisan. Sa
+  preuve équivalente est que les transitions interdites lèvent réellement `23514` **sous
+  les vraies identités de rôle**, patron P4-B0 — jamais un test qui simule le refus.
+
+### ⚠️ CE QUE LA VÉRIFICATION NAVIGATEUR A ATTRAPÉ (lot 1)
+
+La première CSP **tuait entièrement le panel Filament**. Alpine compile chaque expression
+`x-data`/`x-bind` avec `new Function` : sans `'unsafe-eval'`, vingt `EvalError`, champ mot
+de passe non initialisé, bouton de connexion non lié, modales inertes — **pendant que le
+HTML était servi parfaitement et que toutes les assertions passaient**. Aucun test de la
+suite ne peut voir ça : la panne est dans le moteur JavaScript du navigateur.
+
+`'unsafe-eval'` est donc **scopé au seul chemin du panel**, lu depuis
+`Filament::getPanel('admin')->getPath()`. Le storefront ne l'hérite pas, et le contrat le
+prouve dans les deux sens.
+
+**Règle à retenir** : un correctif de sécurité qui change ce que le navigateur exécute
+n'est pas terminé quand la suite est verte. Il est terminé quand un navigateur l'a exécuté.
+
+### Points arbitrés pour le lot 2, à ne pas réinventer
+
+- Le compte admin **n'utilise pas `UserFactory`** : elle pose `role => Customer` et
+  `email_verified_at => now()`, donc s'y appuyer produirait silencieusement **un client
+  vérifié à la place d'un administrateur** — et un test superficiel passerait, puisqu'un
+  utilisateur aurait bien été créé. `role`, `status` et `email_verified_at` sont écrits
+  explicitement.
+- **« Trivial »** est défini, pas improvisé : **12 caractères minimum**, liste noire
+  explicite (`password`, `admin`, `changeme`, `secret`, `digitrove`, répétition d'un seul
+  caractère), et **le mot de passe ne doit ni égaler ni contenir la partie locale
+  d'`ADMIN_EMAIL`** — c'est l'erreur la plus probable (`admin@digitrove.com` / `admin123`)
+  et une liste noire seule ne l'attrape pas. **Aucune règle de composition** type « une
+  majuscule un chiffre » : elles produisent surtout des mots de passe mémorisables donc
+  faibles. La longueur est le facteur qui compte.
+
 ## 🚧 Genius Pay — MERGÉ, sandbox à prouver
 
 **Genius Pay est TERMINÉ, MERGÉ ET VALIDÉ** via

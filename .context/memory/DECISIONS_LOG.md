@@ -4293,6 +4293,69 @@ chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la mêm
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
 vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
 
+### D-072 : H2.1 / H2.2 / H2.5 — en-têtes, cookie de session, throttle webhook ✅
+
+CONTEXTE : premier lot du durcissement pré-production. **Aucune fonctionnalité nouvelle,
+aucune migration** — une revue de l'existant, corrigée fail-closed là où un défaut réel a
+été mesuré. Trois des huit points de l'audit H2, ceux qui bénéficient immédiatement aux
+endpoints Genius Pay tout juste mergés.
+
+DÉCISIONS :
+
+1. **`SecurityHeaders` est un PLANCHER, jamais un plafond.** Middleware global, il
+   n'écrase **aucun** en-tête déjà posé. Cinq contrôleurs — landing de téléchargement,
+   fichier, autorisation, reprise de panier, export CRM — servent déjà une politique
+   `default-src 'none'` à nonce ; un middleware qui les écraserait rabaisserait
+   **silencieusement les pages les plus sensibles de l'application à la politique la plus
+   permissive qu'elle contienne**.
+2. ⚠️ **DÉFAUT RÉEL TROUVÉ AU NAVIGATEUR, INVISIBLE AUX TESTS.** La première CSP **tuait
+   entièrement le panel Filament**. Alpine compile chaque expression `x-data`/`x-bind` avec
+   `new Function` : sans `'unsafe-eval'`, 20 `EvalError`, champ mot de passe non
+   initialisé, bouton de connexion non lié, modales inertes — **pendant que le HTML était
+   servi parfaitement et que toutes les assertions passaient**. Aucun test de la suite ne
+   peut voir ça : la panne est dans le moteur JavaScript du navigateur.
+   Correctif : `'unsafe-eval'` **scopé au seul chemin du panel**, lu depuis
+   `Filament::getPanel('admin')->getPath()` et jamais codé en dur — déplacer le panel
+   déplace la frontière avec lui. Le storefront ne l'hérite pas. Preuve après correctif :
+   `new Function` opérationnel, **11/11 composants Alpine initialisés**, bascule
+   révéler-mot-de-passe faisant réellement passer l'input de `password` à `text`.
+   Le contrat asserte désormais que `/admin` contient `'unsafe-eval'` et que `/` ne le
+   contient pas : élargir la relaxation au public fait tomber le test.
+3. **La CSP n'est PAS une défense XSS et le commentaire le dit.** `'unsafe-inline'` sur
+   `script-src` la rend inopérante contre l'injection ; c'est un contrôle de chaîne
+   d'approvisionnement et de clickjacking. La défense XSS reste l'échappement Blade et
+   `ArticleContent::toHtml()`. **Ne jamais lire cet en-tête comme une permission de
+   relâcher l'un ou l'autre.**
+4. **Origines Vite autorisées en `local` UNIQUEMENT**, mesuré de la même façon : une
+   politique stricte bloque le client HMR sur `:5173` et le développeur perd le rechargement
+   à chaud sans comprendre pourquoi. En production `@vite` sert des fichiers buildés depuis
+   la même origine, donc `'self'` suffit et l'exception ne s'applique jamais.
+5. **HSTS seulement sur HTTPS réel et hors local/testing.** Annoncé depuis un poste de
+   développement, il rendrait `http://localhost` injoignable pour un an. `preload` n'est
+   **pas** revendiqué : c'est irréversible.
+6. **`SessionCookiePolicy` — le défaut fermé.** `config/session.php` lisait
+   `env('SESSION_SECURE_COOKIE')` **sans défaut** : une ligne absente de `.env` produisait
+   `null`, que Laravel lit comme « non sécurisé ». Le cookie de session voyageait en clair
+   en production **parce qu'une variable manquait**, sans que rien ne le signale. Hors
+   local/testing, `secure` et `http_only` sont désormais **forcés** et `same_site` borné à
+   `lax|strict` — `none` est une valeur supportée qui désactive la protection.
+   ⚠️ La règle vit dans une **classe nommée**, pas en ternaires dans le fichier de config :
+   `config/*.php` est chargé via un dépôt d'environnement **IMMUABLE**, donc une logique
+   enfouie là n'est **pas atteignable par un test**. Mesuré — un premier test manipulant
+   `APP_ENV` était un no-op silencieux qui aurait affirmé le comportement `testing` en
+   prétendant prouver celui de production. Patron déjà présent : `App\Support\DeliveryConfig`.
+7. **Throttle `payment-webhook` à 120/min par IP.** C'était le **seul** chemin d'écriture
+   publique du dépôt sans aucune limite, et il n'est pas gratuit : chaque requête coûte une
+   vérification HMAC, chaque requête signée une écriture plus un appel HTTP sortant. Le
+   plafond est délibérément haut : **perdre une notification de paiement réelle coûte bien
+   plus qu'absorber du bruit**, donc la limite borne l'abus sans façonner le trafic normal.
+8. **`.env.example` : défaut SÛR, pas défaut pratique.** `APP_DEBUG` passe à `false` —
+   `true` en production expose traces, variables d'environnement et SQL sur chaque page
+   d'erreur. `.claude/` est ignoré : configuration locale à la machine, jamais portable.
+
+IMPACT : **aucune migration**. Non-régression CinetPay refaite une **quatrième** fois
+(liste nommée + condensé identiques) parce que le lot touche les routes webhook.
+
 ### D-071 : Genius Pay — adaptateur, ingress webhook et intake de remboursement ✅
 
 **MERGÉ ET VALIDÉ** — [PR #52](https://github.com/mysterus44/DigiTrove/pull/52), head

@@ -23,11 +23,16 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::get('/webhooks/payments/cinetpay', [CinetPayWebhookController::class, 'health']);
-Route::post('/webhooks/payments/cinetpay', [CinetPayWebhookController::class, 'handle']);
+// H2.5. Throttled like every other public write in the repository. The ceiling is high
+// enough that a provider replaying a burst is never dropped: it bounds abuse, it does not
+// shape legitimate traffic.
+Route::middleware('throttle:payment-webhook')->group(function (): void {
+    Route::get('/webhooks/payments/cinetpay', [CinetPayWebhookController::class, 'health']);
+    Route::post('/webhooks/payments/cinetpay', [CinetPayWebhookController::class, 'handle']);
 
-Route::get('/webhooks/payments/geniuspay', [GeniusPayWebhookController::class, 'health']);
-Route::post('/webhooks/payments/geniuspay', [GeniusPayWebhookController::class, 'handle']);
+    Route::get('/webhooks/payments/geniuspay', [GeniusPayWebhookController::class, 'health']);
+    Route::post('/webhooks/payments/geniuspay', [GeniusPayWebhookController::class, 'handle']);
+});
 
 Route::post('/downloads/{grantPublicId}/authorize', DownloadAuthorizationController::class)
     ->where('grantPublicId', '[A-Za-z0-9-]+')
