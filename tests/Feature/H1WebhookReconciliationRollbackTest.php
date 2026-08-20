@@ -16,6 +16,14 @@ use Tests\Support\PhaseMigrationHarness;
 |
 */
 
+/*
+ * ⚠️ `PhaseMigrationHarness` exposes `create()`, `applyMigrationsThrough()`,
+ * `rollbackExactMigrations()`, `ownerPdo()`, `runtimePdo()`, `hasTable()`, `ranMigrations()`
+ * and `drop()` — NOT the boot/connection/rollbackLast shape one might assume. Read an
+ * existing user (P5A0AnalyticsRollbackTest is the clearest) rather than guessing: it is a
+ * shared component, and a wrong guess costs a full migration run to discover.
+ */
+
 const H1_MIGRATION = '2026_07_14_000036_create_webhook_reconciliation_state.php';
 
 /** Insert a signed webhook event on the harness (owner) connection. */

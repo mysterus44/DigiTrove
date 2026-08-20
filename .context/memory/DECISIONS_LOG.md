@@ -4293,6 +4293,90 @@ chemins d'envoi réels connus, livraison P4-C et relance P6-C, partagent la mêm
 Le pipeline de livraison reste désactivé tant que sa configuration opérationnelle et un
 vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajoutés.
 
+### D-074 : H1 — réconciliation des webhooks non aboutis (dette #6) ✅
+
+CONTEXTE : troisième lot du durcissement, et le seul risque argent connu et non couvert.
+Migration **`000036`**, autorité P3-C. Deux familles d'événements n'aboutissaient jamais à
+une décision financière, sans que rien ne le signale :
+
+- **`received` jamais résolu** — la fenêtre P3-D3 : la référence fournisseur n'existe
+  localement qu'après la seconde transaction d'initiation, donc un webhook arrivé entre les
+  deux ne trouve rien et reste `received` pour toujours.
+- **`failed` jamais réessayé** — le contre-appel a échoué. P3-D4 marque l'événement
+  `failed`, qui est TERMINAL : une redélivrance retombe sur « replay terminal » et répond
+  200 sans rien retraiter. **Un paiement réellement encaissé peut n'être jamais confirmé à
+  cause d'une panne réseau passagère.**
+
+DÉCISIONS :
+
+1. **Forme (a) : un seul état terminal `unresolved_expired`, avec `expired_from_status`.**
+   L'option « colonne d'annotation » a été écartée parce qu'elle reproduisait le problème
+   qu'on corrige — deux représentations du même fait, et un opérateur pressé qui n'en
+   consulte qu'une. Le point entier de la dette #6 est qu'une seule requête suffise.
+2. ⚠️ **LA RELAXATION EST CIBLÉE, PAS UN PRINCIPE GÉNÉRAL.** `processed` et `ignored`
+   encodent une **décision financière** — argent confirmé, ou rejet délibéré — et restent
+   strictement finaux, **sans exception**. `failed` encode un **échec de traitement**, pas
+   une décision : c'est la seule catégorie qu'il est juste d'ouvrir. **Exactement deux
+   transitions nouvelles existent**, et le commentaire du trigger le dit en toutes lettres
+   pour quiconque le lira dans un an.
+3. ⚠️ **LES WEBHOOKS À SIGNATURE INVALIDE NE PEUVENT PAS EXPIRER — périmètre resserré, pas
+   contrainte élargie.** `payment_webhook_events_invalid_minimal_shape_check` (000005)
+   contraint structurellement un événement non signé à rester `failed`. Ce CHECK est laissé
+   **INTACT** : un webhook dont la signature n'a jamais vérifié n'a pas « échoué à être
+   traité », il a été **délibérément rejeté** — même catégorie que `processed`/`ignored`,
+   pas celle de `failed`. La commande est donc scopée à `signature_verified = true`.
+   **La contrainte existante n'était pas un obstacle à contourner : c'était la preuve que le
+   périmètre arbitré était trop large d'un cran.** La modification plie devant l'assertion.
+4. **Colonnes DÉDIÉES.** `processed_at` n'est jamais réutilisé — un événement expiré n'a
+   rien été « traité », et écraser le sens d'une colonne d'audit pour économiser une
+   migration rend un schéma illisible. `expired_at` rejoint les dates figées une fois
+   posées ; `expired_from_status` est figé de même, sans quoi une ligne expirée depuis
+   `failed` pourrait être réétiquetée `received` et détruire le seul diagnostic de cet état.
+5. **Cohérence de provenance vérifiée DANS LES DEUX SENS** :
+   `(expired_from_status = 'failed') = (failed_at IS NOT NULL)`. Un `received` ne peut pas
+   inventer une panne fournisseur, un `failed` ne peut pas effacer la sienne.
+6. **CE GATE NE RETENTE RIEN.** Un retry automatique du contre-appel changerait un
+   comportement CinetPay que fixe un test existant (*« it mutates nothing and fails the
+   event when the counter-call times out »*). Ce gate rend le problème **visible et borné
+   dans le temps**, pas résolu tout seul. Le retry est une décision séparée, plus lourde.
+7. **Double barrière et refus bruyant.** Dry-run par défaut ; muter exige `--execute` **ET**
+   `WEBHOOK_RECONCILIATION_ENABLED=true` (patron P6-A1.3). `--execute` sans le flag
+   **refuse bruyamment** : un dry-run silencieux laisserait un opérateur conclure qu'il n'y
+   avait rien à faire. Scheduler **désactivé par défaut**.
+8. **L'escalade doit être strictement plus courte que l'expiration.** Deux valeurs
+   individuellement sensées peuvent former une paire absurde : au-delà, l'alerte ne se
+   déclencherait que sur des lignes déjà terminales, donc jamais. Refus **avant toute
+   lecture**, comme `CHECKOUT_PENDING_TTL_MINUTES` (D-032).
+9. **L'alerte ne porte que des identifiants d'événement et des comptes** — aucun payload,
+   aucune référence fournisseur, aucun `payment_id`. Un `critical` est relayé plus loin que
+   la plupart des logs et lu par des gens qui n'ont pas à voir d'identifiants financiers.
+10. ⚠️ **ROLLBACK LOSSLESS-ONLY.** Redescendre supprimerait `expired_from_status`, la seule
+    chose distinguant « jamais résolu » de « fournisseur injoignable » sur des lignes
+    d'audit financier. Le refus est la **PREMIÈRE opération**, avant tout `DROP` — la leçon
+    de P6-D1, désormais une règle. **Après un vrai run, ce refus est le cas normalement
+    attendu**, pas un défaut.
+
+PREUVE : **sous `digitrove_runtime`**, le rôle de production, patron P4-B0 — jamais un test
+qui simule le refus. `processed → *` et `ignored → *` lèvent `23514` vers **toutes** les
+cibles ; `failed → processed|ignored|received` lèvent `23514` ; `unresolved_expired` est
+lui-même terminal ; la provenance ne peut être ni forgée, ni réécrite, ni posée sur un état
+non expiré. Rollback prouvé dans les **deux** cas : propre tant que rien n'a expiré (machine
+`000005` littéralement restaurée), refusé sinon, avec colonnes, CHECK et ligne d'audit
+vérifiés intacts après le refus.
+
+⚠️ **PRÉREQUIS D'ACTIVATION, pas contrainte d'ordre de build** : ce gate émet
+`Log::critical`, et le lot 4 est ce qui rend un `critical` réellement visible (rotation,
+niveau). `WEBHOOK_RECONCILIATION_ENABLED` ne doit pas passer à `true` avant sa clôture,
+sinon on alerte dans le vide.
+
+TROIS DÉFAUTS DE TEST, AUCUN DE CODE : `received_at` est immuable **même pour le
+propriétaire** (identité d'audit) — le schéma a refusé une première version du helper qui le
+réécrivait après coup ; `Throwable` est une **interface**, donc `class_exists` la refuse et
+Pest bascule silencieusement en comparaison de **message** ; et la console Symfony encadre à
+largeur fixe en **coupant les mots**, ce qui rendait une assertion dépendante de la largeur
+du terminal — le message est désormais normalisé avant comparaison, ce qui prouve en prime
+que c'est bien notre garde qui refuse.
+
 ### D-073 : H2.3 / H2.4 — seeder d'administrateur et compte jetable ✅
 
 CONTEXTE : deuxième lot du durcissement. **Aucune migration.** Le tracker P1 décrivait
