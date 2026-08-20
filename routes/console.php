@@ -4,6 +4,7 @@ use App\Support\AffiliateConfig;
 use App\Support\AnalyticsOperationsConfig;
 use App\Support\CartReminderConfig;
 use App\Support\CrmConfig;
+use App\Support\WebhookReconciliationConfig;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -53,6 +54,22 @@ if (CrmConfig::segmentRebuildProcessingEnabled()) {
 
     if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
         $crmSegmentSchedule->onOneServer();
+    }
+}
+
+// H1 (dette #6) — OFF by default, gated on its own flag. The command is dry-run unless
+// `--execute` is given, so the schedule passes it explicitly: a schedule that ran in
+// dry-run for ever would look healthy while closing out nothing at all.
+//
+// ⚠️ ACTIVATION PREREQUISITE, not a build-order constraint: this raises `Log::critical`,
+// and lot 4 is what makes a `critical` actually visible (rotation, level). Turning
+// WEBHOOK_RECONCILIATION_ENABLED on before that means alerting into a void.
+if (WebhookReconciliationConfig::enabled()) {
+    $webhookReconciliation = Schedule::command('payments:reconcile-webhooks --execute')->everyFifteenMinutes();
+    $webhookReconciliation->withoutOverlapping();
+
+    if (in_array(config('cache.default'), ['redis', 'memcached', 'database', 'dynamodb'], true)) {
+        $webhookReconciliation->onOneServer();
     }
 }
 

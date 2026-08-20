@@ -143,6 +143,9 @@ const P4B_ALLOWED_SERVICE_FILES = [
     // P3-D4/P3-D5 (D-034) — server-side confirmation. Commerce only, no delivery.
     'Payments/RecordedWebhook.php',
     'Payments/WebhookOutcome.php',
+    // H1 (dette #6) — closes out signed webhooks that never reached a financial decision.
+    // Commerce only, no delivery, and it NEVER retries anything with the provider.
+    'Payments/WebhookReconciliationService.php',
     'Payments/WebhookRecordingService.php',
     'Pricing/CouponSnapshot.php',
     'Pricing/DiscountAllocator.php',
