@@ -1256,7 +1256,7 @@ restent hors périmètre** — à lister comme REPORTÉS si le calendrier ne les
 |---|---|---|---|
 | **1** | H2.1 en-têtes · H2.2 cookie de session · H2.5 throttle webhook | aucune | **PR A** |
 | **2** | H2.3 seeder admin · H2.4 `test@example.com` gaté | aucune | **PR B** |
-| **3** | **H1 réconciliation webhooks** — dette #6 | **`000036`** | à faire |
+| **3** | **H1 réconciliation webhooks** — dette #6 | **`000036`** | **PR C** |
 | **4** | H2.6 CORS · H2.7 `failed_jobs` · H2.8 canal de log | `000037` | à faire |
 
 ⚠️ **UNE MIGRATION PAR PR.** Les lots 3 et 4 en portent chacun une : les grouper mettrait

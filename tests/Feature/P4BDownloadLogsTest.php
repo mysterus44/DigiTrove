@@ -143,6 +143,9 @@ const P4B_ALLOWED_SERVICE_FILES = [
     // P3-D4/P3-D5 (D-034) — server-side confirmation. Commerce only, no delivery.
     'Payments/RecordedWebhook.php',
     'Payments/WebhookOutcome.php',
+    // H1 (dette #6) — closes out signed webhooks that never reached a financial decision.
+    // Commerce only, no delivery, and it NEVER retries anything with the provider.
+    'Payments/WebhookReconciliationService.php',
     'Payments/WebhookRecordingService.php',
     'Pricing/CouponSnapshot.php',
     'Pricing/DiscountAllocator.php',
@@ -499,7 +502,7 @@ function p4bSeedDeliverablePurchase(PDO $pdo, string $slug, string $orderNumber,
 
 it('applies migration 000013 with exactly fifteen columns, native types and no business default', function () {
     expect(DB::table('migrations')->where('migration', '2026_07_14_000013_create_download_logs_table')->exists())->toBeTrue()
-        ->and(DB::table('migrations')->count())->toBe(51)
+        ->and(DB::table('migrations')->count())->toBe(52)
         ->and(Schema::hasTable('download_logs'))->toBeTrue();
 
     $columns = DB::table('information_schema.columns')

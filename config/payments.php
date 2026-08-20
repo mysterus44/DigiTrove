@@ -82,4 +82,25 @@ return [
         'require_https' => ! in_array(env('APP_ENV', 'production'), ['local', 'testing'], true),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Webhook reconciliation (H1, dette #6)
+    |--------------------------------------------------------------------------
+    |
+    | DISABLED by default. Closes out signed webhooks that never reached a
+    | financial decision — `received` never resolved (the P3-D3 window) and
+    | `failed` never retried (a provider counter-call that died).
+    |
+    | It NEVER retries anything with the provider: it makes the problem visible
+    | and bounded in time, it does not resolve it. Bounds are validated in
+    | App\Support\WebhookReconciliationConfig, fail-closed.
+    |
+    */
+
+    'reconciliation' => [
+        'enabled' => env('WEBHOOK_RECONCILIATION_ENABLED', false),
+        'escalation_minutes' => env('WEBHOOK_ESCALATION_MINUTES', 15),
+        'expiry_hours' => env('WEBHOOK_EXPIRY_HOURS', 24),
+    ],
+
 ];

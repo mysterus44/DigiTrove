@@ -101,7 +101,10 @@ it('creates the payment_webhook_events table with native types and hides the pay
         ->and($columns['received_at']->data_type)->toBe('timestamp with time zone');
 
     expect(array_map(fn (WebhookProcessingStatus $s): string => $s->value, WebhookProcessingStatus::cases()))
-        ->toBe(['received', 'processed', 'ignored', 'failed']);
+        // H1 (000036) — inventaire EXACT, elargi explicitement d'un cas. `unresolved_expired`
+        // n'est ni `ignored` (rejet delibere) ni `failed` (contre-appel mort) : il signifie
+        // que personne n'a jamais decide et que la fenetre est fermee.
+        ->toBe(['received', 'processed', 'ignored', 'failed', 'unresolved_expired']);
 
     $event = PaymentWebhookEvent::factory()->create();
     expect($event->toArray())->not->toHaveKey('payload_hash')

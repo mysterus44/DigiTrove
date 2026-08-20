@@ -38,15 +38,18 @@ it('installs only the P6-A1.1 table with closed physical constraints', function 
         'visitor_id'
     );
 
-    // CURRENT-STATE : 51 migrations, la derniere etant 000035 (P7, schema blog & SEO).
-    // Nommee et non seulement comptee : une 52e migration, ou une derniere differente,
-    // doit toujours faire echouer ce contrat.
+    // CURRENT-STATE : 52 migrations, la derniere etant 000036 (H1, reconciliation des
+    // webhooks). Nommee et non seulement comptee : une 53e migration, ou une derniere
+    // differente, doit toujours faire echouer ce contrat.
     $migrations = DB::table('migrations')->orderBy('id')->get();
-    expect($migrations)->toHaveCount(51)
-        ->and($migrations->last()->migration)->toBe('2026_07_14_000035_create_blog_and_seo_schema');
+    expect($migrations)->toHaveCount(52)
+        // H1 (000036) — DEUXIEME DENT, elargie explicitement. C'est le seul contrat du depot
+        // qui NOMME la derniere migration plutot que de la compter : celui qui la fait
+        // avancer doit le faire deliberement, pas par un compteur qui glisse tout seul.
+        ->and($migrations->last()->migration)->toBe('2026_07_14_000036_create_webhook_reconciliation_state');
 
-    // Aucune migration 000036 : P7 est la frontiere courante.
-    expect(glob(database_path('migrations').'/2026_07_14_000036*.php') ?: [])->toBe([]);
+    // Aucune migration 000037 : H1 est la frontiere courante.
+    expect(glob(database_path('migrations').'/2026_07_14_000037*.php') ?: [])->toBe([]);
 });
 
 it('verifies exact restrictive foreign keys checks and primary key', function () {
