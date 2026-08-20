@@ -19,7 +19,7 @@ P4-C APPLICATIF     : ██████████  P4-C0→C6 TERMINÉS, MERG
 P5 ANALYTIQUE       : ██████████  100% — P5-A0→A3C TERMINÉS, MERGÉS ET VALIDÉS ; P5-A3D reporté au durcissement préproduction (D-042)
 P6 CRM & MARKETING  : ██████████  100% — P6-A0→P6-C mergés, puis affiliation P6-D0→P6-D4 CLOSE (D-057 → D-069, PR #40→#50). Moteur de commissions/payouts complet ; **son déclencheur de remboursement existe depuis le gate Genius Pay** (D-071).
 P7 BLOG & SEO       : ██████████  100% — `000035`, blog natif, sitemap/robots dynamiques, JSON-LD Article+Product, redirections 301 sans chaîne, import legacy idempotent (D-070)
-GENIUS PAY          : █████████░   90% — adaptateur, ingress webhook JSON signé sur octets bruts, intake de remboursement, 86 tests, AUCUNE migration (D-071). **Reste : un run sandbox réel de bout en bout**, seul capable de trancher les trois points non documentés listés en §7 de `docs/integrations/GENIUSPAY_SETUP.md`.
+GENIUS PAY          : █████████░   90% — MERGÉ (PR #52 → `5f4c9394`, CI SUCCESS, D-071) : adaptateur, ingress webhook JSON signé sur octets bruts, intake de remboursement, 86 tests, AUCUNE migration — 51 inchangées. Suite complète 1880/13790, Pint 623, post-merge 236/1364. **Reste : un run sandbox réel de bout en bout**, seul capable de trancher les trois points non documentés listés en §7 de `docs/integrations/GENIUSPAY_SETUP.md`.
 ```
 
 > ⚠️ **BLOC CI-DESSUS CORRIGÉ LE 2026-08-19.** Il annonçait encore « P6-A0→P6-D1 mergés »

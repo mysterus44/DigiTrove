@@ -4295,6 +4295,11 @@ vrai SMTP ne sont pas fournis hors dépôt. Aucune migration et aucun secret ajo
 
 ### D-071 : Genius Pay — adaptateur, ingress webhook et intake de remboursement ✅
 
+**MERGÉ ET VALIDÉ** — [PR #52](https://github.com/mysterus44/DigiTrove/pull/52), head
+`3decc69`, merge `5f4c9394` (parents `9fd63a1` + `3decc69`), CI SUCCESS en 13 min.
+18 fichiers (+2717 / −35), **aucune migration** (51 inchangées, aucune `000036`).
+Suite complète **1880 / 13790, 0 échec** ; Pint **623** ; post-merge **236 / 1364**.
+
 CONTEXTE : premier gate money-adjacent avec de vrais secrets depuis P3-D4. GeniusPay
 remplace CinetPay comme `PAYMENT_DRIVER` actif — **additif, jamais une réécriture** :
 CinetPay n'est pas supprimé, seulement désactivé. Le patron port + factory absorbait déjà

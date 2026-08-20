@@ -1219,11 +1219,19 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
-## 🚧 Genius Pay — adaptateur implémenté, sandbox à prouver
+## 🚧 Genius Pay — MERGÉ, sandbox à prouver
 
-**La feuille de route P0→P7 est CLOSE.** Le gate Genius Pay est **écrit** : adaptateur,
-ingress webhook, intake de remboursement, 86 tests. **Aucune migration** — la déduplication
-réutilise `payment_webhook_events (provider, external_event_id)`.
+**Genius Pay est TERMINÉ, MERGÉ ET VALIDÉ** via
+[PR #52](https://github.com/mysterus44/DigiTrove/pull/52), head `3decc69`, merge
+**`5f4c9394`** (parents `9fd63a1` + `3decc69`), **CI SUCCESS** (13 min), D-071.
+18 fichiers (+2717 / −35), **aucune migration** — **51 inchangées**, la dernière restant
+`000035_create_blog_and_seo_schema.php`, aucune `000036`. La déduplication réutilise
+`payment_webhook_events (provider, external_event_id)`.
+
+Validation : suite complète **1880 / 13790, 0 échec** (51,2 min) · Pint **623** ·
+post-merge sur la stable **236 / 1364** · non-régression CinetPay **123/123, liste nommée
+identique, `sha 2786c22a8177d586`**, mesurée avant PUIS refaite après le changement de
+`confirm()`.
 
 ⚠️ **CE QUI RESTE, ET C'EST HUMAIN** : un run sandbox réel de bout en bout. Le code n'a
 jamais parlé au vrai GeniusPay. Trois choses que seul ce run peut trancher, listées en §7
