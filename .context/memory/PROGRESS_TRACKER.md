@@ -6,6 +6,7 @@
 ## 📊 ÉTAT GLOBAL
 
 ```
+REFONTE PHASE 0    : ██████████  100% — audits A→F et 53 captures livrés en PR #57 sur `codex/refonte-phase0-audit` ; AUCUN code/migration/nettoyage exécuté ; gate d'approbation KingKouda avant Phase 1
 P0 FONDATIONS       : ██████████  100%
 P0.5 ASSAINISSEMENT : ██████████  100%
 SITE-00 PREVIEW     : ██████████  100%
