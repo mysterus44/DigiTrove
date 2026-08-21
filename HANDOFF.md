@@ -10,6 +10,8 @@
 - **Date** : 2026-08-21
 - **Branche git active** : **`codex/refonte-phase0-audit`**, créée depuis
   **`p0-foundations-laravel13`** à `2f1f6e28bbcc7e3b232c94e316317d9338a800c7`.
+- **Pull request active** : [#57 — audit de refonte DigiTrove, Phase 0](https://github.com/mysterus44/DigiTrove/pull/57),
+  base **`p0-foundations-laravel13`** ; ne pas merger sans validation du gate.
 
 ### ⚠️ TESTS : TOUJOURS EN ARRIÈRE-PLAN SUR LA BASE PARTAGÉE
 
@@ -1246,7 +1248,7 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
-## ⏸️ REFONTE DIGITROVE — PHASE 0 LIVRÉE, ATTENDRE L'APPROBATION DE KINGKOUDA
+## ⏸️ REFONTE DIGITROVE — PHASE 0 EN PR #57, ATTENDRE L'APPROBATION DE KINGKOUDA
 
 La Phase 0 est un **lot documentaire uniquement**. Les six livrables sont sous
 `docs/refonte/` : audit legacy, audit Laravel, matrice des écarts, plan de consolidation,
