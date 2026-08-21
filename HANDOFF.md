@@ -6,10 +6,10 @@
 
 ## 📍 ÉTAT ACTUEL
 
-- **Dernier agent** : Claude Code
-- **Date** : 2026-08-15
-- **Branche git active** : **`codex/storefront-checkout`**, créée depuis le merge du panier
-  invité **`01896f585390f266c66f51f2371399e21d41f387`**.
+- **Dernier agent** : Codex (ARIA-DEV)
+- **Date** : 2026-08-21
+- **Branche git active** : **`codex/refonte-phase0-audit`**, créée depuis
+  **`p0-foundations-laravel13`** à `2f1f6e28bbcc7e3b232c94e316317d9338a800c7`.
 
 ### ⚠️ TESTS : TOUJOURS EN ARRIÈRE-PLAN SUR LA BASE PARTAGÉE
 
@@ -1246,6 +1246,40 @@ Dépendance bloquante : la dette D-030 `MAIL_MAILER=log` doit être close avant 
 
 ## 🛑 PROCHAINE TÂCHE
 
+## ⏸️ REFONTE DIGITROVE — PHASE 0 LIVRÉE, ATTENDRE L'APPROBATION DE KINGKOUDA
+
+La Phase 0 est un **lot documentaire uniquement**. Les six livrables sont sous
+`docs/refonte/` : audit legacy, audit Laravel, matrice des écarts, plan de consolidation,
+inventaire de nettoyage et roadmap visiteur puis admin. **53 captures navigateur** servent
+de preuves visuelles : 39 pour l'ancien site, 14 pour Laravel.
+
+Constats structurants :
+
+- les 202 entrées legacy se décomposent en 90 fichiers fonctionnels et 112 fichiers du
+  `.git` imbriqué ; son `git fsck --full` signale un blob manquant ;
+- les cinq produits, dix-neuf articles et six avis ont été inventoriés sans exposer les
+  trois comptes SQLite ni aucun secret ;
+- le domaine Laravel est profond et cohérent, mais le storefront manque encore de
+  navigation mobile et de pages institutionnelles ; surtout, l'artefact Vite servi est
+  plus ancien que la source CSS, ce qui casse visuellement le checkout ;
+- la régression CSP/formulaire annoncée n'est pas reproductible dans l'état local actuel :
+  documenter et tester le cas `APP_URL`/proxy/cache avant toute correction ;
+- le nettoyage est **proposé, jamais exécuté**. Les fichiers signalés comme contenant des
+  clés sandbox exigent rotation avant purge. Ne jamais les ajouter au commit.
+
+Validation de ce lot : Pest **2 024 tests / 14 070 assertions, 0 échec** ; Pint ciblé sur le code suivi
+`app bootstrap config database routes tests` : **643 fichiers, vert**. Le Pint racine ne
+signale que deux fichiers non suivis de `_to_delete/`, laissés intacts.
+
+### Gate absolu
+
+**Ne pas commencer la Phase 1 sans approbation explicite de KingKouda/MAESTRO.** Après
+approbation, une seule feature à la fois : **V0 — fiabilisation runtime/Vite + reproduction
+CSP**, avec BDD inchangée, architecture et tests annoncés avant code. La Phase 2 admin
+reste interdite tant que la Phase 1 visiteur n'a pas reçu sa validation visuelle.
+
+---
+
 ## ✅ DURCISSEMENT PRÉ-PRODUCTION — H1 + H2 TERMINÉS, MERGÉS ET VALIDÉS
 
 **Les quatre lots sont sur la stable.** 53 migrations, la dernière
@@ -2378,6 +2412,26 @@ aucun push direct sur `main`.
 ---
 
 ## 📖 JOURNAL DES PASSATIONS (le plus récent en haut)
+
+### 2026-08-21 — Codex (Phase 0, audit de refonte visiteur puis admin)
+- Mission tenue au gate d'audit : **aucun code applicatif, aucune migration, aucune
+  dépendance, aucune suppression**. La structure BDD Laravel a été auditée avant la
+  roadmap ; les évolutions proposées sont isolées par feature dans `03-ROADMAP.md`.
+- Audit exhaustif de `DigiTrove-Ancien/` : 202 entrées = 90 fonctionnelles + 112
+  métadonnées Git ; routes publiques naviguées en desktop/mobile ; les écrans admin ont
+  été audités par les sources, sans utiliser d'identifiants.
+- Audit Laravel : 53 migrations, 72 routes, 33 modèles, 87 services, 17 contrôleurs,
+  6 ressources Filament et 7 pages admin personnalisées. Divergences mesurées sur les
+  données catalogue et artefact Vite périmé constaté sur le checkout.
+- Livrables A→F sous `docs/refonte/` et **53 PNG** sous `docs/refonte/captures/`.
+- Preuves : Pest **2 024 tests / 14 070 assertions, 0 échec** (4 669,49 s) ; Pint ciblé
+  **643 fichiers, vert**. Le check racine
+  rencontre uniquement deux scripts non suivis déjà placés dans `_to_delete/` ; ils n'ont
+  pas été modifiés.
+- `DECISIONS_LOG.md` inchangé : aucune technologie ni décision d'architecture validée ;
+  la roadmap reste une proposition soumise au gate.
+- **Suite : attendre l'approbation explicite de KingKouda/MAESTRO.** Si elle arrive,
+  reprendre par V0 seulement ; ne pas anticiper la Phase 2 admin.
 
 ### 2026-08-19 — Claude Code (P7 Blog & SEO, D-070) — **P0→P7 CLOSE**
 - Migration `000035`, **51 migrations** : `article_categories`, `articles`,
